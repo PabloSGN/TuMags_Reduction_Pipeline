@@ -3,6 +3,9 @@
 """
 Information of the headers of the .img files and header creation of reduced
 observations.
+
+author: Pablo Santamarina Guerrero(pablosantamarinag@gmail.com) 
+Instituto de Astrofísica de Andalucía (IAA-CSIC) 
 """
 
 # ------------------------------ IMPORTS ----------------------------------------- #
@@ -97,7 +100,6 @@ class raw_header:
             "lcvr1_read_counts" : lcvr1_read_counts,
             "lcvr2_read_counts" : lcvr2_read_counts,
         }
-        print(self.info["hvps_counts"], self.info["hvps_sign"])
         # Compute hvps commanded counts to volts
         self.info["hvps_comm_volts"] = self.hvps_commanded_2_volts(hvps_counts, hvps_sign)
         # Compute hvps read counts to volts
