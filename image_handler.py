@@ -12,45 +12,11 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 
 # Built-in Libs
 from astropy.io import fits
+import numpy as np
 
 # Own libs
 from utils import read_Tumag
-
-# ------------------------------ CONFIG ------------------------------------------ #
-
-# RAW Header information 
-filter_wheel = {
-    "1" : { # First filter wheel
-            0 : "Micropolarizers",
-            1 : "Linear Polarizer",
-            2 : "F4",
-            3 : "Phase Diversity",
-            4 : "Pinholes"
-        },
-    "2" : { # Second filter wheel
-            0 : "517",
-            1 : "525.02",
-            2 : "525.06",
-            3 : "Empy",
-            4 : "Dummy" 
-        }
-    } 
-
-# Observation modes and inex correspondance
-observation_modes = {
-    0 : "0s",
-    1 : "0p",
-    2 : "1",
-    3 : "2.02",
-    4 : "2.06",
-    5 : "3.02",
-    6 : "3.06", 
-    7 : "4",
-    8 : "5.02",
-    9 : "5.06",
-    64 : "PD_calibration",
-    65 : "Spectral_calibration",
-    66 : "Polarimetric_calibration"}
+import config as cf
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -81,7 +47,7 @@ class raw_header:
         self.info = {
             "cam" : camID,
             "ObservationMode_index" : om,
-            "ObservationMode" : observation_modes[om],
+            "ObservationMode" : cf.observation_modes[om],
             "nAcc" : nAcc,
             "Roix" : Roix,
             "Roiy" : Roiy,
@@ -90,8 +56,8 @@ class raw_header:
             "ObservationCounter" : oc,
             "FW1_ind" : fw1,
             "FW2_ind" : fw2,
-            "FW1" : filter_wheel["1"][fw1],
-            "FW2" : filter_wheel["2"][fw2],
+            "FW1" : cf.filter_wheel["1"][fw1],
+            "FW2" : cf.filter_wheel["2"][fw2],
             "hvps_counts" : hvps_counts,
             "hvps_sign" : hvps_sign,
             "lcvr1_counts" : lcvr1_counts,
@@ -113,6 +79,7 @@ class raw_header:
     def get_info(self):
         return self.info
 
+# Read single images
 def read(image_path : str):
     # Read .img file
     img, h = read_Tumag(image_path) 
@@ -125,3 +92,19 @@ def read(image_path : str):
                       int(h["LCVR2_DN_Real"]) )
     
     return img, head.get_info()
+
+# Class to process the observation mode -> headers and array 
+class nominal_observation:
+
+    def __init__(self, om, images_path):
+        self.data = np.zeros((cf.observation_modes[om]["Nlambda"],  # Number of wavelengths
+                              cf.observation_modes[om]["Nmods"],    # Number of Modulations
+                              cf.xsize, cf.ysize))  # Size of image (x, y)
+        
+        
+        
+
+
+
+
+
