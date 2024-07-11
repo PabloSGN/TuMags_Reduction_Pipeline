@@ -11,7 +11,7 @@ import numpy as np
 
 # Mean - Matrix Demodulation 
 mod_matrices = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024 
-    '517': {0 : np.array([[0.951,  -0.612,	0.474	,0.459],
+    "517": {0 : np.array([[0.951,  -0.612,	0.474	,0.459],
                           [0.955,	-0.331,	-0.758,	-0.382],
                           [1.058,	 0.456,	0.562   ,-0.712],
                           [1.036,	 0.747,	-0.26	,0.6]]),
@@ -48,9 +48,6 @@ for filt in mod_matrices:
     demod_matrices[filt] = {}
     for cam in mod_matrices[filt]:
         demod_matrices[filt][cam] = np.linalg.inv(mod_matrices[filt][cam])
-
-
-
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
