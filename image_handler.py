@@ -102,43 +102,43 @@ class nominal_observation:
                      "Images_headers" : {}}
 
         self.data = np.zeros((2, # Number of cameras 
-                              cf.observation_modes[om]["Nlambda"],  # Number of wavelengths
-                              cf.observation_modes[om]["Nmods"],    # Number of Modulations
+                              cf.om_config[om]["Nlambda"],  # Number of wavelengths
+                              cf.om_config[om]["Nmods"],    # Number of Modulations
                               cf.xsize, cf.ysize))  # Size of image (x, y)
 
         nmods   = cf.om_config[om]["Nmods"]     # N mods from config file
         nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
 
-        images_path_reshaped = images_path.reshape((2, nmods, nlambda))
+        images_path_reshaped = images_path.reshape(nlambda, nmods, 2)
 
         for mod in range(nmods):
             self.info["Images_headers"][f"Mod_{mod}"] = {}
             for lambd in range(nlambda):
                 # Reading each image
-                im0, head0 = read(images_path_reshaped[0, mod, lambd]) # Cam 1
-                im1, _ = read(images_path_reshaped[1, mod, lambd]) # Cam 2
+                im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
+                im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
                 # Saving images header except for CameraID entry
-                self.info["Images_headers"][f"wvlngth_{lambd}"] = {}
+                self.info["Images_headers"][f"Mod_{mod}"][f"wvlngth_{lambd}"] = {}
                 for key in head0:
                     if key == "CameraID":
                         pass
                     else:
-                        self.info["Images_headers"][f"wvlngth_{lambd}"][key] = head0[key]
+                        self.info["Images_headers"][f"Mod_{mod}"][f"wvlngth_{lambd}"][key] = head0[key]
             
-            # Sving image data into main data array
-            self.data[0, lambd, mod] = im0
-            self.data[1, lambd, mod] = im1 
+                # Sving image data into main data array
+                self.data[0, lambd, mod] = im0
+                self.data[1, lambd, mod] = im1 
         
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
-        self.info["Roix"] = head0["RoiX"]
+        self.info["Roix"] = head0["Roix"]
         self.info["Roiy"] = head0["Roiy"]
         self.info["Roix_offset"] = head0["Roix_offset"]
         self.info["Roiy_offset"] = head0["Roiy_offset"]
             
         # Saving info from config file into observtaion mode info
         for entry in cf.om_config[head0["ObservationMode"]]:
-            self[entry] = cf.om_config[head0["ObservationMode"]][entry]
+            self.info[entry] = cf.om_config[head0["ObservationMode"]][entry]
 
     # Get information of the observation mode and individual headers
     def get_info(self):

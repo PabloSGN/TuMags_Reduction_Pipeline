@@ -11,8 +11,8 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 
 # Exposition time
 tauexp = 42 # ms
-xsize = 1800 # Size in pixels X-dimension
-ysize = 1800 # Size in pixels Y-dimension
+xsize = 2016 # Size in pixels X-dimension
+ysize = 2016 # Size in pixels Y-dimension
 
 # Etalon tuning constant
 tuning_ct = {"517" : 3.1E-4, # A/V

@@ -51,47 +51,40 @@ for filt in mod_matrices:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-"""
-def demodulate(folder, dmod_matrices, filt, mode = 'single', wvl_index = 4):
-    
-    files = sorted(glob.glob(f"{folder}/*.img"))
-
-    sorted_files = np.reshape(files, (3, 7, 4, 2))
-    
-    if filt == 'F517':
-        filt_index = 0
-    elif filt == 'F06':
-        filt_index = 1
-    elif filt == 'F02':
-        filt_index = 2
-    else:
-        print(f"Filter must be: F517, F02 or F06")
- 
+def demodulate(data, sizex, sizey, nmods, nlambdas, filt, mode = 'single', dmod_matrices = demod_matrices):
+   
     if mode == 'single':
 
-        Npix = 1798 - 250
-        data = np.zeros((2, 4, Npix, Npix))
+        demod = np.zeros(np.shape(data))
+        dual_beam = np.zeros((nmods, nlambdas, sizex, sizey))
 
-        for ind, im in enumerate(sorted_files[filt_index, wvl_index, :, 0]):
-            I, _ = read_Tumag(im)
-            data[0, ind] = I[250:1798, 250:1798]
-        for ind, im in enumerate(sorted_files[filt_index, wvl_index, :, 1]):
-            I, _ = read_Tumag(im)
-            data[1, ind] = I[250:1798, 250:1798]
+        for wl in range(nlambdas):
 
-        data[0] /= np.max(data[0])
-        data[1] /= np.max(data[1])
+            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, :, wl], (4, sizex * sizey)))
+            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, :, wl], (4, sizex * sizey)))
+
+            demod[0, :, wl] = np.reshape(dm_cam1, (4, sizex, sizey))
+            demod[1, :, wl] = np.reshape(dm_cam2, (4, sizex, sizey))
+
+        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = -2) * 0.5
+
+    if mode == 'single_wavelength':
 
         demod = np.zeros(np.shape(data))
+        dual_beam = np.zeros((nmods, sizex, sizey))
 
-        dm_cam1 = np.matmul(dmod_matrices[filt]["CAM1"], np.reshape(data[0], (4, Npix * Npix)))
-        dm_cam2 = np.matmul(dmod_matrices[filt]["CAM2"], np.reshape(data[1], (4, Npix * Npix)))
+        for wl in range(nlambdas):
 
-        demod[0] = np.reshape(dm_cam1, (4, Npix, Npix))
-        demod[1] = np.reshape(dm_cam2, (4, Npix, Npix))
+            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0], (4, sizex * sizey)))
+            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1], (4, sizex * sizey)))
 
-        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = 2) * 0.5
+            demod[0] = np.reshape(dm_cam1, (4, sizex, sizey))
+            demod[1] = np.reshape(dm_cam2, (4, sizex, sizey))
 
+        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = -1) * 0.5
+
+
+    """
     elif mode == 'pixel':
 
         Npix = 1656
@@ -153,7 +146,6 @@ def demodulate(folder, dmod_matrices, filt, mode = 'single', wvl_index = 4):
                 demod[0] = np.reshape(dm_cam1, (4, Npix, Npix))
                 demod[1] = np.reshape(dm_cam2, (4, Npix, Npix))
 
-        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = 2) * 0.5
+        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = 2) * 0.5"""
 
-    return data, demod, dual_beam
-"""
+    return demod, dual_beam
