@@ -81,7 +81,7 @@ def demodulate(data, sizex, sizey, nmods, nlambdas, filt, mode = 'single', dmod_
             demod[0] = np.reshape(dm_cam1, (4, sizex, sizey))
             demod[1] = np.reshape(dm_cam2, (4, sizex, sizey))
 
-        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = -1) * 0.5
+        dual_beam = demod[0] * 0.5 + demod[1] * 0.5
 
 
     """

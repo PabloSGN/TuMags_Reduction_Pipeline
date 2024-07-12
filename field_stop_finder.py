@@ -25,9 +25,43 @@ def find_fieldstop(mode = "fixed", cam1 = None, cam2 = None, verbose = False, pl
     if mode == "fixed":
         print("Fixed Field Stop selected.")
 
-        c1_fieldstop = [[196, 1862], [151, 1816]]
-        c2_fieldstop = [[197, 1862], [196, 1860]]
+        c1_fieldstop = [[135, 1800], [161, 1826]]
+        c2_fieldstop = [[135, 1800], [189, 1854]]
 
+        size = np.shape(cam1)[0]
+
+        hcut_bottom_c1 = 135
+        hcut_bottom_c2 = 135
+        hcut_top_c1 = 1800
+        hcut_top_c2 = 1800
+        vcut_left_c1 = 161 
+        vcut_left_c2 = 189
+        vcut_right_c1 = 1826
+        vcut_right_c2 = 1854
+
+        if plot_flag:
+            fig, axs  = plt.subplots(2, 2,figsize = (10, 10))
+            axs[0, 0].imshow(cam1, origin = 'lower', cmap = 'gray')
+            axs[1, 0].imshow(cam2, origin = 'lower', cmap = 'gray')
+            axs[0, 0].plot([vcut_right_c1, vcut_right_c1], [0, size], c = 'deeppink')
+            axs[0, 0].plot([vcut_left_c1, vcut_left_c1], [0, size], c = 'deeppink')
+            axs[0, 0].plot([0, size], [hcut_top_c1, hcut_top_c1], c = 'deeppink')
+            axs[0, 0].plot([0, size], [hcut_bottom_c1, hcut_bottom_c1], c = 'deeppink')
+            axs[1, 0].plot([vcut_right_c2, vcut_right_c2], [0, size], c = 'deeppink')
+            axs[1, 0].plot([vcut_left_c2, vcut_left_c2], [0, size], c = 'deeppink')
+            axs[1, 0].plot([0, size], [hcut_top_c2, hcut_top_c2], c = 'deeppink')
+            axs[1, 0].plot([0, size], [hcut_bottom_c2, hcut_bottom_c2], c = 'deeppink')
+            axs[0, 1].imshow(cam1[hcut_bottom_c1:hcut_top_c1, vcut_left_c1:vcut_right_c1], origin = 'lower', cmap = 'gray')
+            axs[1, 1].imshow(cam2[hcut_bottom_c2:hcut_top_c2, vcut_left_c2:vcut_right_c2], origin = 'lower', cmap = 'gray')
+            axs[0, 0].set_xlim(0, size)
+            axs[0, 0].set_ylim(0, size)
+            axs[1, 0].set_xlim(0, size)
+            axs[1, 0].set_ylim(0, size)    
+            axs[0, 0].set_ylabel("Cam 1")
+            axs[1, 0].set_ylabel("Cam 2")
+
+            plt.tight_layout()
+            plt.show()
         if verbose:
             print(f"Cam 1 Field stop: {c1_fieldstop}")
             print(f"Cam 2 Field stop: {c2_fieldstop}")
@@ -151,6 +185,23 @@ c2, _ = read_Tumag(image_path_c2)
 
 c1_fs, c2_fs = find_fieldstop(mode = "auto", cam1 = c1, cam2 = c2, plot_flag= True)
 """
+
+def fieldstopping_and_shifting(cam1, cam2, fsc1, fsc2):
+
+    new_cam1 = np.zeros((np.shape(cam1)))
+    new_cam2 = np.zeros((np.shape(cam1)))
+
+    field_stop_mask_cam1 = np.zeros((np.shape(cam1)))
+    field_stop_mask_cam2 = np.zeros((np.shape(cam2)))
+
+    field_stop_mask_cam1[fsc1[0][0] : fsc1[0][1], fsc1[1][0] : fsc1[1][1]] = 1
+
+    new_cam1 = field_stop_mask_cam1 * cam1
+
+    new_cam2[fsc1[0][0] : fsc1[0][1], fsc1[1][0] : fsc1[1][1]] = cam2[fsc2[0][0] : fsc2[0][1], fsc2[1][0] : fsc2[1][1]]    
+
+    return new_cam1, new_cam2
+
 
 
 

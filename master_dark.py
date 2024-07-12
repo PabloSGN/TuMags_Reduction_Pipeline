@@ -34,7 +34,7 @@ def compute_master_darks(darks_cam_1, darks_cam_2, fieldstop_cam1, fieldstop_cam
 
     for img_ind, img_path in enumerate(darks_cam_2):
         I, _ = read_Tumag(img_path)
-        dark_current[1] += I
+        dark_current[1] += np.flip(I, axis = -1)
         
     field_stop_mask_cam1 = np.zeros((np.shape(first_dark)))
     field_stop_mask_cam2 = np.zeros((np.shape(first_dark)))

@@ -30,6 +30,7 @@ def compute_master_flat_field(flat_fields_paths_cam1, flat_fields_paths_cam2,
 
     for img_ind, img_path in enumerate(flat_fields_paths_cam2):
         I, _ = read_Tumag(img_path)
+        I = np.flip(I, axis = -1)
         ff[1] += I - dc[1]
         
     ff[0] /= len(ff)

@@ -118,16 +118,16 @@ class nominal_observation:
                 im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
                 im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
                 # Saving images header except for CameraID entry
-                self.info["Images_headers"][f"Mod_{mod}"][f"wvlngth_{lambd}"] = {}
+                self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"] = {}
                 for key in head0:
-                    if key == "CameraID":
+                    if key == "cam":
                         pass
                     else:
-                        self.info["Images_headers"][f"Mod_{mod}"][f"wvlngth_{lambd}"][key] = head0[key]
+                        self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"][key] = head0[key]
             
                 # Sving image data into main data array
                 self.data[0, lambd, mod] = im0
-                self.data[1, lambd, mod] = im1 
+                self.data[1, lambd, mod] = np.flip(im1, axis = -1) # Flip cam 2 image. 
         
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
