@@ -11,8 +11,7 @@ from utils import read_Tumag
 # ------------------------------  CODE  ------------------------------------------ # 
 
 def compute_master_flat_field(flat_fields_paths_cam1, flat_fields_paths_cam2,
-                              dc, fieldstop_cam1, fieldstop_cam2,
-                              verbose = False):
+                              dc, verbose = False):
     tic = time.time()
     
     # standard flat field measurements 
@@ -33,16 +32,8 @@ def compute_master_flat_field(flat_fields_paths_cam1, flat_fields_paths_cam2,
         I = np.flip(I, axis = -1)
         ff[1] += I - dc[1]
         
-    ff[0] /= len(ff)
-    ff[1] /= len(ff)
-
-    field_stop_mask_cam1 = np.zeros((np.shape(first_flat)))
-    field_stop_mask_cam2 = np.zeros((np.shape(first_flat)))
-    field_stop_mask_cam1[fieldstop_cam1[0][0] : fieldstop_cam1[0][1], fieldstop_cam1[1][0] : fieldstop_cam1[1][1]] = 1
-    field_stop_mask_cam2[fieldstop_cam2[0][0] : fieldstop_cam2[0][1], fieldstop_cam2[1][0] : fieldstop_cam2[1][1]] = 1
-
-    ff[0] *= field_stop_mask_cam1
-    ff[1] *= field_stop_mask_cam2
+    ff[0] /= len(flat_fields_paths_cam1)
+    ff[1] /= len(flat_fields_paths_cam2)
 
     print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
     return ff

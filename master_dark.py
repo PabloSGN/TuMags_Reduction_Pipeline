@@ -15,7 +15,7 @@ from field_stop_finder import find_fieldstop
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def compute_master_darks(darks_cam_1, darks_cam_2, fieldstop_cam1, fieldstop_cam2, verbose = False):
+def compute_master_darks(darks_cam_1, darks_cam_2, verbose = False):
 
     tic = time.time()
     # Read first image to obtain image size.
@@ -26,27 +26,18 @@ def compute_master_darks(darks_cam_1, darks_cam_2, fieldstop_cam1, fieldstop_cam
     if verbose:
         print(f"Computing darks ...")
         print(f"N darks for cam1 : {len(darks_cam_1)}")
-        print(f"N darks for cam2 : {len(darks_cam_1)}")
+        print(f"N darks for cam2 : {len(darks_cam_2)}")
 
-    for img_ind, img_path in enumerate(darks_cam_1):
+    for _, img_path in enumerate(darks_cam_1):
         I, _ = read_Tumag(img_path)
         dark_current[0] += I
 
-    for img_ind, img_path in enumerate(darks_cam_2):
+    for _, img_path in enumerate(darks_cam_2):
         I, _ = read_Tumag(img_path)
         dark_current[1] += np.flip(I, axis = -1)
-        
-    field_stop_mask_cam1 = np.zeros((np.shape(first_dark)))
-    field_stop_mask_cam2 = np.zeros((np.shape(first_dark)))
-
-    field_stop_mask_cam1[fieldstop_cam1[0][0] : fieldstop_cam1[0][1], fieldstop_cam1[1][0] : fieldstop_cam1[1][1]] = 1
-    field_stop_mask_cam2[fieldstop_cam2[0][0] : fieldstop_cam2[0][1], fieldstop_cam2[1][0] : fieldstop_cam2[1][1]] = 1
 
     dark_current[0] /= len(darks_cam_1)
     dark_current[1] /= len(darks_cam_2)
-
-    dark_current[0] *= field_stop_mask_cam1
-    dark_current[1] *= field_stop_mask_cam2
 
     print(f"Dark current computed in {round(time.time() - tic, 3)} s.")
     return dark_current

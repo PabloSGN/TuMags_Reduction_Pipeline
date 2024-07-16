@@ -42,6 +42,39 @@ mod_matrices = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024
                               [0.948 ,  -0.62,	 0.205,	-0.619]])},            
  }
 
+
+mod_matrices_david = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024 
+    "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
+                          [0.9476, -0.5615, -0.6319, -0.3653],
+                          [1.0471,  0.5569,  0.4372, -0.7102],
+                          [1.0398,  0.6294, -0.4595, 0.6237]]),
+
+            1 : np.array([[1.0505, 0.5992 , -0.6032 ,-0.5262],
+                          [1.0372, 0.6798 , 0.6194  ,0.3431],
+                          [0.9663, -0.4213, -0.4031 , 0.7268],
+                          [0.9459, -0.5206, 0.4653  ,-0.5974]])},
+
+    "525.02" : {0 : np.array([[0.9603, -0.5244,  0.6005, 0.4470],
+                              [0.9525, -0.5592, -0.6413, -0.3498],
+                              [1.0435, 0.5823 ,  0.3865, -0.7071],
+                              [1.0437, 0.6645 , -0.4272, 0.6306 ]]),
+                                
+                1 : np.array([[1.0598, 0.6811 , -0.6278, -0.4302],
+                              [1.0408, 0.6922 , 0.5852 ,  0.3614],
+                              [0.9610, -0.4278, -0.4182,  0.6859],
+                              [0.9384, -0.4984, 0.3609 , -0.6310]])},  
+
+    "525.06" : {0 : np.array([[0.9557, -0.5389,  0.5895, 0.4505],
+                              [0.9486, -0.5501, -0.6593, -0.3247],
+                              [1.0485, 0.5693 , 0.3855 , -0.7246],
+                              [1.0473, 0.6737 , -0.4148, 0.6236]]), 
+
+                1 : np.array([[1.0635, 0.6843 , -0.5910 ,-0.4638],
+                              [1.0466, 0.7028 , 0.6070  ,0.3110],
+                              [0.9570, -0.3960, -0.3864 ,0.7157],
+                              [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
+ }
+
 # Compute demodulation matrixes by inverting
 demod_matrices = {}
 for filt in mod_matrices:
@@ -49,40 +82,43 @@ for filt in mod_matrices:
     for cam in mod_matrices[filt]:
         demod_matrices[filt][cam] = np.linalg.inv(mod_matrices[filt][cam])
 
+demod_matrices_david = {}
+for filt in mod_matrices_david:
+    demod_matrices_david[filt] = {}
+    for cam in mod_matrices_david[filt]:
+        demod_matrices_david[filt][cam] = np.linalg.inv(mod_matrices_david[filt][cam])
+
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, sizex, sizey, nmods, nlambdas, filt, mode = 'single', dmod_matrices = demod_matrices):
+def demodulate(data, sizex, sizey, nmods, nlambdas, filt, mode = 'standard', dmod_matrices = demod_matrices_david):
    
-    if mode == 'single':
+    if mode == 'standard':
 
         demod = np.zeros(np.shape(data))
-        dual_beam = np.zeros((nmods, nlambdas, sizex, sizey))
+        dual_beam = np.zeros((nlambdas, nmods, sizex, sizey))
 
         for wl in range(nlambdas):
 
-            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, :, wl], (4, sizex * sizey)))
-            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, :, wl], (4, sizex * sizey)))
+            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, sizex * sizey)))
+            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, sizex * sizey)))
 
-            demod[0, :, wl] = np.reshape(dm_cam1, (4, sizex, sizey))
-            demod[1, :, wl] = np.reshape(dm_cam2, (4, sizex, sizey))
+            demod[0, wl, :] = np.reshape(dm_cam1, (4, sizex, sizey))
+            demod[1, wl, :] = np.reshape(dm_cam2, (4, sizex, sizey))
 
-        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = -2) * 0.5
+        dual_beam = demod[0] * 0.5 + demod[1] * 0.5
 
-    if mode == 'single_wavelength':
+    if mode == 'standard_single_wavelength':
 
         demod = np.zeros(np.shape(data))
         dual_beam = np.zeros((nmods, sizex, sizey))
 
-        for wl in range(nlambdas):
+        dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0], (4, sizex * sizey)))
+        dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1], (4, sizex * sizey)))
 
-            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0], (4, sizex * sizey)))
-            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1], (4, sizex * sizey)))
-
-            demod[0] = np.reshape(dm_cam1, (4, sizex, sizey))
-            demod[1] = np.reshape(dm_cam2, (4, sizex, sizey))
+        demod[0] = np.reshape(dm_cam1, (4, sizex, sizey))
+        demod[1] = np.reshape(dm_cam2, (4, sizex, sizey))
 
         dual_beam = demod[0] * 0.5 + demod[1] * 0.5
-
 
     """
     elif mode == 'pixel':
