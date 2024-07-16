@@ -111,19 +111,19 @@ class nominal_observation:
 
         images_path_reshaped = images_path.reshape(nlambda, nmods, 2)
 
-        for mod in range(nmods):
-            self.info["Images_headers"][f"Mod_{mod}"] = {}
-            for lambd in range(nlambda):
+        for lambd in range(nlambda):
+            self.info["Images_headers"][f"wv_{lambd}"] = {}
+            for mod in range(nmods):
                 # Reading each image
                 im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
                 im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
                 # Saving images header except for CameraID entry
-                self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"] = {}
+                self.info["Images_headers"][f"wv_{lambd}"][f"M{mod}"] = {}
                 for key in head0:
                     if key == "cam":
                         pass
                     else:
-                        self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"][key] = head0[key]
+                        self.info["Images_headers"][f"wv_{lambd}"][f"M{mod}"][key] = head0[key]
             
                 # Sving image data into main data array
                 self.data[0, lambd, mod] = im0
@@ -148,4 +148,68 @@ class nominal_observation:
     def get_data(self):
         return self.data
 
+class nominal_flat:
 
+    def __init__(self, om, images_path, nreps, lambda_repeat = 4, obs_count_proccess = False, verbose = False):
+
+        print(f"Processing flats...")
+
+        self.info = {"ObservationMode" : om,
+                     "Images_headers" : {}}
+
+        self.data = np.zeros((2, # Number of cameras 
+                              cf.om_config[om]["Nlambda"],  # Number of wavelengths
+                              cf.om_config[om]["Nmods"],    # Number of Modulations
+                              cf.xsize, cf.ysize))  # Size of image (x, y)
+
+        nmods   = cf.om_config[om]["Nmods"]     # N mods from config file
+        nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
+
+        images_path_reshaped = images_path.reshape(nreps, nlambda, lambda_repeat, nmods, 2)
+
+        if obs_count_proccess != False:
+            reps = obs_count_proccess
+        else:
+            reps = [x for  x in range(nreps)]
+
+        for rep in reps:
+            for lambd in range(nlambda):
+                for lambd_rep in range(lambda_repeat):
+                    for mod in range(nmods):
+                        self.info["Images_headers"][f"Mod_{mod}"] = {}
+                        # Reading each image
+                        im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
+                        im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
+                        # Saving images header except for CameraID entry
+                        self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"] = {}
+                        for key in head0:
+                            if key == "cam":
+                                pass
+                            else:
+                                self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"][key] = head0[key]
+            
+                        # Sving image data into main data array
+                        self.data[0, lambd, mod] += im0
+                        self.data[1, lambd, mod] += np.flip(im1, axis = -1) # Flip cam 2 image. 
+        
+        self.data[0, lambd, mod] /= (nreps * lambda_repeat)
+        self.data[1, lambd, mod] /= (nreps * lambda_repeat)
+
+        # Completing info of Observation Mode with info from header
+        self.info["nAcc"] = head0["nAcc"]
+        self.info["Roix"] = head0["Roix"]
+        self.info["Roiy"] = head0["Roiy"]
+        self.info["Roix_offset"] = head0["Roix_offset"]
+        self.info["Roiy_offset"] = head0["Roiy_offset"]
+            
+        # Saving info from config file into observtaion mode info
+        for entry in cf.om_config[head0["ObservationMode"]]:
+            self.info[entry] = cf.om_config[head0["ObservationMode"]][entry]
+
+    # Get information of the observation mode and individual headers
+    def get_info(self):
+        return self.info
+    
+    # Get the data array
+    def get_data(self):
+        return self.data
