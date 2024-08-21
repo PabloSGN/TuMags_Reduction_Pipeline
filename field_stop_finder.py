@@ -147,7 +147,7 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
         if verbose:
             print("Computing correlation...")
         
-
+        # Computing correlation of the central pinhole (normalized) between cameras. 
         correlation = correlate(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] / np.max(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]]), 
                                 ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] / np.max(ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]]), mode='full', method = 'fft')
         
@@ -168,7 +168,7 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
 
         if plot_flag:
             
-            fig, axs = plt.subplots(2, 2, figsize = (10, 10))
+            _, axs = plt.subplots(2, 2, figsize = (10, 10))
             axs[0, 0].set_title("Pinholes Diff. pre-aligned")
             im = axs[0, 0].imshow(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] - \
                                   ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]], cmap = 'afmhot')
@@ -225,7 +225,7 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
 
         if plot_flag:
             
-            fig, axs = plt.subplots(1, 3, figsize = (15, 5))
+            _, axs = plt.subplots(1, 3, figsize = (15, 5))
 
             axs[0].set_title("Falts Diff. pre-aligned")
             im = axs[0].imshow(flat_cam1 - flat_cam2, cmap = 'afmhot')
