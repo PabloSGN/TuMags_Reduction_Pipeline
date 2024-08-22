@@ -13,10 +13,14 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 # Built-in Libs
 from astropy.io import fits
 import numpy as np
+import pandas as pd
 
 # Own libs
 from utils import read_Tumag
 import config as cf
+
+# Config
+Organization_folder_files = "Organized_files"
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -109,7 +113,7 @@ class nominal_observation:
         nmods   = cf.om_config[om]["Nmods"]     # N mods from config file
         nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
 
-        images_path_reshaped = images_path.reshape(nlambda, nmods, 2)
+        images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
         for lambd in range(nlambda):
             self.info["Images_headers"][f"wv_{lambd}"] = {}
@@ -150,9 +154,9 @@ class nominal_observation:
 
 class nominal_flat:
 
-    def __init__(self, om, images_path, nreps, lambda_repeat = 4, obs_count_proccess = False, verbose = False):
+    def __init__(self, om, images_path, nreps, dc, lambda_repeat = 4, verbose = False):
 
-        print(f"Processing flats...")
+        print(f"Processing images...")
 
         self.info = {"ObservationMode" : om,
                      "Images_headers" : {}}
@@ -165,21 +169,16 @@ class nominal_flat:
         nmods   = cf.om_config[om]["Nmods"]     # N mods from config file
         nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
 
-        images_path_reshaped = images_path.reshape(nreps, nlambda, lambda_repeat, nmods, 2)
+        images_path_reshaped = np.array(images_path).reshape(nreps, nlambda, lambda_repeat, nmods, 2)
 
-        if obs_count_proccess != False:
-            reps = obs_count_proccess
-        else:
-            reps = [x for  x in range(nreps)]
-
-        for rep in reps:
+        for rep in range(nreps):
             for lambd in range(nlambda):
                 for lambd_rep in range(lambda_repeat):
                     for mod in range(nmods):
                         self.info["Images_headers"][f"Mod_{mod}"] = {}
                         # Reading each image
-                        im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
-                        im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
+                        im0, head0 = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 0]) # Cam 1
+                        im1, _ = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 1]) # Cam 2
                         # Saving images header except for CameraID entry
                         self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"] = {}
                         for key in head0:
@@ -189,8 +188,8 @@ class nominal_flat:
                                 self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"][key] = head0[key]
             
                         # Sving image data into main data array
-                        self.data[0, lambd, mod] += im0
-                        self.data[1, lambd, mod] += np.flip(im1, axis = -1) # Flip cam 2 image. 
+                        self.data[0, lambd, mod] += im0 - dc[0]
+                        self.data[1, lambd, mod] += np.flip(im1, axis = -1) - dc[1] # Flip cam 2 image. 
         
         self.data[0, lambd, mod] /= (nreps * lambda_repeat)
         self.data[1, lambd, mod] /= (nreps * lambda_repeat)
@@ -213,3 +212,32 @@ class nominal_flat:
     # Get the data array
     def get_data(self):
         return self.data
+
+def get_images_paths(queries, verbose = True):
+
+    """
+    Queries have to be in format: ["DXX", start, end]
+    start and end are integers. 
+    "DXX" has to be one of the observation days -> D09 - D16 
+    """
+
+    "Allowing for various queries in case observation changed day"
+    for qry in queries:
+        day = qry[0]
+        start = qry[1]
+        end = qry[2]
+
+        if end < start:
+            raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
+        if day not in ["D9", "D10", "D11","D12","D13","D14","D15","D16"]:
+            raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D9, D10, D11, D12, D13,D14, D15, D16")
+        df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
+        selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
+
+        return selection_df.iloc[:, 1].tolist()
+
+
+        
+        
+
+

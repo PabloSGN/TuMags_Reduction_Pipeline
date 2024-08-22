@@ -104,7 +104,7 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     return cam1_fieldstop
 
-def apply_fieldstop_and_align(cam1, cam2, field_stop_c1, field_stop_c2):
+def apply_fieldstop_and_align_single_image(cam1, cam2, field_stop_c1, field_stop_c2):
 
     # New array to store fieldstopped and align images
     new_cam1 = np.zeros((np.shape(cam1)))
@@ -122,6 +122,29 @@ def apply_fieldstop_and_align(cam1, cam2, field_stop_c1, field_stop_c2):
 
     return new_cam1, new_cam2
 
+def apply_fieldstop_and_align_array(data, fs_c1, fs_c2):
+
+    shp = np.shape(data)
+
+    # Field stop of cam 1
+    field_stop_mask_cam1 = np.zeros((shp[-2:]))
+    field_stop_mask_cam1[fs_c1[0][0] : fs_c1[0][1], fs_c1[1][0] : fs_c1[1][1]] = 1
+
+    # New array to store fieldstopped and align images
+    new_data = np.zeros((np.shape(data)))
+
+    for lambd in range(shp[1]):
+        for mod in range(shp[2]):
+            # Apply cam 1 field stop
+            new_data[0, lambd, mod] = field_stop_mask_cam1 * data[0, lambd, mod]
+
+            # Align cam 2
+            new_data[1, lambd, mod, fs_c1[0][0] : fs_c1[0][1],
+                                    fs_c1[1][0] : fs_c1[1][1]] = \
+                                    data[1, lambd, mod, fs_c2[0][0] : fs_c2[0][1], 
+                                                        fs_c2[1][0] : fs_c2[1][1]]    
+
+    return new_data
 
 def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
                        pinhole_c2_path = None, method = "pinhole", verbose = True, plot_flag = True, cent_ph_x = central_pinhole_x, cent_ph_y = central_pinhole_y):
@@ -178,8 +201,8 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
             im = axs[1, 0].imshow(flat_cam1 - flat_cam2, cmap = 'afmhot')
             plt.colorbar(im, fraction=0.046, pad=0.04)
 
-            ph1, ph2 = apply_fieldstop_and_align(ph1, ph2, fs_c1, fs_c2)
-            flat_cam1, flat_cam2_shifted = apply_fieldstop_and_align(flat_cam1, flat_cam2, fs_c1, fs_c2)
+            ph1, ph2 = apply_fieldstop_and_align_single_image(ph1, ph2, fs_c1, fs_c2)
+            flat_cam1, flat_cam2_shifted = apply_fieldstop_and_align_single_image(flat_cam1, flat_cam2, fs_c1, fs_c2)
 
             axs[0, 1].set_title("Pinholes Diff. post-aligned")
             im = axs[0, 1].imshow(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] - \
@@ -231,7 +254,7 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
             im = axs[0].imshow(flat_cam1 - flat_cam2, cmap = 'afmhot')
             plt.colorbar(im, fraction=0.046, pad=0.04)
 
-            flat_cam1, flat_cam2_shifted = apply_fieldstop_and_align(flat_cam1, flat_cam2, fs_c1, fs_c2)
+            flat_cam1, flat_cam2_shifted = apply_fieldstop_and_align_single_image(flat_cam1, flat_cam2, fs_c1, fs_c2)
 
             axs[1].set_title("Falts Diff between shifts")
             im = axs[1].imshow(flat_cam2 - flat_cam2_shifted, cmap = 'afmhot')
