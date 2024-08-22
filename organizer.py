@@ -6,13 +6,8 @@ import bisect
 
 filename = "/home/pablo/Desktop/TuMag/ObservationCampaign/ls-lR.TumagAll.txt"
 
-data_main_folder = "/home/pablo/Desktop/TuMag/ObservationCampaign"
-
-first_csv = "Organized_files/D09.csv"
-
+data_main_folder = "/work/obs/TuMAG_data"
 keyword = "-rw-r--r--."
-
-day = "9"
 
 def get_time(name, format='%Y_%m_%d_%H_%M_%S'):
     return datetime.strptime(name, format)
@@ -31,7 +26,39 @@ day_folders = sorted(os.listdir(data_main_folder))
 day_folders = [x for x in day_folders if os.path.isdir(f"{data_main_folder}/{x}")]
 day_folders_timestamps = [get_time(fold[:19]) for fold in day_folders]
 
+csvfile = open("Organized_files/D09.csv", 'w', newline='')
+csv_writer = csv.writer(csvfile)
 
+day = "09"
+counter = 0
+for folder in day_folders:
+    print(f"Organizing folder: {folder}")
+    
+    timestamp = get_time(folder[:19])
+    folder_day = folder[8:10]
+    print(f"Detected day: {folder_day}")
+
+    if folder_day != day:
+        csvfile.close()
+        day = folder_day
+        print(f"Creating file: 'Organized_files/D{day}.csv'") 
+        csvfile = open(f"Organized_files/D{day}.csv", 'w', newline='')
+        csv_writer = csv.writer(csvfile)
+        counter = 0
+    
+    hour_folders = sorted(os.listdir(f"{data_main_folder}/{folder}"))
+    hour_folders = [x for x in hour_folders if os.path.isdir(f"{data_main_folder}/{folder}/{x}")]
+
+    for hour_fold in hour_folders:
+
+        all_files = sorted(glob.glob(f"{data_main_folder}/{folder}/{hour_fold}/*img"))
+        for file in all_files:
+            csv_writer.writerow([counter, file])
+            counter += 1
+        print(counter)
+
+
+"""
 with open(filename, "r") as file, open(first_csv, 'w', newline='') as csvfile:
 
     csv_writer = csv.writer(csvfile)
@@ -74,4 +101,5 @@ with open(filename, "r") as file, open(first_csv, 'w', newline='') as csvfile:
             break
      
 
-file.close()
+file.close
+"""

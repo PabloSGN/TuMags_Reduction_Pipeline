@@ -20,7 +20,7 @@ from utils import read_Tumag
 import config as cf
 
 # Config
-Organization_folder_files = "Organized_files"
+Organization_folder_files = "/home/pablo/Desktop/TuMag/TuMags_Reduction_Pipeline/Organized_files"
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -213,30 +213,47 @@ class nominal_flat:
     def get_data(self):
         return self.data
 
-def get_images_paths(queries, verbose = True):
+def get_images_paths(queries):
 
     """
     Queries have to be in format: ["DXX", start, end]
     start and end are integers. 
     "DXX" has to be one of the observation days -> D09 - D16 
     """
-
+    
     "Allowing for various queries in case observation changed day"
-    for qry in queries:
-        day = qry[0]
-        start = qry[1]
-        end = qry[2]
+
+    if isinstance(queries[0], list):
+        selection = []
+        for qry in queries:
+            print(qry)
+            day = qry[0]
+            start = qry[1]
+            end = qry[2]
+
+            if end < start:
+                raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
+            if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
+                raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
+            df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
+            selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
+
+            selection.append(selection_df.iloc[:, 1].tolist())
+    else:
+        day = queries[0]
+        start = queries[1]
+        end = queries[2]
 
         if end < start:
             raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
-        if day not in ["D9", "D10", "D11","D12","D13","D14","D15","D16"]:
-            raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D9, D10, D11, D12, D13,D14, D15, D16")
+        if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
+            raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
         df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
         selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
 
-        return selection_df.iloc[:, 1].tolist()
+        selection = selection_df.iloc[:, 1].tolist()
 
-
+    return selection
         
         
 
