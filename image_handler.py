@@ -255,6 +255,9 @@ def get_images_paths(queries):
 
     return selection
         
-        
-
-
+def read_ID(day, index):
+    df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
+    row = df[df.iloc[:, 0] == index]
+    print(row.iloc[0, 1])
+    I, H = read(row.iloc[0, 1])
+    return I, H
