@@ -11,7 +11,6 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 # ------------------------------ IMPORTS ----------------------------------------- #
 
 # Built-in Libs
-from astropy.io import fits
 import numpy as np
 import pandas as pd
 
