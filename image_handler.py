@@ -11,6 +11,7 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 # ------------------------------ IMPORTS ----------------------------------------- #
 
 # Built-in Libs
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -254,9 +255,19 @@ def get_images_paths(queries):
 
     return selection
         
-def read_ID(day, index):
+def read_ID(day, index, plotflag = False, verbose = False):
     df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
     row = df[df.iloc[:, 0] == index]
     print(row.iloc[0, 1])
     I, H = read(row.iloc[0, 1])
+
+    if verbose:
+        print("OC", H["ObservationCounter"])
+        print("OM", H["ObservationMode"])
+
+    if plotflag:
+        plt.figure(figsize = (10, 10))
+        plt.imshow(I, cmap = "gray")
+        plt.show()
+
     return I, H
