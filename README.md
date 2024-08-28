@@ -12,9 +12,11 @@ Disclaimer: Very early still...
 
 ## Installation of required libraries. 
 
-### IAA's server guide
+All the required libraries are included in the [requirements.txt](requirements.txt) file. Install them globally or through an enviroment. 
 
-Install the required libraries through a virtual enviroment:
+If using the IAA server (recomended to be able to use images IDs) the use of an enviroment is mandatory. 
+
+### Installing the dependencies with an enviroment. 
 
 - Anywhere on your directories -> run the command: 
 ```shell
