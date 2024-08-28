@@ -26,6 +26,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     N_wls = cf.om_config[om]["Nlambda"]
     N_mods = cf.om_config[om]["Nmods"]
     nreps = int(len(flat_fields_paths) / (2 * N_wls * N_mods * lambda_repeat))
+    naccs = h["nAcc"]
 
     if verbose:
         print(f"Observation Mode: {om}")
@@ -33,8 +34,8 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         print(f"Nº of wavelengths: {N_wls}")
         print(f"Nº of Modulations: {N_mods}")
 
-    # Read images
-    flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc)
+    # Read images and correct them from dark current (scaled to accumulation number)
+    flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc * naccs)
 
     print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
     return flat_obs.get_data(), flat_obs.get_info()

@@ -20,7 +20,7 @@ from utils import read_Tumag
 import config as cf
 
 # Config
-Organization_folder_files = "Organized_files"
+Organization_folder_files = "/home/users/dss/orozco/Tumag/PabloTests/Organized_files"
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -100,7 +100,7 @@ def read(image_path : str):
 # Class to process the observation mode -> headers and array 
 class nominal_observation:
 
-    def __init__(self, om, images_path):
+    def __init__(self, om, images_path, dc):
 
         self.info = {"ObservationMode" : om,
                      "Images_headers" : {}}
@@ -112,7 +112,7 @@ class nominal_observation:
 
         nmods   = cf.om_config[om]["Nmods"]     # N mods from config file
         nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
-
+        
         images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
         for lambd in range(nlambda):
@@ -130,8 +130,8 @@ class nominal_observation:
                         self.info["Images_headers"][f"wv_{lambd}"][f"M{mod}"][key] = head0[key]
             
                 # Sving image data into main data array
-                self.data[0, lambd, mod] = im0
-                self.data[1, lambd, mod] = np.flip(im1, axis = -1) # Flip cam 2 image. 
+                self.data[0, lambd, mod] = im0 - dc[0]
+                self.data[1, lambd, mod] = np.flip(im1, axis = -1) - dc[1] # Flip cam 2 image. 
         
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
@@ -216,20 +216,22 @@ class nominal_flat:
 def get_images_paths(queries):
 
     """
-    Queries have to be in format: ["DXX", start, end]
+    Queries have to be in format: "DXX-start-end"]
     start and end are integers. 
     "DXX" has to be one of the observation days -> D09 - D16 
     """
     
     "Allowing for various queries in case observation changed day"
 
-    if isinstance(queries[0], list):
+    if isinstance(queries, list):
         selection = []
         for qry in queries:
             print(qry)
-            day = qry[0]
-            start = qry[1]
-            end = qry[2]
+
+            parsed = qry.split("-")
+            day = parsed[0]
+            start = int(parsed[1])
+            end = int(parsed[2])
 
             if end < start:
                 raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
@@ -240,14 +242,15 @@ def get_images_paths(queries):
 
             selection.append(selection_df.iloc[:, 1].tolist())
     else:
-        day = queries[0]
-        start = queries[1]
-        end = queries[2]
+        parsed = queries.split("-")
+        day = parsed[0]
+        start = int(parsed[1])
+        end = int(parsed[2])
 
         if end < start:
-            raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
+            raise Exception(f"Query : {queries} not valid. Please prove end of quey larger than start.")
         if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
-            raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
+            raise Exception(f"Query : {queries} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
         df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
         selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
 

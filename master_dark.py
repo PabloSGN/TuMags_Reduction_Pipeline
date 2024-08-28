@@ -15,18 +15,23 @@ from field_stop_finder import find_fieldstop
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def compute_master_darks(darks_cam_1, darks_cam_2, verbose = False):
+def compute_master_darks(dark_paths, verbose = False):
 
     tic = time.time()
     # Read first image to obtain image size.
-    first_dark, _ = read_Tumag(darks_cam_1[0]) 
+    first_dark, head = read_Tumag(dark_paths[0]) 
     dark_current = np.zeros((2, np.shape(first_dark)[0],np.shape(first_dark)[0]))
     
+    darks_cam_1 = [x for x in dark_paths if "_0_" in x]
+    darks_cam_2 = [x for x in dark_paths if "_1_" in x]
+
     # Proccessing cam 1 darks
     if verbose:
         print(f"Computing darks ...")
         print(f"N darks for cam1 : {len(darks_cam_1)}")
         print(f"N darks for cam2 : {len(darks_cam_2)}")
+        print(f"N accumulations : {head['nAcc']}")
+
 
     for _, img_path in enumerate(darks_cam_1):
         I, _ = read_Tumag(img_path)
@@ -39,7 +44,10 @@ def compute_master_darks(darks_cam_1, darks_cam_2, verbose = False):
     dark_current[0] /= len(darks_cam_1)
     dark_current[1] /= len(darks_cam_2)
 
-    print(f"Dark current computed in {round(time.time() - tic, 3)} s.")
+    # We compute the dark current per accumulation to scale it to other observations.
+    dark_current /= head['nAcc']
+
+    print(f"Dark current computed in {round(time.time() - tic, 3)} s.\n")
     return dark_current
 
 
