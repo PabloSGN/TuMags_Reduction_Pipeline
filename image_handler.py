@@ -255,7 +255,11 @@ def get_images_paths(queries):
 
     return selection
         
-def read_ID(day, index, plotflag = False, verbose = False):
+def read_ID(image_index, plotflag = False, verbose = False):
+    
+    day = image_index[:3]
+    index = int(image_index[4:])
+
     df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
     row = df[df.iloc[:, 0] == index]
     print(row.iloc[0, 1])
