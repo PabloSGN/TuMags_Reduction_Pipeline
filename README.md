@@ -5,7 +5,7 @@ Tools for reading and processing raw data from TuMag.
 Disclaimer: Very early still...
 
 ## Table of Contents
-- [Installation](#installation)
+- [Installation](#installation-of-required-libraries)
 - [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
