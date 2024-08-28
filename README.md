@@ -75,10 +75,14 @@ The [image_handler](image_handler.py) module includes the function: [get_images_
 
 - Example of use:
 ```python
-paths = image_handler.get_images_paths([["D11", 1917, 5620], ["D12", 302, 17000]])
+paths = image_handler.get_images_paths([["D11-1917-5620"], ["D12-302-17000"]])
+```
+or 
+```python
+paths = image_handler.get_images_paths("D11-1917-5620")
 ```
 
-The paths variable will include all paths for the images between index 1917 and 5620 of file "D11.csv" and from 302 to 17000 of file "D12.csv"
+The paths variable will include all paths for the images between index 1917 and 5620 of file "D11.csv" and from 302 to 17000 of file "D12.csv" in the first example. 
 
 #### <ins>Reading a specific image from terminal:</ins>
 
