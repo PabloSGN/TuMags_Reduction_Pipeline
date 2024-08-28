@@ -20,7 +20,7 @@ from utils import read_Tumag
 import config as cf
 
 # Config
-Organization_folder_files = "/home/users/dss/orozco/Tumag/Organized_files"
+Organization_folder_files = "Organized_files"
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
