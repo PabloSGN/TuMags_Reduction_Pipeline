@@ -44,7 +44,7 @@ Image IDs can be found in the csv files. A guide to the observations labeled wit
 
 - Reading a specific image. 
 
-The "image_handler" module includes the function: "read_ID". Provided with an index of an image returns the Image (2D numpy array) and its header. 
+The [image_handler](image_handler.py) module includes the function: [read_ID](image_handler.py#L258). Provided with an index of an image returns the Image (2D numpy array) and its header. 
 
 <ins>Example of use:</ins>
 ```python
@@ -54,10 +54,10 @@ Please refer to the function for more info.
 
 - Obtaining the paths of multiple images
 
-The "image_handler" module includes the function: "get_images_paths". This function returns the paths of the images between two indexes of a specific file. It can be given multiple queries if images from different files are required.
+The [image_handler](image_handler.py) module includes the function: [get_images_paths](image_handler.py#L216). This function returns the paths of the images between two indexes of a specific file. It can be given multiple queries if images from different files are required.
 <ins>Example of use:</ins>
 ```python
-paths = image_handler([["D11", 1917, 5620], ["D12", 302, 17000]])
+paths = image_handler.get_images_paths([["D11", 1917, 5620], ["D12", 302, 17000]])
 ```
 
 The paths variable will include all paths for the images between index 1917 and 5620 of file "D11.csv" and from 302 to 17000 of file "D12.csv"
