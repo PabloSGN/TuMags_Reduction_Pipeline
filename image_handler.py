@@ -20,7 +20,7 @@ from utils import read_Tumag
 import config as cf
 
 # Config
-Organization_folder_files = "/home/pablo/Desktop/TuMag/TuMags_Reduction_Pipeline/Organized_files"
+Organization_folder_files = "/home/users/dss/orozco/Tumag/Organized_files"
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -255,7 +255,7 @@ def get_images_paths(queries):
 
     return selection
         
-def read_ID(image_index, plotflag = False, verbose = False):
+def read_ID(image_index, plotflag = False, verbose = False, header = False):
     
     day = image_index[:3]
     index = int(image_index[4:])
@@ -269,9 +269,13 @@ def read_ID(image_index, plotflag = False, verbose = False):
         print("OC", H["ObservationCounter"])
         print("OM", H["ObservationMode"])
 
+    if header:
+        print(H)
+
     if plotflag:
         plt.figure(figsize = (10, 10))
         plt.imshow(I, cmap = "gray")
         plt.show()
+
 
     return I, H
