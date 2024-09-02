@@ -27,7 +27,7 @@ Disclaimer: Very early still...
 
 ## Installation of required libraries. 
 
-All the required libraries are included in the [requirements.txt](requirements.txt) file. Install them globally or through an enviroment. 
+All the required libraries are included in the [requirements.txt](requirements.txt) file. Install them globaly or through an enviroment. 
 
 If using the IAA server (recomended to be able to use images IDs) the use of an enviroment is mandatory. 
 
@@ -43,6 +43,12 @@ Substituting "$myenv$" for whatever name you want to give it.
 source $myenv$/bin/activate.csh
 ```
 Again substitute the name of "$myenv$". 
+
+If the previous command raises an error complaining about aliases remove the .csh: 
+```shell
+source $myenv$/bin/activate
+```
+
 - Install dependencies: 
 ```shell
 pip install -r requirements.txt
