@@ -50,7 +50,6 @@ fs_c1, fs_c2 = compute_alignment(flat_cam1 = ff_obs1[0, -1, 0] / np.max(ff_obs1[
                                  pinhole_c2_path=pinholes_paths[1], 
                                  method = 'pinhole', plot_flag=True, verbose = True)
 
-
 # Field stop and align
 ff_obs1 = apply_fieldstop_and_align_array(ff_obs1, fs_c1, fs_c2)
 ff_obs2 = apply_fieldstop_and_align_array(ff_obs2, fs_c1, fs_c2)
@@ -58,6 +57,13 @@ ff_obs2 = apply_fieldstop_and_align_array(ff_obs2, fs_c1, fs_c2)
 # Select continuum wavelength and modulation 0 and normalize
 ff_1 = ff_obs1[:, -1, 0] / np.max(ff_obs1[:, -1, 0])
 ff_2 = ff_obs2[:, -1, 0] / np.max(ff_obs2[:, -1, 0])
+
+# flat field both cams, cont wave, modul 0. 
+pd_data_fe = pd.process_pd_observation(pd_indexes, filt = 0, verbose = True) 
+pd_data_mg = pd.process_pd_observation(pd_indexes, filt = 1, verbose = True) 
+
+
+print("Plotting...")
 
 fig, axs = plt.subplots(2, 3, figsize = (10, 10))
 im = axs[0, 0].imshow(ff_1[0], cmap = "magma")
@@ -88,12 +94,7 @@ plt.colorbar(im, cax=cax)
 plt.tight_layout()
 plt.savefig("flats_n_darks.png", bbox_inches = 'tight')
 
-# flat field both cams, cont wave, modul 0. 
-pd_data_fe = pd.process_pd_observation(pd_indexes, filt = 0, verbose = True) 
-pd_data_mg = pd.process_pd_observation(pd_indexes, filt = 1, verbose = True) 
 
-
-print("Plotting...")
 
 fig, axs = plt.subplots(2, 4, figsize = (17, 10))
 im = axs[0, 0].set_title("Iron defocused")

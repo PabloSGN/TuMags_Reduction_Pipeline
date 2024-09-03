@@ -86,7 +86,6 @@ def process_pd_observation(indexes, filt, verbose = False):
         for pd in range(2):
             # Loop over all images.
             for Nimg in range(Nims_pd):
-                print(Nimg)
                 I, _ = ih.read(paths[cam, pd, Nimg])
                 images[cam, pd, Nimg] = I
 

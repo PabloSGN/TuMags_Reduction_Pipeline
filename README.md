@@ -19,17 +19,11 @@ Brief description:
 
 Disclaimer: Very early still...
 
-## Table of Contents
-- [Installation](#installation-of-required-libraries)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+## Useful guides
+- [Installation](Documents/Installation.md)
+- [Working with TuMag's data](Documents/Working_with_Tumags_data.md)
 
-#Installation of required libraries. 
-
-
-
-## Usage
+## Overview of TuMag's observations
 
 
 ## Contributing
