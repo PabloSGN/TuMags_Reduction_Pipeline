@@ -11,6 +11,8 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 import glob
 import numpy as np
 import time
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 
 from scipy.signal import correlate, correlate2d
 
@@ -192,11 +194,15 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
             axs[0, 0].set_title("Pinholes Diff. pre-aligned")
             im = axs[0, 0].imshow(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] - \
                                   ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]], cmap = 'afmhot')
-            plt.colorbar(im, fraction=0.046, pad=0.04)
+            divider = make_axes_locatable(axs[0, 0])
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im, cax=cax)
 
             axs[1, 0].set_title("Falts Diff. pre-aligned")
             im = axs[1, 0].imshow(flat_cam1 - flat_cam2, cmap = 'afmhot')
-            plt.colorbar(im, fraction=0.046, pad=0.04)
+            divider = make_axes_locatable(axs[1, 0])
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im, cax=cax)
 
             ph1, ph2 = apply_fieldstop_and_align_single_image(ph1, ph2, fs_c1, fs_c2)
             flat_cam1, flat_cam2_shifted = apply_fieldstop_and_align_single_image(flat_cam1, flat_cam2, fs_c1, fs_c2)
@@ -204,11 +210,15 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
             axs[0, 1].set_title("Pinholes Diff. post-aligned")
             im = axs[0, 1].imshow(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] - \
                                   ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]], cmap = 'afmhot')
-            plt.colorbar(im, fraction=0.046, pad=0.04)
+            divider = make_axes_locatable(axs[0, 1])
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im, cax=cax)
 
             axs[1, 1].set_title("Falts Diff. post-aligned")
             im = axs[1, 1].imshow(flat_cam1 - flat_cam2_shifted, cmap = 'afmhot')
-            plt.colorbar(im, fraction=0.046, pad=0.04)
+            divider = make_axes_locatable(axs[1, 1])
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im, cax=cax)
 
             plt.tight_layout()
             plt.show()

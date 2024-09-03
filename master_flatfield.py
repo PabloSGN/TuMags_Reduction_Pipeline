@@ -38,8 +38,15 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     # Read images and correct them from dark current (scaled to accumulation number)
     flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc * naccs)
 
+    data = flat_obs.get_data()
+    norm_ff = np.zeros(np.shape(data))
+    # Normalize flat-fields
+    for lambd in range(N_wls):
+        for mod in range(N_mods):
+            norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, mod])
+
     print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
-    return flat_obs.get_data(), flat_obs.get_info()
+    return norm_ff, flat_obs.get_info()
     
 
 

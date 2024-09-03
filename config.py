@@ -9,7 +9,7 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 
 # ------------------------------ CONFIG ------------------------------------------ #
 
-# Exposition time
+# Exposure time
 tauexp = 42 # ms
 xsize = 2016 # Size in pixels X-dimension
 ysize = 2016 # Size in pixels Y-dimension

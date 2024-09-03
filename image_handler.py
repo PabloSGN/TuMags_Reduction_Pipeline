@@ -11,6 +11,8 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 # ------------------------------ IMPORTS ----------------------------------------- #
 
 # Built-in Libs
+import time
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -20,7 +22,8 @@ from utils import read_Tumag
 import config as cf
 
 # Config
-Organization_folder_files = "Organized_files"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+Organization_folder_files = os.path.join(current_dir, "Organized_files_v2")
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -115,7 +118,12 @@ class nominal_observation:
         
         images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
+        _, h1 = read(images_path_reshaped[0, 0, 0]) # read first image to get acc
+        # Scale the dark current
+        dc = dc * h1["nAcc"]
+
         for lambd in range(nlambda):
+            print(lambd)
             self.info["Images_headers"][f"wv_{lambd}"] = {}
             for mod in range(nmods):
                 # Reading each image
@@ -191,8 +199,11 @@ class nominal_flat:
                         self.data[0, lambd, mod] += im0 - dc[0]
                         self.data[1, lambd, mod] += np.flip(im1, axis = -1) - dc[1] # Flip cam 2 image. 
         
-        self.data[0, lambd, mod] /= (nreps * lambda_repeat)
-        self.data[1, lambd, mod] /= (nreps * lambda_repeat)
+        # Average over all the reps and lambda repeats
+        for lambd in range(nlambda):
+            for mod in range(nmods):
+                self.data[0, lambd, mod] /= (nreps * lambda_repeat)
+                self.data[1, lambd, mod] /= (nreps * lambda_repeat)
 
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
@@ -280,5 +291,31 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False):
         plt.imshow(I, cmap = "gray")
         plt.show()
 
-
     return I, H
+
+def separate_ocs(paths, verbose = True):
+
+    print(f"\nSeparating Observation counters...")
+    tic = time.time()
+    OCs = {}
+
+    for ind, im in enumerate(paths):
+        
+        print(f"{ind}/{len(paths)} read.")
+        _, H = read(im)
+        oc = H['ObservationCounter']
+        if oc not in OCs:
+            OCs[oc] = []
+        OCs[oc].append(im)
+
+    if verbose:
+        ocs = [x for x in OCs]
+        print(f"Images processed in {round(time.time() - tic, 2)}s.")
+        print(f"{len(ocs)} found.")
+        print(f"Images por mode:")
+        
+        for OC in OCs:
+            print(f"OC : {OC} - Nims : {len(OCs[OC])}")
+
+    return OCs
+
