@@ -71,7 +71,7 @@ def pd_observation_parser(indexes, verbose = False):
 
     return images_ordered
 
-def process_pd_observation(indexes, filt, dc, ff, verbose = False):
+def process_pd_observation(indexes, filt, verbose = False):
 
     print("Processing PD observation...")
 
@@ -88,6 +88,6 @@ def process_pd_observation(indexes, filt, dc, ff, verbose = False):
             for Nimg in range(Nims_pd):
                 print(Nimg)
                 I, _ = ih.read(paths[cam, pd, Nimg])
-                images[cam, pd, Nimg] = (I - dc[cam]) / ff[cam]
+                images[cam, pd, Nimg] = I
 
     return images

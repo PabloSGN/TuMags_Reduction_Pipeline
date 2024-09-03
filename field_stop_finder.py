@@ -77,7 +77,6 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     # Selecting the innermost points (in case border is tilted)
 
-    print(vcuts_bottom_c1)
     vcut_right_c1 = np.min(hcuts_left_c1) - margin 
     vcut_left_c1 = np.max(hcuts_right_c1) + margin
     hcut_top_c1 = np.min(vcuts_bottom_c1) - margin
@@ -96,9 +95,6 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
         axs[0].set_ylabel("Cam 1")
         plt.tight_layout()
         plt.show()
-
-    if verbose:
-        print(f"Cam 1 Field stop: {cam1_fieldstop}\nHeight : {cam1_fieldstop[0][1] - cam1_fieldstop[0][0]}\nWidth : {cam1_fieldstop[1][1] - cam1_fieldstop[1][0]}")
 
     print(f"Field stop computation finished in {round(time.time() - tic, 3)}s.")
 
@@ -153,7 +149,8 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
         # Read Pinhole images
 
         if verbose:
-            print("Computing alignment with pinholes..")
+            print("\nComputing alignment with pinholes..")
+            print(f"------------------------------------")
 
         if pinhole_c1_path == None or pinhole_c2_path == None:
             raise Exception("Provide pinhole paths for pinhole alignment.")
