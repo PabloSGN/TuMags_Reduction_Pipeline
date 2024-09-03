@@ -27,7 +27,8 @@ def compute_master_darks(dark_paths, verbose = False):
 
     # Proccessing cam 1 darks
     if verbose:
-        print(f"Computing darks ...")
+        print(f"\nComputing darks.")
+        print(f"------------------")
         print(f"N darks for cam1 : {len(darks_cam_1)}")
         print(f"N darks for cam2 : {len(darks_cam_2)}")
         print(f"N accumulations : {head['nAcc']}")

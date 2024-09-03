@@ -25,8 +25,11 @@ from master_flatfield import compute_master_flat_field
 
 # Config
 
+# At the start of the mission
 Nims_pd = 40 # Images of PD per camera
 
+# from the middle of the mission
+#Nims_pd = 32 # Images of PD per camera
 # ------------------------------  CODE  ------------------------------------------ # 
 
 def pd_observation_parser(indexes, verbose = False):
@@ -44,9 +47,6 @@ def pd_observation_parser(indexes, verbose = False):
                                       Order [camera - Filter - PD/F4 - Nimages]
     
     """
-
-    print("Parsing PD images...")
-
     image_paths = ih.get_images_paths(indexes)
 
     try:
@@ -59,13 +59,15 @@ def pd_observation_parser(indexes, verbose = False):
     images_ordered = np.transpose(images_ordered, axes = (3, 0, 1, 2)) 
 
     if verbose:
+        print(f"\nParsing PD images....")
+        print(f"------------------")
         print(f"Total number of images : {len(image_paths)}")
         
         _, H1 =ih.read(images_ordered[0, 0, 0, 0])
         _, H2 =ih.read(images_ordered[0, 1, 0, 0])
         
-        print(f"Filter 0 : {H1['FW2']} - LCVRs : {H1['lcvr1_volts']}-{H1['lcvr2_volts']}")
-        print(f"Filter 1 : {H2['FW2']} - LCVRs : {H2['lcvr1_volts']}-{H2['lcvr2_volts']}")
+        print(f"Filter 0 : {H1['FW2']}")
+        print(f"Filter 1 : {H2['FW2']}")
 
     return images_ordered
 
@@ -77,14 +79,15 @@ def process_pd_observation(indexes, filt, dc, ff, verbose = False):
 
     paths = paths[:, filt] # Select filter to process. 
 
-    images = np.zeros(np.shape(paths))
+    images = np.zeros((2, 2, Nims_pd, cf.xsize, cf.ysize))
     # Loop over 2 cameras
     for cam in range(2):
         # Loop over pd and f4 images
         for pd in range(2):
             # Loop over all images.
             for Nimg in range(Nims_pd):
-                I, H = ih.read(paths[cam, pd, Nimg])
+                print(Nimg)
+                I, _ = ih.read(paths[cam, pd, Nimg])
                 images[cam, pd, Nimg] = (I - dc[cam]) / ff[cam]
 
     return images

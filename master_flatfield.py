@@ -16,7 +16,8 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     tic = time.time()
 
     if verbose:
-        print(f"Computing flats.")
+        print(f"\nComputing flats.")
+        print(f"------------------")
         print(f"N flats: {len(flat_fields_paths)}")
 
     # Read first image to get info from header
