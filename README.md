@@ -39,7 +39,7 @@ All observations (scientific and calibrations) are recorded and grouped in their
 
 Tumag observations are operated through pre-configured **observation modes**. 
 
-| **Observing Mode** | **Filter** | **$N_{&lambda}$** | **Modulation scheme** | 
+| **Observing Mode** | **Filter** | **N &lambda** | **Modulation scheme** | 
 |----------|----------|----------|----------|
 | 0p    | 517 nm   | 15  | Vectorial   | 
 | 0s    | 517 mn   | 15  | Vectorial (1 Mod)   |
