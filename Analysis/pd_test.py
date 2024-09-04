@@ -44,16 +44,6 @@ dc = compute_master_darks(dark_paths[:-6], verbose = True) # There is something 
 ff_obs1, ff_obs1_info = compute_master_flat_field(ff_obs1_paths, dc = dc, verbose = True)
 ff_obs2, ff_obs2_info = compute_master_flat_field(ff_obs2_paths, dc = dc, verbose = True)
 
-# Find field-stop
-fs_c1, fs_c2 = compute_alignment(flat_cam1 = ff_obs1[0, -1, 0] / np.max(ff_obs1[0, -1, 0]),
-                                 flat_cam2 = ff_obs1[1, -1, 0] / np.max(ff_obs1[1, -1, 0]), pinhole_c1_path=pinholes_paths[0], 
-                                 pinhole_c2_path=pinholes_paths[1], 
-                                 method = 'pinhole', plot_flag=True, verbose = True)
-
-# Field stop and align
-ff_obs1 = apply_fieldstop_and_align_array(ff_obs1, fs_c1, fs_c2)
-ff_obs2 = apply_fieldstop_and_align_array(ff_obs2, fs_c1, fs_c2)
-
 # Select continuum wavelength and modulation 0 and normalize
 ff_1 = ff_obs1[:, -1, 0] / np.max(ff_obs1[:, -1, 0])
 ff_2 = ff_obs2[:, -1, 0] / np.max(ff_obs2[:, -1, 0])
@@ -102,8 +92,8 @@ im = axs[0, 1].set_title("Iron focused")
 im = axs[0, 2].set_title("Magnesium defocused")
 im = axs[0, 3].set_title("Magnesium focused")
 
-im = axs[0, 0].imshow(pd_data_fe[0, 0, 1], cmap = "gray", vmin = np.mean(pd_data_fe[0, 0, 0]) - np.std(pd_data_fe[0, 0, 0]) * 2,
-                                                          vmax = np.mean(pd_data_fe[0, 0, 0]) + np.std(pd_data_fe[0, 0, 0]) * 2 )
+im = axs[0, 0].imshow(pd_data_fe[0, 0, 1], cmap = "gray", vmin = np.mean(pd_data_fe[0, 0, 1]) - np.std(pd_data_fe[0, 0, 1]) * 2,
+                                                          vmax = np.mean(pd_data_fe[0, 0, 1]) + np.std(pd_data_fe[0, 0, 1]) * 2 )
 divider = make_axes_locatable(axs[0, 0])
 cax = divider.append_axes("right", size="5%", pad=0.05)
 plt.colorbar(im, cax=cax)

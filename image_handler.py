@@ -199,11 +199,8 @@ class nominal_flat:
                         self.data[0, lambd, mod] += im0 - dc[0]
                         self.data[1, lambd, mod] += np.flip(im1, axis = -1) - dc[1] # Flip cam 2 image. 
         
-        # Average over all the reps and lambda repeats
-        for lambd in range(nlambda):
-            for mod in range(nmods):
-                self.data[0, lambd, mod] /= (nreps * lambda_repeat)
-                self.data[1, lambd, mod] /= (nreps * lambda_repeat)
+        self.data /= (nreps * lambda_repeat)
+        self.data /= (nreps * lambda_repeat)
 
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
@@ -250,6 +247,7 @@ def get_images_paths(queries):
                 raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
             df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
             selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
+
 
             selection.append(selection_df.iloc[:, 1].tolist())
     else:
