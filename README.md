@@ -37,20 +37,27 @@ For a guide describing TuMag's commands for each timeline see [Julián's webpage
 
 All observations (scientific and calibrations) are recorded and grouped in their corresponding Timeline in the [Tumag's Logbook](Documents/TuMagCompass.csv). 
 
+### Observation Modes
+
 Tumag observations are operated through pre-configured **observation modes**. 
 
-| **Observing Mode** | **Filter** | **N &lambda** | **Modulation scheme** | 
-|----------|----------|----------|----------|
-| 0p    | 517 nm   | 15  | Vectorial   | 
-| 0s    | 517 mn   | 15  | Vectorial (1 Mod)   |
-| 1    | 517 nm   | 10 | Vectorial  | 
-| 2.02    | 525.02 nm  | 8  | Vectorial  |
+| **Observing Mode** | **Filter** | **Nº wavelengths** | **Modulation scheme** | 
+|:--------:|:--------:|:--------:|:--------:|
+| 0p    | 517    | 15  | Vectorial   | 
+| 0s    | 517    | 15  | No modulation   |
+| 1    | 517    | 10 | Vectorial  | 
+| 2.02    | 525.02   | 8  | Vectorial  |
 | 2.06    | 525.06  | 8  | Vectorial  |
-| 3.02    | 525.02 nm  | 5  | Longitudinal  |
+| 3.02    | 525.02   | 5  | Longitudinal  |
 | 3.06    | 525.06  | 5  | Longitudinal  |
-| 4    | 517  | 3  | Data 19  | Vectorial  |
-| 5.02    | 525.02 nm  | 3  | Vectorial  |
+| 4    | 517  | 3  | Vectorial  |
+| 5.02    | 525.02   | 3  | Vectorial  |
 | 5.06    | 525.06  | 3  | Vectorial  |
+
+### Observation Counters
+
+The **observation counter** (OC) is a field in the [images' header](Documents/Image_header.md) that identifies the observation mode corresponding to the image. All images of a specific observation mode share the same OC. The counter goes from 0 to 255 and then cycles.
+
 
 ## Contributing
 
