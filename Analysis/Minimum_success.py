@@ -8,6 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pickle
+from astropy.io import fits
+
 
 # Own Libs
 sys.path.append("/home/users/dss/orozco/Tumag/PabloTests")
@@ -39,7 +41,7 @@ obs_images = ih.get_images_paths(obs_index)
 # Compute dark current
 dc = compute_master_darks(dark_paths[:-6], verbose = True) # There is something strange in the last darks, you can see some structure -> Me los cargo con el :-6
 
-# Plotting Dark current
+"""# Plotting Dark current
 fig, axs = plt.subplots(1, 2, figsize = (14, 7))
 im1 = axs[0].imshow(dc[0], cmap = 'gray', vmin = np.mean(dc[0]) - np.std(dc[0]) * 2, vmax = np.mean(dc[0]) + np.std(dc[0]) * 2)
 im2 = axs[1].imshow(dc[1], cmap = 'gray', vmin = np.mean(dc[0]) - np.std(dc[0]) * 2, vmax = np.mean(dc[0]) + np.std(dc[0]) * 2)
@@ -56,25 +58,24 @@ divider = make_axes_locatable(axs[1])
 cax = divider.append_axes("right", size="5%", pad=0.05)
 plt.colorbar(im2, cax=cax)
 plt.tight_layout()
-
-plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_plots/DarkCurrent.png", bbox_inches = "tight")
+plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_plots/DarkCurrent.png", bbox_inches = "tight")"""
 
 # ----------------------------------------------------------------------------------- #
 # Compute flat-fields
 
 
-ff_obs1, ff_obs1_info = compute_master_flat_field(ff_obs1_paths, dc = dc, verbose = True)
+#ff_obs1, ff_obs1_info = compute_master_flat_field(ff_obs1_paths, dc = dc, verbose = True)
 ff_obs2, ff_obs2_info = compute_master_flat_field(ff_obs2_paths, dc = dc, verbose = True)
 
 # Compute field-stop and alignment.
 
-fs_c1, fs_c2 = compute_alignment(flat_cam1 = ff_obs1[0, -1, 0] / np.max(ff_obs1[0, -1, 0]),
-                                 flat_cam2 = ff_obs1[1, -1, 0] / np.max(ff_obs1[1, -1, 0]),
+fs_c1, fs_c2 = compute_alignment(flat_cam1 = ff_obs2[0, -1, 0] / np.max(ff_obs2[0, -1, 0]),
+                                 flat_cam2 = ff_obs2[1, -1, 0] / np.max(ff_obs2[1, -1, 0]),
                                  pinhole_c1_path=pinholes_paths[0], pinhole_c2_path=pinholes_paths[1], method = 'pinhole', plot_flag=False, verbose = True)
 
 # Align flats
 print("Aligning flats")
-ff1 = apply_fieldstop_and_align_array(ff_obs1, fs_c1, fs_c2)
+#ff1 = apply_fieldstop_and_align_array(ff_obs1, fs_c1, fs_c2)
 ff2 = apply_fieldstop_and_align_array(ff_obs2, fs_c1, fs_c2)
 
 # ----------------------------------------------------------------------------------- #
@@ -91,13 +92,13 @@ with open("minimum_success_observation_counters.pickle", 'rb') as file:
     Observation_counters = pickle.load(file)
 
 print("\nProcessing images of observing mode...")
-ob_mg = ih.nominal_observation("1", Observation_counters[81], dc)
+#ob_mg = ih.nominal_observation("1", Observation_counters[81], dc)
 print("Mode 1 processed.")
 
 ob_fe = ih.nominal_observation("2.02", Observation_counters[82], dc)
 print("Mode 2.02 processed.")
 
-
+"""
 print("Plotting")
 fig, axs = plt.subplots(1, 2, figsize = (14, 7))
 axs[0].plot(cf.om_config["1"]["lambda_array"], np.mean(ob_mg.get_data()[0, :, 0], axis = (1, 2)), marker = 'x', c = 'indigo', lw = 2, label = "Mod. 1")
@@ -118,22 +119,25 @@ axs[1].set_title("Mode 2.02")
 axs[0].grid(True, c = 'k', alpha = 0.3)
 axs[1].grid(True, c = 'k', alpha = 0.3)
 plt.tight_layout()
-plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_plots/Average_profile.png", bbox_inches = "tight")
+plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_plots/Average_profile.png", bbox_inches = "tight")"""
 
 print("Finished first plot")
 
-# Align observation
+"""# Align observation
 data_mg = apply_fieldstop_and_align_array(ob_mg.get_data(), fs_c1, fs_c2)
 info_mg = ob_mg.get_info()
 
+print("Correcting")
 mask = ff1[0, 0, 0] != 0
 # Correct flats
 corrected_mg = np.zeros(np.shape(data_mg))
 for mod in range(info_mg["Nmods"]):
     for lamb in range(info_mg["Nlambda"]):
-        corrected_mg[1, lamb, mod, mask] = (data_mg[0, lamb, mod, mask]) / ff1[0, lamb, mod, mask]
-        corrected_mg[0, lamb, mod, mask] = (data_mg[1, lamb, mod, mask]) / ff1[1, lamb, mod, mask]
+        corrected_mg[0, lamb, mod, mask] = (data_mg[0, lamb, mod, mask]) / ff1[0, lamb, mod, mask]
+        corrected_mg[1, lamb, mod, mask] = (data_mg[1, lamb, mod, mask]) / ff1[1, lamb, mod, mask]"""
 
+
+mask = ff2[0, 0, 0] != 0
 
 # Align observation
 data_fe = apply_fieldstop_and_align_array(ob_fe.get_data(), fs_c1, fs_c2)
@@ -143,11 +147,11 @@ info_fe = ob_fe.get_info()
 corrected_fe = np.zeros(np.shape(data_fe))
 for mod in range(info_fe["Nmods"]):
     for lamb in range(info_fe["Nlambda"]):
-        corrected_fe[1, lamb, mod, mask] = (data_fe[0, lamb, mod, mask]) / ff2[0, lamb, mod, mask]
-        corrected_fe[0, lamb, mod, mask] = (data_fe[1, lamb, mod, mask]) / ff2[1, lamb, mod, mask]
+        corrected_fe[0, lamb, mod, mask] = (data_fe[0, lamb, mod, mask]) / ff2[0, lamb, mod, mask]
+        corrected_fe[1, lamb, mod, mask] = (data_fe[1, lamb, mod, mask]) / ff2[1, lamb, mod, mask]
 
         
-fig, axs = plt.subplots(2, 2, figsize = (12, 12))
+"""fig, axs = plt.subplots(2, 2, figsize = (12, 12))
 axs[0, 0].set_title("Magnesium flats")
 im = axs[0, 0].imshow(ff1[0, -1, 0], cmap = 'inferno', vmin = np.mean(ff1[0, -1, 0]) - np.std(ff1[0, -1, 0]) * 3, vmax = np.mean(ff1[0, -1, 0]) + np.std(ff1[0, -1, 0]) * 3)
 divider = make_axes_locatable(axs[0, 0])
@@ -173,5 +177,31 @@ cax = divider.append_axes("right", size="5%", pad=0.05)
 plt.colorbar(im, cax=cax)
 
 plt.tight_layout()
-plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_plots/Flat_correction.png", bbox_inches = "tight")
+plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_plots/Flat_correction.png", bbox_inches = "tight")"""
 
+
+hdu = fits.PrimaryHDU(corrected_fe)
+hdu.writeto("Minimum_success_2_02.fits")
+
+
+demod, dual = demodulate(corrected_fe[:, -1], 2016, 2016, info_fe["Nmods"], info_fe["Nlambda"], filt = "525.02", mode = 'standard_single_wavelength') 
+
+fig, axs = plt.subplots(3, 4, figsize = (15, 14))
+
+axs[0, 0].imshow(demod[0, 0, 200:1750, 200:1750], cmap = "gray")
+axs[0, 1].imshow(demod[0, 1, 200:1750, 200:1750], cmap = "gray")
+axs[0, 2].imshow(demod[0, 2, 200:1750, 200:1750], cmap = "gray")
+axs[0, 3].imshow(demod[0, 3, 200:1750, 200:1750], cmap = "gray")
+
+axs[1, 0].imshow(demod[1, 0, 200:1750, 200:1750], cmap = "gray")
+axs[1, 1].imshow(demod[1, 1, 200:1750, 200:1750], cmap = "gray")
+axs[1, 2].imshow(demod[1, 2, 200:1750, 200:1750], cmap = "gray")
+axs[1, 3].imshow(demod[1, 3, 200:1750, 200:1750], cmap = "gray")
+
+axs[2, 0].imshow(dual[0, 200:1750, 200:1750], cmap = "gray")
+axs[2, 1].imshow(dual[1, 200:1750, 200:1750], cmap = "gray")
+axs[2, 2].imshow(dual[2, 200:1750, 200:1750], cmap = "gray")
+axs[2, 3].imshow(dual[3, 200:1750, 200:1750], cmap = "gray")
+
+plt.tight_layout()
+plt.show()

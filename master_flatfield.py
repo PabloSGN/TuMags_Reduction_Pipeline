@@ -44,6 +44,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     for lambd in range(N_wls):
         for mod in range(N_mods):
             norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, mod])
+            norm_ff[1, lambd, mod] = data[1, lambd, mod] / np.mean(data[1, lambd, mod])
 
     print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
     return norm_ff, flat_obs.get_info()

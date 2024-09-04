@@ -23,7 +23,7 @@ import config as cf
 
 # Config
 current_dir = os.path.dirname(os.path.abspath(__file__))
-Organization_folder_files = os.path.join(current_dir, "Organized_files_v2")
+Organization_folder_files = os.path.join(current_dir, "Organized_files")
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
