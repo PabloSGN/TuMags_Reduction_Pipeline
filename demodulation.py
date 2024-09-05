@@ -43,7 +43,7 @@ mod_matrices = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024
  }
 
 
-mod_matrices_david = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024 
+mod_matrices_david = { 
     "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
                           [0.9476, -0.5615, -0.6319, -0.3653],
                           [1.0471,  0.5569,  0.4372, -0.7102],

@@ -179,21 +179,27 @@ class nominal_flat:
 
         images_path_reshaped = np.array(images_path).reshape(nreps, nlambda, lambda_repeat, nmods, 2)
 
+        
         for rep in range(nreps):
             for lambd in range(nlambda):
+                if f"wv_{lambd}" not in self.info["Images_headers"]:
+                    self.info["Images_headers"][f"wv_{lambd}"] = {}
                 for lambd_rep in range(lambda_repeat):
+
                     for mod in range(nmods):
-                        self.info["Images_headers"][f"Mod_{mod}"] = {}
+                        if f"Mod_{mod}" not in self.info["Images_headers"][f"wv_{lambd}"]:
+                            self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"] = {}
                         # Reading each image
                         im0, head0 = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 0]) # Cam 1
                         im1, _ = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 1]) # Cam 2
                         # Saving images header except for CameraID entry
-                        self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"] = {}
                         for key in head0:
                             if key == "cam":
                                 pass
                             else:
-                                self.info["Images_headers"][f"Mod_{mod}"][f"wave_{lambd}"][key] = head0[key]
+                                if key not in self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"]:
+                                    self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key] = []
+                                self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key].append(head0[key])
             
                         # Sving image data into main data array
                         self.data[0, lambd, mod] += im0 - dc[0]

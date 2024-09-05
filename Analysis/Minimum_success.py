@@ -12,7 +12,7 @@ from astropy.io import fits
 
 
 # Own Libs
-sys.path.append("/home/users/dss/orozco/Tumag/PabloTests")
+sys.path.append("../")
 import config as cf
 from utils import read_Tumag
 from field_stop_finder import compute_alignment, apply_fieldstop_and_align_array
@@ -67,6 +67,14 @@ plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_p
 #ff_obs1, ff_obs1_info = compute_master_flat_field(ff_obs1_paths, dc = dc, verbose = True)
 ff_obs2, ff_obs2_info = compute_master_flat_field(ff_obs2_paths, dc = dc, verbose = True)
 
+plt.figure()
+plt.imshow(ff_obs2[0, 0, 0])
+plt.show()
+
+with open("minimum_success_flats_headers.pickle", 'wb') as file:
+    # Serialize and write the variable to the file
+    pickle.dump(ff_obs2_info, file)
+
 # Compute field-stop and alignment.
 
 fs_c1, fs_c2 = compute_alignment(flat_cam1 = ff_obs2[0, -1, 0] / np.max(ff_obs2[0, -1, 0]),
@@ -77,6 +85,10 @@ fs_c1, fs_c2 = compute_alignment(flat_cam1 = ff_obs2[0, -1, 0] / np.max(ff_obs2[
 print("Aligning flats")
 #ff1 = apply_fieldstop_and_align_array(ff_obs1, fs_c1, fs_c2)
 ff2 = apply_fieldstop_and_align_array(ff_obs2, fs_c1, fs_c2)
+
+plt.figure()
+plt.imshow(ff2[0, 0, 0])
+plt.show()
 
 # ----------------------------------------------------------------------------------- #
 
@@ -94,6 +106,26 @@ with open("minimum_success_observation_counters.pickle", 'rb') as file:
 print("\nProcessing images of observing mode...")
 #ob_mg = ih.nominal_observation("1", Observation_counters[81], dc)
 print("Mode 1 processed.")
+
+print(f"SHAPE : {np.shape(ff2)}")
+print(f"SHAPE plot: {np.shape(ff2[0, :, 0, -300:300, -300:300])}")
+
+print("Plotting")
+fig, axs = plt.subplots(figsize = (7, 7))
+
+axs.plot(cf.om_config["2.02"]["lambda_array"], np.mean(ff2[0, :, 0, 300:-300, 300:-300], axis = (1, 2)), marker = 'x', c = 'indigo', lw = 2)
+axs.plot(cf.om_config["2.02"]["lambda_array"], np.mean(ff2[0, :, 1, 300:-300, 300:-300], axis = (1, 2)), marker = 'x', c = 'darkorange', lw = 2)
+axs.plot(cf.om_config["2.02"]["lambda_array"], np.mean(ff2[0, :, 2, 300:-300, 300:-300], axis = (1, 2)), marker = 'x', c = 'crimson', lw = 2)
+axs.plot(cf.om_config["2.02"]["lambda_array"], np.mean(ff2[0, :, 3, 300:-300, 300:-300], axis = (1, 2)), marker = 'x', c = 'mediumseagreen', lw = 2)
+axs.legend(edgecolor = 'k')
+axs.set_xlabel(r"$\Delta \lambda$ [m$\AA$]")
+axs.set_ylabel("Average intensity")
+axs.set_title("Flats profiles")
+axs.grid(True, c = 'k', alpha = 0.3)
+plt.tight_layout()
+
+plt.show()
+
 
 ob_fe = ih.nominal_observation("2.02", Observation_counters[82], dc)
 print("Mode 2.02 processed.")
@@ -143,6 +175,10 @@ mask = ff2[0, 0, 0] != 0
 data_fe = apply_fieldstop_and_align_array(ob_fe.get_data(), fs_c1, fs_c2)
 info_fe = ob_fe.get_info()
 
+with open("minimum_success_de_images_headers.pickle", 'wb') as file:
+    # Serialize and write the variable to the file
+    pickle.dump(info_fe, file)
+
 # Correct flats
 corrected_fe = np.zeros(np.shape(data_fe))
 for mod in range(info_fe["Nmods"]):
@@ -181,27 +217,66 @@ plt.savefig(f"/home/users/dss/orozco/Tumag/PabloTests/Analysis/Minimum_success_p
 
 
 hdu = fits.PrimaryHDU(corrected_fe)
-hdu.writeto("Minimum_success_2_02.fits")
+hdu.writeto("Minimum_success_2_02.fits", overwrite = True)
 
 
 demod, dual = demodulate(corrected_fe[:, -1], 2016, 2016, info_fe["Nmods"], info_fe["Nlambda"], filt = "525.02", mode = 'standard_single_wavelength') 
 
 fig, axs = plt.subplots(3, 4, figsize = (15, 14))
 
-axs[0, 0].imshow(demod[0, 0, 200:1750, 200:1750], cmap = "gray")
-axs[0, 1].imshow(demod[0, 1, 200:1750, 200:1750], cmap = "gray")
-axs[0, 2].imshow(demod[0, 2, 200:1750, 200:1750], cmap = "gray")
-axs[0, 3].imshow(demod[0, 3, 200:1750, 200:1750], cmap = "gray")
+norm = np.median(demod[0, 0, 300:-300, 300:-300])
 
-axs[1, 0].imshow(demod[1, 0, 200:1750, 200:1750], cmap = "gray")
-axs[1, 1].imshow(demod[1, 1, 200:1750, 200:1750], cmap = "gray")
-axs[1, 2].imshow(demod[1, 2, 200:1750, 200:1750], cmap = "gray")
-axs[1, 3].imshow(demod[1, 3, 200:1750, 200:1750], cmap = "gray")
 
-axs[2, 0].imshow(dual[0, 200:1750, 200:1750], cmap = "gray")
-axs[2, 1].imshow(dual[1, 200:1750, 200:1750], cmap = "gray")
-axs[2, 2].imshow(dual[2, 200:1750, 200:1750], cmap = "gray")
-axs[2, 3].imshow(dual[3, 200:1750, 200:1750], cmap = "gray")
+im = axs[0, 0].imshow(demod[0, 0, 200:1750, 200:1750] / norm, cmap = "gray", vmin = 0.8, vmax = 1.4)
+divider = make_axes_locatable(axs[0, 0])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[0, 1].imshow(demod[0, 1, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[0, 1])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[0, 2].imshow(demod[0, 2, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[0, 2])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[0, 3].imshow(demod[0, 3, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[0, 3])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+
+im = axs[1, 0].imshow(demod[1, 0, 200:1750, 200:1750] / norm, cmap = "gray", vmin = 0.8, vmax = 1.4)
+divider = make_axes_locatable(axs[1, 0])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[1, 1].imshow(demod[1, 1, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[1, 1])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[1, 2].imshow(demod[1, 2, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[1, 2])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[1, 3].imshow(demod[1, 3, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[1, 3])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+
+im = axs[2, 0].imshow(dual[0, 200:1750, 200:1750] / norm, cmap = "gray", vmin = 0.8, vmax = 1.4)
+divider = make_axes_locatable(axs[2, 0])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[2, 1].imshow(dual[1, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[2, 1])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[2, 2].imshow(dual[2, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[2, 2])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
+im = axs[2, 3].imshow(dual[3, 200:1750, 200:1750] / norm, cmap = "gray", vmin = -0.03, vmax = 0.03)
+divider = make_axes_locatable(axs[2, 3])
+cax = divider.append_axes("right", size="5%", pad=0.05)
+plt.colorbar(im, cax=cax)
 
 plt.tight_layout()
 plt.show()
