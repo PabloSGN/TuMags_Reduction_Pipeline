@@ -58,6 +58,7 @@ Tumag observations are operated through pre-configured **observation modes**.
 
 The **observation counter** (OC) is a field in the [images' header](Documents/Image_header.md) that identifies the observation mode corresponding to the image. All images of a specific observation mode share the same OC. The counter goes from 0 to 255 and then cycles.
 
+Usually observations are identified with this field in [TuMag's Logbook](Documents/TuMagCompass.csv).
 
 ## Contributing
 

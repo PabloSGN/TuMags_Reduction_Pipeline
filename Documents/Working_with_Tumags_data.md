@@ -20,7 +20,7 @@ From file [D11.csv](../Organized_files/D11.csv#L103) in line 103 (ID's start at 
 
 All observations are recorded in the [TuMag's Logbook](TuMagCompass.csv) file. All timelines are detailed in the file with all the observation and calibration blocks indicated. 
 
-Every observation block has a column where the ID's are noted down. The format of labelling the observation block is "DXX-YYYY-ZZZZ". This indicates that the images composing the observation range from the image DXX-YYYY to DXX-ZZZZ, including all images in between. Some times different quearys appear in these cells, meaning that the images are separated.
+Every observation block has a column where the ID's are noted down. The format of labelling the observation block is "DXX-YYYY-ZZZZ". This indicates that the images composing the observation range from the image DXX-YYYY to DXX-ZZZZ, including all images in between. Some times different querys appear in these cells, meaning that the images are separated.
 
 Please read the remarks (sometimes difficult to understand even for the one who wrote them...)because sometimes observations are aborted, calibrations fail, etc...   
 
