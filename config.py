@@ -51,7 +51,8 @@ observation_modes = {
     9 : "5.06",
     64 : "PD_calibration",
     65 : "Spectral_calibration",
-    66 : "Polarimetric_calibration"}
+    66 : "Polarimetric_calibration",
+    128 : "Test"}
 
 # Observation Modes configuration:
 om_config  = {
