@@ -309,8 +309,10 @@ def separate_ocs(paths, verbose = True):
         _, H = read(im)
         oc = H['ObservationCounter']
         if oc not in OCs:
-            OCs[oc] = []
-        OCs[oc].append(im)
+            OCs[oc] = {}
+            OCs[oc]["OM"] = H["ObservationMode"]
+            OCs[oc]["ims"] = []
+        OCs[oc]["ims"].append(im)
 
     if verbose:
         ocs = [x for x in OCs]
@@ -319,7 +321,7 @@ def separate_ocs(paths, verbose = True):
         print(f"Images por mode:")
         
         for OC in OCs:
-            print(f"OC : {OC} - Nims : {len(OCs[OC])}")
+            print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])}")
 
     return OCs
 

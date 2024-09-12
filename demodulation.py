@@ -90,33 +90,35 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, sizex, sizey, nmods, nlambdas, filt, mode = 'standard', dmod_matrices = demod_matrices_david):
+def demodulate(data, nmods, nlambdas, filt, mode = 'standard', dmod_matrices = demod_matrices_david):
    
     if mode == 'standard':
 
+        size = np.shape(data)[-1]
         demod = np.zeros(np.shape(data))
-        dual_beam = np.zeros((nlambdas, nmods, sizex, sizey))
+        dual_beam = np.zeros((nlambdas, nmods, size, size))
 
         for wl in range(nlambdas):
 
-            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, sizex * sizey)))
-            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, sizex * sizey)))
+            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
+            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
 
-            demod[0, wl, :] = np.reshape(dm_cam1, (4, sizex, sizey))
-            demod[1, wl, :] = np.reshape(dm_cam2, (4, sizex, sizey))
+            demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
+            demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
 
         dual_beam = demod[0] * 0.5 + demod[1] * 0.5
 
     if mode == 'standard_single_wavelength':
 
+        size = np.shape(data)[-1]
         demod = np.zeros(np.shape(data))
-        dual_beam = np.zeros((nmods, sizex, sizey))
+        dual_beam = np.zeros((nmods, size, size))
 
-        dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0], (4, sizex * sizey)))
-        dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1], (4, sizex * sizey)))
+        dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0], (4, size * size)))
+        dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1], (4, size * size)))
 
-        demod[0] = np.reshape(dm_cam1, (4, sizex, sizey))
-        demod[1] = np.reshape(dm_cam2, (4, sizex, sizey))
+        demod[0] = np.reshape(dm_cam1, (4, size, size))
+        demod[1] = np.reshape(dm_cam2, (4, size, size))
 
         dual_beam = demod[0] * 0.5 + demod[1] * 0.5
 
