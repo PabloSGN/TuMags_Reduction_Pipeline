@@ -2,26 +2,13 @@
 
 Tools for reading and processing raw data from TuMag.
 
-Brief description: 
-- Check_image_id.py : Python function to be called throuth termiinal to read images through ID.
-- config.py : Config fie with headers info, observation modes info, etc
-- demodulation.py : Module to compute demodulation. 
-- field_stop_finder.py : Module to find field stop and align images. 
-- fringes.py : Module to clean images from fringes. 
-- image_handler.py : Module to read .img files, process observation modes, flat-field modes.
-- master_dark.py : Module to compute dark current. 
-- master_flat_field : Module to compute master flat-fields- 
-- organizer.py : Python script to generate the IDs for the images.   
-- requirements.txt : Dependencies to run the pipeline.
-- utils.py : Helper module to process raw images. 
-- vlos.py : Module to compute the cog velocities. 
-- xtalk.py : Module to compute and correct x-talk. 
-
 Disclaimer: Very early still...
 
 ## Useful guides
 - [Installation](Documents/Installation.md)
 - [Working with TuMag's data](Documents/Working_with_Tumags_data.md)
+- [Correcting observations](Documents/Correcting_observations.md)
+- [Module guide](Documents/Module_guide.md)
 
 ## Overview of TuMag's observations
 
@@ -37,9 +24,11 @@ For a guide describing TuMag's commands for each timeline see [Julián's webpage
 
 All observations (scientific and calibrations) are recorded and grouped in their corresponding Timeline in the [Tumag's Logbook](Documents/TuMagCompass.csv). 
 
-### Observation Modes
+### Observation Modes (OM)
 
 Tumag observations are operated through pre-configured **observation modes**. 
+
+<ins>Science obsering modes:</ins> 
 
 | **Observing Mode** | **Filter** | **Nº wavelengths** | **Modulation scheme** | 
 |:--------:|:--------:|:--------:|:--------:|
@@ -53,6 +42,12 @@ Tumag observations are operated through pre-configured **observation modes**.
 | 4    | 517  | 3  | Vectorial  |
 | 5.02    | 525.02   | 3  | Vectorial  |
 | 5.06    | 525.06  | 3  | Vectorial  |
+
+
+<ins>Calibration obsering modes:</ins> 
+
+Calibration observing modes are more flexible than science observing modes nd can be confugured to match the observations. For a detailed description of each calibration OM see [Calibration OMs guide](Documents/Calibration_oms_guide.md)
+
 
 ### Observation Counters
 
