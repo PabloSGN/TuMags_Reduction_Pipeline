@@ -311,17 +311,43 @@ def separate_ocs(paths, verbose = True):
         if oc not in OCs:
             OCs[oc] = {}
             OCs[oc]["OM"] = H["ObservationMode"]
+            OCs[oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
             OCs[oc]["ims"] = []
-        OCs[oc]["ims"].append(im)
+            OCs[oc]["empty"] = True
+
+        elif OCs[oc]["empty"]:
+            OCs[oc]["ims"].append(im)
+            if len( OCs[oc]["ims"]) == OCs[oc]["Expected Nim"]:
+                OCs[oc]["empty"] = False
+
+        else:
+            new_oc = f"{oc}_a"
+
+            if new_oc not in OCs:
+                OCs[new_oc] = {}
+                OCs[new_oc]["OM"] = H["ObservationMode"]
+                OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
+                OCs[new_oc]["ims"] = []
+                OCs[new_oc]["empty"] = True
+
+            elif OCs[new_oc]["empty"]:
+                OCs[new_oc]["ims"].append(im)
+                if len( OCs[oc]["ims"]) == OCs[new_oc]["Expected Nim"]:
+                    OCs[new_oc]["empty"] = False
 
     if verbose:
         ocs = [x for x in OCs]
         print(f"Images processed in {round(time.time() - tic, 2)}s.")
         print(f"{len(ocs)} found.")
         print(f"Images por mode:")
-        
+     
         for OC in OCs:
-            print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])}")
+            if OCs[OC]["empty"]:
+                state = "Incomplete"
+            else:
+                state = "Complete"
+                
+            print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])} - {state}")
 
     return OCs
 

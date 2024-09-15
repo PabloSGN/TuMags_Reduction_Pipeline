@@ -144,9 +144,12 @@ def apply_fieldstop_and_align_array(data, fs_c1, fs_c2):
 
     return new_data
 
-def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
-                       pinhole_c2_path = None, method = "pinhole", verbose = True, plot_flag = True, cent_ph_x = central_pinhole_x, cent_ph_y = central_pinhole_y):
+def compute_alignment(flats, pinholes_paths, method = "pinhole", verbose = True, cent_ph_x = central_pinhole_x, cent_ph_y = central_pinhole_y):
     
+    # Sperate cameras and normalize flat fields
+    flats_cam1 = flats[0] / np.max(flats[0])
+    flats_cam2 = flats[1] / np.max(flats[1])
+
     if method == "pinhole":
         # Read Pinhole images
 
@@ -154,11 +157,15 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
             print("\nComputing alignment with pinholes..")
             print(f"------------------------------------")
 
-        if pinhole_c1_path == None or pinhole_c2_path == None:
+        if pinholes_paths == None:
             raise Exception("Provide pinhole paths for pinhole alignment.")
 
-        ph1, _ = read_Tumag(pinhole_c1_path)
-        ph2, _ = read_Tumag(pinhole_c2_path)
+        pinholes_cam1 = [x for x in pinholes_paths if "_0_" in x]
+        pinholes_cam2 = [x for x in pinholes_paths if "_1_" in x]
+
+        ph1, _ = read_Tumag(pinholes_cam1[0])
+        ph2, _ = read_Tumag(pinholes_cam2[0])
+        
         ph2 = np.flip(ph2, axis = -1) # Flip cam 2
 
         # Normalize pinholes
@@ -188,47 +195,14 @@ def compute_alignment(flat_cam1, flat_cam2 = None, pinhole_c1_path = None,
         fs_c2[0] = fs_c1[0] - int(shift_x)
         fs_c2[1] = fs_c1[1] - int(shift_y)
 
-        if plot_flag:
-            
-            _, axs = plt.subplots(2, 2, figsize = (10, 10))
-            axs[0, 0].set_title("Pinholes Diff. pre-aligned")
-            im = axs[0, 0].imshow(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] - \
-                                  ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]], cmap = 'afmhot')
-            divider = make_axes_locatable(axs[0, 0])
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(im, cax=cax)
-
-            axs[1, 0].set_title("Falts Diff. pre-aligned")
-            im = axs[1, 0].imshow(flat_cam1 - flat_cam2, cmap = 'afmhot')
-            divider = make_axes_locatable(axs[1, 0])
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(im, cax=cax)
-
-            ph1, ph2 = apply_fieldstop_and_align_single_image(ph1, ph2, fs_c1, fs_c2)
-            flat_cam1, flat_cam2_shifted = apply_fieldstop_and_align_single_image(flat_cam1, flat_cam2, fs_c1, fs_c2)
-
-            axs[0, 1].set_title("Pinholes Diff. post-aligned")
-            im = axs[0, 1].imshow(ph1[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]] - \
-                                  ph2[cent_ph_x[0]:cent_ph_x[1], cent_ph_y[0]:cent_ph_y[1]], cmap = 'afmhot')
-            divider = make_axes_locatable(axs[0, 1])
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(im, cax=cax)
-
-            axs[1, 1].set_title("Falts Diff. post-aligned")
-            im = axs[1, 1].imshow(flat_cam1 - flat_cam2_shifted, cmap = 'afmhot')
-            divider = make_axes_locatable(axs[1, 1])
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(im, cax=cax)
-
-            plt.tight_layout()
-            plt.show()
-
         if verbose:
-            print(f"Shift between cameras : X =  {shift_x} - Y - {shift_y} ")
+            print(f"Shift between cameras : X =  {shift_x} - Y = {shift_y} ")
 
         return fs_c1, fs_c2
     
     elif method == 'flats':
+
+        raise Exception("Not tested...")
 
         if verbose:
             print("Computing alignment with flat-fields...")
