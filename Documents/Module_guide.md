@@ -7,8 +7,8 @@ Brief description:
 - field_stop_finder.py : Module to find field stop and align images. 
 - fringes.py : Module to clean images from fringes. 
 - image_handler.py : Module to read .img files, process observation modes, flat-field modes. [documentation](./Modules_documentations/image_handler.md)
-- master_dark.py : Module to compute dark current. 
-- master_flat_field : Module to compute master flat-fields- 
+- master_dark.py : Module to compute dark current. [documentation](./Modules_documentations/master_dark.md)
+- master_flat_field : Module to compute master flat-fields. [documentation](./Modules_documentations/master_flatfield.md)
 - organizer.py : Python script to generate the IDs for the images.   
 - requirements.txt : Dependencies to run the pipeline.
 - utils.py : Helper module to process raw images. 

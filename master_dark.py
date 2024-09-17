@@ -1,15 +1,15 @@
 # ---------------------------- DESCRIPTION --------------------------------------- #
+"""
+Function to compute the dark current from a set of observations. 
 
+It averages all observations and retruns the dark current per acumulation.
+
+"""
 # ------------------------------ IMPORTS ----------------------------------------- #
-import glob
-import os
+
 import numpy as np
 from utils import read_Tumag
-
 import time
-import matplotlib.pyplot as plt
-
-from field_stop_finder import find_fieldstop
 
 # ------------------------------ CONFIG ------------------------------------------ #
 

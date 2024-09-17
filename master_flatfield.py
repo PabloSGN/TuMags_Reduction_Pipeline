@@ -1,5 +1,10 @@
 # ---------------------------- DESCRIPTION --------------------------------------- #
 
+"""
+Function to compute the master flat field from a set of flat-field observations of 
+a single observation mode. 
+"""
+
 # ------------------------------ IMPORTS ----------------------------------------- #
 import numpy as np
 import time
@@ -26,7 +31,11 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     om = h["ObservationMode"]
     N_wls = cf.om_config[om]["Nlambda"]
     N_mods = cf.om_config[om]["Nmods"]
-    nreps = int(len(flat_fields_paths) / (2 * N_wls * N_mods * lambda_repeat))
+
+    if len(flat_fields_paths) % (2 * N_wls * N_mods * lambda_repeat) == 0:
+        nreps = int(len(flat_fields_paths) / (2 * N_wls * N_mods * lambda_repeat))
+    else:
+        raise Exception("Observations are incomplete, please remove images from incomplete OC. This will be upgraded...")
     naccs = h["nAcc"]
 
     if verbose:
