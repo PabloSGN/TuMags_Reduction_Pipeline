@@ -311,9 +311,14 @@ def separate_ocs(paths, verbose = True):
         if oc not in OCs:
             OCs[oc] = {}
             OCs[oc]["OM"] = H["ObservationMode"]
-            OCs[oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
             OCs[oc]["ims"] = []
             OCs[oc]["empty"] = True
+            OCs[oc]["ims"].append(im)
+
+            if OCs[oc]["OM"] in cf.om_config:
+                OCs[oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
+            else:
+                OCs[oc]["Expected Nim"] = 999
 
         elif OCs[oc]["empty"]:
             OCs[oc]["ims"].append(im)
@@ -326,9 +331,13 @@ def separate_ocs(paths, verbose = True):
             if new_oc not in OCs:
                 OCs[new_oc] = {}
                 OCs[new_oc]["OM"] = H["ObservationMode"]
-                OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
+                if OCs[oc]["OM"] in cf.om_config:
+                    OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
+                else:
+                    OCs[oc]["Expected Nim"] = 999
                 OCs[new_oc]["ims"] = []
                 OCs[new_oc]["empty"] = True
+                OCs[new_oc]["ims"].append(im)
 
             elif OCs[new_oc]["empty"]:
                 OCs[new_oc]["ims"].append(im)

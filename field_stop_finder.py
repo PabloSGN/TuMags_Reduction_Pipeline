@@ -147,8 +147,8 @@ def apply_fieldstop_and_align_array(data, fs_c1, fs_c2):
 def compute_alignment(flats, pinholes_paths, method = "pinhole", verbose = True, cent_ph_x = central_pinhole_x, cent_ph_y = central_pinhole_y):
     
     # Sperate cameras and normalize flat fields
-    flats_cam1 = flats[0] / np.max(flats[0])
-    flats_cam2 = flats[1] / np.max(flats[1])
+    flat_cam1 = flats[0] / np.max(flats[0])
+    flat_cam2 = flats[1] / np.max(flats[1])
 
     if method == "pinhole":
         # Read Pinhole images
@@ -188,7 +188,7 @@ def compute_alignment(flats, pinholes_paths, method = "pinhole", verbose = True,
 
         # Normalize flat_field and calculate field-stop
         flat_cam1 = flat_cam1 / np.max(flat_cam1)
-        fs_c1 = find_fieldstop(cam1 = flat_cam1, plot_flag = plot_flag, verbose = verbose)
+        fs_c1 = find_fieldstop(cam1 = flat_cam1, plot_flag = False, verbose = verbose)
 
         # Generate field stop for cam 2 from field stop of cam 1 and shift
         fs_c2 = np.zeros(np.shape(fs_c1)).astype("int")
