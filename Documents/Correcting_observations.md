@@ -167,4 +167,11 @@ Ensure to divide each observation by the flat field of the corresponding wavelng
 
 ## Demodulation
 
+To compute the stokes parameters use the function [demodulation](../demodulation.py) from the [demodulation.py](../demodulation.py) module. 
+```python
+demodulated, dual_beamed = demodulation.demodulate(corrected, info_mg["Nmods"], info_mg["Nlambda"], filt = info_mg["line"])
+```
+This function requires a numpy array containing the images from both cameras, all modulations and wavelengths in a numpy array, the number of modulations, number of wavelengths and pre-filter (these three can be obtained directly from the observation mode info). 
+
+It returns the demodulated array with the same size as the input (demodulated output) and the dual-beamed demodulated array.  
 

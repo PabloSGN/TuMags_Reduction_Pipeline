@@ -1,10 +1,10 @@
 # ---------------------------- DESCRIPTION --------------------------------------- #
 
 """
-Information of the headers of the .img files and header creation of reduced
-observations.
+This module provides functionality to handle and process .img files. 
+It includes classes for reading image headers and metadata and managing observations.
 
-author: Pablo Santamarina Guerrero(pablosantamarinag@gmail.com) 
+author: Pablo Santamarina Guerrero (pablosantamarinag@gmail.com) 
 Instituto de Astrofísica de Andalucía (IAA-CSIC) 
 """
 
