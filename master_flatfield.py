@@ -9,7 +9,6 @@ a single observation mode.
 import numpy as np
 import time
 
-from utils import read_Tumag
 import config as cf
 import image_handler as ih
 

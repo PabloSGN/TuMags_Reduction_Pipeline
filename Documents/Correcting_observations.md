@@ -9,13 +9,23 @@ The standard procedure of dtaa correction is the following:
 6. Demodulate. 
 7. Correct X-talk. 
 
-Let's go over these steps...
+Let's go over these steps in the case of the minimum success observations (Comm 1 + Comm 2 timelines.)
 
-## Identifiying images. 
+## Identifying images.
 
-First identify the images corresponding to each calibration block using the [Tumag's Logsheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing)
+To identify the images belonging to each block (calibration and scientific observations) use the [logsheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing) and the corresponding file from the [Organized files](../Organized_files/) directory. 
 
-Let's say we want to process the minimum success observations (Comm 1 + Comm 2).
+The minimum success observations are composed of timelines: Comm 1 and Comm 2, and consist of:
+1. Dark set observations
+2. Flat fields for Observing mode 1 and 2.02
+3. Observation block of 1 + 2.02
+4. Pinholes
+5. Phase diveristy observations. 
+
+From the logsheet:
+
+![Screenshot](Images_for_guides/Comm1_loghseet.png)
+![Screenshot](Images_for_guides/Comm2_logsheet.png)
 
 The images are identified through the following indexes: 
 ```python
@@ -41,7 +51,7 @@ obs_images = ih.get_images_paths(obs_index)
 ```
 2. <ins>Working locally.</ins>
 
-If working on a local machine you will need to download the data, and generate the paths of your machine. <ins>**Remember to provide them sorted!** </ins>
+If working on a local machine you will need to identify the images with te corresponding file from the [Organized files](../Organized_files/) directory, download the data, and generate the paths of your machine. <ins>**Remember to provide them sorted!** </ins>
 
 If stored in separate folders this can be achieved with the [glob](https://docs.python.org/3/library/glob.html) module by: 
 ```python

@@ -1,14 +1,9 @@
-Here is the documentation for the provided Python module:
-
-# **Module Documentation**
-
 ## **Description**
 This module provides a function to compute the master flat field from a set of flat-field observations for a single observation mode. The function reads a series of flat-field images, corrects them for dark current, normalizes them, and returns the corrected flat-field data.
 
 ## **Imports**
 - **`numpy (np)`**: Used for numerical computations, specifically handling arrays and matrices.
 - **`time`**: Used for timing the execution of the function.
-- **`utils.read_Tumag`**: A custom function (not used directly in this function) for reading `.img` files.
 - **`config (cf)`**: Contains observation mode configuration data such as the number of wavelengths and modulations for each observation mode.
 - **`image_handler (ih)`**: A custom module that handles images, including processing flat-field modes..
 
@@ -44,7 +39,7 @@ The configuration settings are implicitly handled within the function through th
 
 ### **Example Usage:**
 ```python
-flat_fields_paths = image_handler.get_images_paths("D10-100-700")
+flat_fields_paths = image_handler.get_images_paths("D10-100-1699")
 dark_current = compute_master_darks(dark_paths)
 norm_ff, flat_info = compute_master_flat_field(flat_fields_paths, dark_current, verbose=True)
 ```
@@ -53,10 +48,10 @@ norm_ff, flat_info = compute_master_flat_field(flat_fields_paths, dark_current, 
 ```
 Computing flats.
 ------------------
-N flats: 40
+N flats: 1600
 Observation Mode: OM1
-Nº of repetitions: 10
-Nº of wavelengths: 5
-Nº of Modulations: 2
+Nº of repetitions: 5
+Nº of wavelengths: 10
+Nº of Modulations: 4
 Flat-fields computed in 3.456 s.
 ```

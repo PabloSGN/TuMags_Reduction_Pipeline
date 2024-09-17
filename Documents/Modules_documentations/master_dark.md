@@ -1,7 +1,3 @@
-Here is the documentation for the provided Python module:
-
-# **Module Documentation**
-
 ## **Description**
 This module provides a function to compute the dark current from a set of observations. The function reads a series of images, averages them, and returns the dark current per accumulation to allow scaling for different observations. 
 
