@@ -50,7 +50,7 @@ The function returns two variables:
 
 ## Phase diversity
 
-Phase diveristy calibrtionsets consist on 4 different observation modes: 2 for each observed filter (depens on timeline) and one foces and one defocused. 
+Phase diveristy calibrtion sets consist on 4 different observation modes: 2 for each observed filter (depens on timeline) and one foces and one defocused. 
 
 Each observation mode consists on 40 images per camera (start of the mission) or 32 images (changed in the middle of campaign, from D12-47445 onwards) per mode. 
 

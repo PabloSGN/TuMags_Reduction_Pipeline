@@ -18,9 +18,9 @@ From file [D11.csv](../Organized_files/D11.csv#L103) in line 103 (ID's start at 
 
 ## Identifying observations. 
 
-All observations are recorded in the TuMag's Logsheet ([Google sheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing), [csv](TuMags Logsheet - Timelines detailed.csv), [pdf](TuMags Logsheet - Timelines detailed.pdf)). All timelines are detailed indicating the individual blocks that compose them, the remarks and images IDs.  
+All observations are recorded in the TuMag's Logsheet ([Google sheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing), [csv](./TuMags%20Logsheet%20-%20Timelines%20detailed.csv), [pdf](./TuMags%20Logsheet%20-%20Timelines%20detailed.pdf)). All timelines are detailed indicating the individual blocks that compose them, the remarks and images IDs.  
 
-Every observation block has a column where the ID's are noted down. The format of labelling the observation block is "DXX-YYYY-ZZZZ". This indicates that the images composing the observation range from the image DXX-YYYY to DXX-ZZZZ, including all images in between. Some times different querys appear in these cells, meaning that the images are separated.
+Every observation block has a column where the ID's are noted down. The format of labelling the observation block is <span style="color:pink">"DXX-YYYY-ZZZZ"</span>.. This indicates that the images composing the observation range from the image DXX-YYYY to DXX-ZZZZ, including all images in between. Some times different querys appear in these cells, meaning that the images are separated.
 
 Please read the remarks (sometimes difficult to understand even for the ones who wrote them...) because sometimes observations are aborted, calibrations fail, etc...   
 
