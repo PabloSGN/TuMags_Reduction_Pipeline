@@ -165,5 +165,6 @@ for mod in range(info_mg["Nmods"]):
 
 Ensure to divide each observation by the flat field of the corresponding wavelngth and modulation.
 
+## Demodulation
 
 

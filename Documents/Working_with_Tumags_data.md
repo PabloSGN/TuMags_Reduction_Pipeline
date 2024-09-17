@@ -18,19 +18,18 @@ From file [D11.csv](../Organized_files/D11.csv#L103) in line 103 (ID's start at 
 
 ## Identifying observations. 
 
-All observations are recorded in the [TuMag's Logbook](TuMagCompass.csv) file. All timelines are detailed in the file with all the observation and calibration blocks indicated. 
+All observations are recorded in the TuMag's Logsheet ([Google sheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing), [csv](TuMags Logsheet - Timelines detailed.csv), [pdf](TuMags Logsheet - Timelines detailed.pdf)). All timelines are detailed indicating the individual blocks that compose them, the remarks and images IDs.  
 
 Every observation block has a column where the ID's are noted down. The format of labelling the observation block is "DXX-YYYY-ZZZZ". This indicates that the images composing the observation range from the image DXX-YYYY to DXX-ZZZZ, including all images in between. Some times different querys appear in these cells, meaning that the images are separated.
 
-Please read the remarks (sometimes difficult to understand even for the one who wrote them...)because sometimes observations are aborted, calibrations fail, etc...   
+Please read the remarks (sometimes difficult to understand even for the ones who wrote them...) because sometimes observations are aborted, calibrations fail, etc...   
 
 #### <ins>Example of labeled timeline</ins>
 ![Screenshot](Images_for_guides/example_guide_indexes.png)
 
-
 If working locally, just download the data and you are good to go! 
 
-## Working in SPG' server (recommended). 
+## Working in SPG' server (recommended if possible). 
 
 If you want to work directly on the server there are a few tools that allow you to use the indexes smoothly.
 

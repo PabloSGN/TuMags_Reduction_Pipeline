@@ -14,15 +14,17 @@ Disclaimer: Very early still...
 
 ### Timelines
 
-TuMag observations were stuctured through  **timelines**, a list of pre-configured commands where calibration and scientific observations were already programmed. 
+All observations (scientific and calibrations) are recorded and grouped in their corresponding Timeline in the [Tumag's Logsheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing).  There are copies of the logsheet provided as a [pdf](Documents/TuMags%20Logsheet%20-%20Timelines%20detailed.pdf) and [csv](Documents/TuMags%20Logsheet%20-%20Timelines%20detailed.csv).
 
-A summary of the observations and the corresponding timelines can be foound in [Observation summary](Documents/Sunrise_summary_observations.pdf). 
+TuMag observations were stuctured through  **timelines**, a list of pre-configured commands where calibration and scientific observations were already programmed. 
 
 For a guide describing TuMag's commands for each timeline see [Julián's webpage](https://www.uv.es/jublanro/TuMag_timeline_reference.html). 
 
-<ins>Important:</ins> When working with the data have in mind that the timelines were paused and stopped, some commands were run manually, others aborted, etc ... The webpage should be used as a reference. 
+Go to [Tumag's official data website](https://www.uv.es/jublanro/tumag_data_test.html) for already reduced observations. 
 
-All observations (scientific and calibrations) are recorded and grouped in their corresponding Timeline in the [Tumag's Logbook](Documents/TuMagCompass.csv). 
+A summary of the observations, the corresponding timelines and pointing information can be found in [Observation summary](Documents/Sunrise_summary_observations.pdf).
+
+<ins>Important:</ins> When working with the data have in mind that the timelines were paused and stopped, some commands were run manually, others aborted, etc ... 
 
 ### Observation Modes (OM)
 
@@ -43,11 +45,9 @@ Tumag observations are operated through pre-configured **observation modes**.
 | 5.02    | 525.02   | 3  | Vectorial  |
 | 5.06    | 525.06  | 3  | Vectorial  |
 
-
 <ins>Calibration obsering modes:</ins> 
 
 Calibration observing modes are more flexible than science observing modes nd can be confugured to match the observations. For a detailed description of each calibration OM see [Calibration OMs guide](Documents/Calibration_oms_guide.md)
-
 
 ### Observation Counters
 
