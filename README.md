@@ -36,8 +36,8 @@ Tumag observations are operated through pre-configured **observation modes**.
 
 | **Observing Mode** | **Filter** | **Nº wavelengths** | **Modulation scheme** | 
 |:--------:|:--------:|:--------:|:--------:|
-| 0p    | 517    | 15  | Vectorial   | 
-| 0s    | 517    | 15  | No modulation   |
+| 0p    | 517    | 12  | Vectorial   | 
+| 0s    | 517    | 12  | No modulation   |
 | 1    | 517    | 10 | Vectorial  | 
 | 2.02    | 525.02   | 8  | Vectorial  |
 | 2.06    | 525.06  | 8  | Vectorial  |
