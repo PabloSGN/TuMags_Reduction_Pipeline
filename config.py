@@ -56,21 +56,21 @@ observation_modes = {
 
 # Observation Modes configuration:
 om_config  = {
-    "0s" : {"Nlambda" : 15,
+    "0s" : {"Nlambda" : 12,
             "line" : "517",
             "lambda_array" : [-400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 650],
             "V_array" : [-3576, -3243, -2910, -2577, -2244, -1911, -1578, -1245, -912, -579, -246, -80],
             "Nmods" : 1,
             "lvcr_mode" : "vectorial",
-            "images_per_mode" : 15 * 1 * 2},
+            "images_per_mode" : 12 * 1 * 2},
 
-    "0p" : {"Nlambda" : 15,
+    "0p" : {"Nlambda" : 12,
             "line" : "517",
             "lambda_array" : [-400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 650],
             "V_array" : [-3576, -3243, -2910, -2577, -2244, -1911, -1578, -1245, -912, -579, -246, -80],
             "Nmods" : 4,
             "lvcr_mode" : "vectorial",
-            "images_per_mode" : 15 * 4 * 2},
+            "images_per_mode" : 12 * 4 * 2},
             
     "1" : {"Nlambda" : 10,
            "line" : "517",
