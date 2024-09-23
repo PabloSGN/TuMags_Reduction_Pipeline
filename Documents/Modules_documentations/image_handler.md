@@ -1,4 +1,3 @@
-Here is the detailed documentation for the provided Python modules:
 
 ---
 
