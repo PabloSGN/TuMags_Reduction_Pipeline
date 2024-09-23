@@ -43,3 +43,6 @@ To access any field use H["field_name"]
 | hvps_comm_volts | Voltage of the high power supply (etalon) |
 | lcvr1_volts | Voltage of first LCVR |
 | lcvr2_volts | Volts of second LCVR |
+| t_exp | Exposure time of each shot |
+| Date | Date time object with the date of image acquisition  |
+| image_name | Filename |

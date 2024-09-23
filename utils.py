@@ -419,4 +419,3 @@ def read_Tumag(file, write_fits = False, fits_file_name = 'Image.fits',
                 plt.show()
         
             return Image, H
-

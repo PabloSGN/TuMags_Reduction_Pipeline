@@ -16,6 +16,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from datetime import datetime
 
 # Own libs
 from utils import read_Tumag
@@ -49,7 +50,7 @@ class raw_header:
     def __init__(self, camID : int, om : int, nAcc : int, Roix : int, Roiy : int, 
                  Roix_offset : int, Roiy_offset : int, oc : int, fw1 : int, fw2 : int,
                  hvps_counts : int, hvps_sign : int, lcvr1_counts : int, lcvr2_counts : int,
-                 hvps_read_counts : int, lcvr1_read_counts : int, lcvr2_read_counts : int) -> None:
+                 hvps_read_counts : int, lcvr1_read_counts : int, lcvr2_read_counts : int, image_name : str) -> None:
         # Initialize information dictionary
         self.info = {
             "cam" : camID,
@@ -72,6 +73,10 @@ class raw_header:
             "hvps_read_counts" : hvps_read_counts,
             "lcvr1_read_counts" : lcvr1_read_counts,
             "lcvr2_read_counts" : lcvr2_read_counts,
+            "t_exp" : 42,
+            "image_name" : image_name,
+            "Date" : get_time_from_filename(image_name)
+
         }
         # Compute hvps commanded counts to volts
         self.info["hvps_comm_volts"] = self.hvps_commanded_2_volts(hvps_counts, hvps_sign)
@@ -96,7 +101,7 @@ def read(image_path : str):
                       int(h["Roi_y_offset"]), int(h["Observation_Counter"]), int(h["FW1"]),
                       int(h["FW2"]), int(h["EtalonDN"]), int(h["EtalonSign"]), int(h["Rocli1_LCVR"]),
                       int(h["Rocli2_LCVR"]), int(h["EtalonVoltsReading"]), int(h["LCVR1_DN_Real"]),
-                      int(h["LCVR2_DN_Real"]) )
+                      int(h["LCVR2_DN_Real"]), os.path.basename(image_path)[:-4])
     
     return img, head.get_info()
 
@@ -359,4 +364,12 @@ def separate_ocs(paths, verbose = True):
             print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])} - {state}")
 
     return OCs
+
+
+def get_time_from_filename(filename):
+    split = [int(x) for x in filename.split("_")]
+    
+    
+    return datetime(split[0], split[1], split[2], split[3], split[4], split[5])
+
 
