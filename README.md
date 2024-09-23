@@ -16,8 +16,6 @@ Disclaimer: Very early still...
 
 All observations (scientific and calibrations) are recorded and grouped in their corresponding Timeline in the [Tumag's Logsheet](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?usp=sharing).  There are copies of the logsheet provided as a [pdf](Documents/TuMags%20Logsheet%20-%20Timelines%20detailed.pdf) and [csv](Documents/TuMags%20Logsheet%20-%20Timelines%20detailed.csv).
 
-For a detailed registry of the events and observations see the [Tumag's Logbook](Documents/Cuaderno_de_bitacora(detailed_logbook).pdf).
-
 TuMag observations were stuctured through  **timelines**, a list of pre-configured commands where calibration and scientific observations were already programmed. 
 
 For a guide describing TuMag's commands for each timeline see [Julián's webpage](https://www.uv.es/jublanro/TuMag_timeline_reference.html). 
