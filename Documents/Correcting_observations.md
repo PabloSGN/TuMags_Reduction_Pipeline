@@ -134,7 +134,7 @@ Identify an observation mode that is complete to process.
 To read the images and process them automatically use the class [nominal_observation](../image_handler.py#L104) from the [image_handler.py](../image_handler.py):
 
 ```python
-ob_fe = ih.nominal_observation("2.02", OCs[82], dc)
+ob_fe = ih.nominal_observation("2.02", OCs[82]["ims"], dc)
 ```
 
 This functions requires the observing mode to process from the list: [0s, 0p, 1, 2.02, 2.06, 3.02, 3.06, 4, 5.02, 5.06], thee paths of one observing mode. This can be given manually or using the OCs varibale from the [separate_ocs](../image_handler.py#L300) function using the observation counter to identify the obserevation mode, and lastly, the dark current. 
