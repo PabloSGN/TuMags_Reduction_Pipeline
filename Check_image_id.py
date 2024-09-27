@@ -15,4 +15,11 @@ if __name__ == "__main__":
     else:
         headerflag = False
 
-    I, H = ih.read_ID(args[1], verbose = True, plotflag=plotflag, header = headerflag)
+    if "bin" in args:
+        binningflag = True
+    else:
+        binningflag = False
+
+
+    I, H = ih.read_ID(args[1], verbose = True, plotflag=plotflag, 
+                      header = headerflag, binning = binningflag)

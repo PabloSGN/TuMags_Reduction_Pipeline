@@ -278,15 +278,26 @@ def get_images_paths(queries):
 
     return selection
         
-def read_ID(image_index, plotflag = False, verbose = False, header = False):
+def read_ID(image_index, plotflag = False, verbose = False, header = False, binning = False):
     
     day = image_index[:3]
     index = int(image_index[4:])
+
+    def bin_image(image, bin_size = 4):
+    
+        Nx, Ny = image.shape
+        # Reshape and bin the image by averaging over bin_size x bin_size blocks
+        binned_image = image.reshape(Nx // bin_size, bin_size, Ny // bin_size, bin_size).mean(axis=(1, 3))
+        
+        return binned_image
 
     df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
     row = df[df.iloc[:, 0] == index]
     print(row.iloc[0, 1])
     I, H = read(row.iloc[0, 1])
+
+    if binning:
+        I = bin_image(I)
 
     if verbose:
         print("OC", H["ObservationCounter"])
