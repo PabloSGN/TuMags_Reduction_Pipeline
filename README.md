@@ -59,5 +59,7 @@ Usually observations are identified with this field in [TuMag's Logbook](Documen
 
 SPG team.
 
+And Julian.
+
 ## License
 GPL 3.0? 
