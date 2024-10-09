@@ -313,11 +313,16 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
 
     return I, H
 
-def separate_ocs(paths, verbose = True):
+def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
     print(f"\nSeparating Observation counters...")
     tic = time.time()
     OCs = {}
+
+    if flat_fieldmode:
+        mult = 4
+    else:
+        mult = 1
 
     for ind, im in enumerate(paths):
         
@@ -332,7 +337,7 @@ def separate_ocs(paths, verbose = True):
             OCs[oc]["ims"].append(im)
 
             if OCs[oc]["OM"] in cf.om_config:
-                OCs[oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
+                OCs[oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"]  * mult
             else:
                 OCs[oc]["Expected Nim"] = 999
 
@@ -348,7 +353,7 @@ def separate_ocs(paths, verbose = True):
                 OCs[new_oc] = {}
                 OCs[new_oc]["OM"] = H["ObservationMode"]
                 if OCs[oc]["OM"] in cf.om_config:
-                    OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] 
+                    OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] * mult
                 else:
                     OCs[oc]["Expected Nim"] = 999
                 OCs[new_oc]["ims"] = []
