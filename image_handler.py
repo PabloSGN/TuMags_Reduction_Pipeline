@@ -258,9 +258,10 @@ def get_images_paths(queries):
                 raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
             df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
             selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
-
-
             selection.append(selection_df.iloc[:, 1].tolist())
+
+        selection = selection[0] + selection[1] # Concatenating both lists.
+        
     else:
         parsed = queries.split("-")
         day = parsed[0]
