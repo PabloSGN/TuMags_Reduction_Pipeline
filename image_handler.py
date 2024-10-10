@@ -124,9 +124,7 @@ class nominal_observation:
         images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
         _, h1 = read(images_path_reshaped[0, 0, 0]) # read first image to get acc
-        # Scale the dark current
-        dc = dc * h1["nAcc"]
-
+       
         for lambd in range(nlambda):
             print(lambd)
             self.info["Images_headers"][f"wv_{lambd}"] = {}
@@ -142,9 +140,9 @@ class nominal_observation:
                     else:
                         self.info["Images_headers"][f"wv_{lambd}"][f"M{mod}"][key] = head0[key]
             
-                # Sving image data into main data array
-                self.data[0, lambd, mod] = im0 - dc[0]
-                self.data[1, lambd, mod] = np.flip(im1, axis = -1) - dc[1] # Flip cam 2 image. 
+                # Correct dark-current and save image data into main data array
+                self.data[0, lambd, mod] = im0 - (dc[0] * head0["nAcc"])
+                self.data[1, lambd, mod] = np.flip(im1, axis = -1) - (dc[1] * head0["nAcc"]) # Flip cam 2 image. 
         
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
@@ -207,8 +205,8 @@ class nominal_flat:
                                 self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key].append(head0[key])
             
                         # Sving image data into main data array
-                        self.data[0, lambd, mod] += im0 - dc[0]
-                        self.data[1, lambd, mod] += np.flip(im1, axis = -1) - dc[1] # Flip cam 2 image. 
+                        self.data[0, lambd, mod] += im0 - (dc[0] * head0["nAcc"])
+                        self.data[1, lambd, mod] += np.flip(im1, axis = -1) - (dc[1] * head0["nAcc"]) # Flip cam 2 image. 
         
         self.data /= (nreps * lambda_repeat)
         self.data /= (nreps * lambda_repeat)

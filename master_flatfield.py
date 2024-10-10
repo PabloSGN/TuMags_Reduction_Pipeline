@@ -35,16 +35,15 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         nreps = int(len(flat_fields_paths) / (2 * N_wls * N_mods * lambda_repeat))
     else:
         raise Exception("Observations are incomplete, please remove images from incomplete OC. This will be upgraded...")
-    naccs = h["nAcc"]
-
+    
     if verbose:
         print(f"Observation Mode: {om}")
         print(f"Nº of repetitions: {nreps}")
         print(f"Nº of wavelengths: {N_wls}")
         print(f"Nº of Modulations: {N_mods}")
 
-    # Read images and correct them from dark current (scaled to accumulation number)
-    flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc * naccs)
+    # Read images and correct them from dark current.
+    flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc)
 
     data = flat_obs.get_data()
 
