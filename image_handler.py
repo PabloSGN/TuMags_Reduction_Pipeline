@@ -256,7 +256,7 @@ def get_images_paths(queries):
                 raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
             if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
                 raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
-            df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
+            df = pd.read_csv(f"{Organization_folder_files}/{day}.csv", index_col=False, header=None)
             selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
             selection.append(selection_df.iloc[:, 1].tolist())
 
@@ -272,9 +272,8 @@ def get_images_paths(queries):
             raise Exception(f"Query : {queries} not valid. Please prove end of quey larger than start.")
         if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
             raise Exception(f"Query : {queries} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
-        df = pd.read_csv(f"{Organization_folder_files}/{day}.csv")
+        df = pd.read_csv(f"{Organization_folder_files}/{day}.csv", index_col=False, header=None)
         selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
-
         selection = selection_df.iloc[:, 1].tolist()
 
     return selection
@@ -385,8 +384,37 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
 def get_time_from_filename(filename):
     split = [int(x) for x in filename.split("_")]
-    
-    
     return datetime(split[0], split[1], split[2], split[3], split[4], split[5])
 
+def obs_mode_separator(paths, verbose = False):
+
+    obs = {}
+    for ind, im in enumerate(paths):
+        print(f"Ordering ims - {ind}/{len(paths)}")
+        _, H = read(im)
+
+        oc = H["ObservationCounter"]
+        wave = H["hvps_comm_volts"]
+        mod = f"{H['lcvr1_counts']}_{H['lcvr2_counts']}"
+
+        if oc not in obs:
+            obs[oc] = {}
+
+        if wave not in obs[oc]:
+            obs[oc][wave] = {}
+
+        if mod not in obs[oc][wave]:
+            obs[oc][wave][mod] = []
+        
+        obs[oc][wave][mod].append(im)
+
+    if verbose:
+        for oc in obs:
+            print(f"\n Obs Count: {oc}\n-------------")
+            for wave in obs[oc]:
+                print(f"\n Wave: {wave}")
+                for mod in obs[oc][wave]:
+                    print(f"   - Mod: {mod} -> Nims : {len(obs[oc][wave][mod])}")
+
+    return obs
 
