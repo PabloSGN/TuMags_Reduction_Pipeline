@@ -416,3 +416,32 @@ def obs_mode_separator(paths, verbose = False):
 
     return obs
 
+def check_timestamps(paths, verbose = True):
+
+    intervals = []
+
+    prev = get_time_from_filename(os.path.basename(paths[0]))
+
+    times = []
+
+    for ind, file in enumerate(paths[1:]):
+
+        filename = os.path.basename(file)
+
+        time = get_time_from_filename(file)
+
+        times.append(time)
+        intervals.append(time - prev)
+
+        prev = time
+
+    fig, axs = plt.subplots(figsize = (10, 10))
+
+    axs.plot(times, intervals, c = 'indigo', lw = 3)
+
+    axs.set_xticks(rotation=90)
+
+    plt.show()
+
+
+
