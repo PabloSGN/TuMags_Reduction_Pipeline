@@ -426,7 +426,6 @@ def check_timestamps(paths, verbose = True):
 
     for ind, file in enumerate(paths[1:]):
 
-
         filename = os.path.basename(file)
 
         time = get_time_from_filename(filename)
@@ -445,8 +444,8 @@ def check_timestamps(paths, verbose = True):
 
     axs.grid(True, c = 'k', alpha = 0.3)
 
-    #axs.set_xticks(rotation=90)
-
+    axs.set_ylabel("Interval between consecutive images [s]")
+    axs.set_xlabel("Time of image accquisition.")
     plt.tight_layout()
     plt.show()
 
