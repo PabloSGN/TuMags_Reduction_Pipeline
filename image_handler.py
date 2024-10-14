@@ -381,7 +381,7 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
 
 def get_time_from_filename(filename):
-    split = [int(x) for x in filename.split("_")]
+    split = [int(x) for x in filename[:-4].split("_")]
     return datetime(split[0], split[1], split[2], split[3], split[4], split[5])
 
 def obs_mode_separator(paths, verbose = False):
@@ -426,21 +426,28 @@ def check_timestamps(paths, verbose = True):
 
     for ind, file in enumerate(paths[1:]):
 
+
         filename = os.path.basename(file)
 
-        time = get_time_from_filename(file)
+        time = get_time_from_filename(filename)
 
         times.append(time)
+
         intervals.append(time - prev)
 
         prev = time
 
+    intervals = [ x.total_seconds() for x in intervals]
+
     fig, axs = plt.subplots(figsize = (10, 10))
 
-    axs.plot(times, intervals, c = 'indigo', lw = 3)
+    axs.plot(times, intervals, c = 'indigo', lw = 1)
 
-    axs.set_xticks(rotation=90)
+    axs.grid(True, c = 'k', alpha = 0.3)
 
+    #axs.set_xticks(rotation=90)
+
+    plt.tight_layout()
     plt.show()
 
 
