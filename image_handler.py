@@ -438,7 +438,7 @@ def check_timestamps(paths, verbose = True):
 
     intervals = [ x.total_seconds() for x in intervals]
 
-    fig, axs = plt.subplots(figsize = (10, 10))
+    fig, axs = plt.subplots(figsize = (10, 5))
 
     axs.plot(times, intervals, c = 'indigo', lw = 1)
 
