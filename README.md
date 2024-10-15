@@ -58,6 +58,7 @@ Usually observations are identified with this field in [TuMag's Logbook](Documen
 ## Contributing
 
 SPG team.
+more people. 
 
 And Julian.
 
