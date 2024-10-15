@@ -96,12 +96,13 @@ def read(image_path : str):
     # Read .img file
     img, h = read_Tumag(image_path) 
     # Create header object
+    print(os.path.basename(image_path)[:-4])
     head = raw_header(int(h["CameraID"]), int(h["ObservationMode"]), int(h["nAcc"]), 
                       int(h["Roi_x_size"]), int(h["Roi_y_size"]), int(h["Roi_x_offset"]),
                       int(h["Roi_y_offset"]), int(h["Observation_Counter"]), int(h["FW1"]),
                       int(h["FW2"]), int(h["EtalonDN"]), int(h["EtalonSign"]), int(h["Rocli1_LCVR"]),
                       int(h["Rocli2_LCVR"]), int(h["EtalonVoltsReading"]), int(h["LCVR1_DN_Real"]),
-                      int(h["LCVR2_DN_Real"]), os.path.basename(image_path)[:-4])
+                      int(h["LCVR2_DN_Real"]), os.path.basename(image_path))
     
     return img, head.get_info()
 
