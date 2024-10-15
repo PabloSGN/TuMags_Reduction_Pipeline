@@ -202,4 +202,11 @@ def apply_fieldstop(im, fs):
     return fieldstopped
 
 def apply_fieldstop_and_align_cameras(data, fs):
-    
+
+    aligned = realign_subpixel(data, accu=0.05, verbose = True)
+
+    # Mask to set outer bound to 0
+    mask = np.zeros(np.shape(data))
+    mask[:, fs[0][0] : fs[0][1], fs[1][0] : fs[1][1]] = 1 
+
+    return aligned * mask

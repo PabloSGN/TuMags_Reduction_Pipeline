@@ -96,7 +96,6 @@ def read(image_path : str):
     # Read .img file
     img, h = read_Tumag(image_path) 
     # Create header object
-    print(os.path.basename(image_path)[:-4])
     head = raw_header(int(h["CameraID"]), int(h["ObservationMode"]), int(h["nAcc"]), 
                       int(h["Roi_x_size"]), int(h["Roi_y_size"]), int(h["Roi_x_offset"]),
                       int(h["Roi_y_offset"]), int(h["Observation_Counter"]), int(h["FW1"]),
@@ -244,8 +243,6 @@ def get_images_paths(queries):
     if isinstance(queries, list):
         selection = []
         for qry in queries:
-            print(qry)
-
             parsed = qry.split("-")
             day = parsed[0]
             start = int(parsed[1])
