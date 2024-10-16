@@ -46,10 +46,8 @@ def compute_xtalk(data, stokes_x, stokes_y, savefig = False, filename = 'image')
         
         
         I = data[0]
-        norm = np.median(I[300:-300, 300:-300])
-        points = (I > 0.8 * norm) & (I < 1.2 * norm)
-
-        norm = np.median(I[300:-300, 300:-300])
+        norm = np.median(I)
+        points = (I > 0.7 * norm) & (I < 1.3 * norm)
 
         xaxis = data[ind[stokes_x]][points].flatten() #/ norm
         yaxis = data[ind[stokes_y]][points].flatten() #/ norm
@@ -96,5 +94,6 @@ def compute_xtalk(data, stokes_x, stokes_y, savefig = False, filename = 'image')
 
         ax.legend(edgecolor = 'k', facecolor = 'darkorange')
 
-        corr = data[ind[stokes_y]] - (coeffs[1] + data[ind[stokes_x]] * coeffs[0])      
+        corr = data[ind[stokes_y]] - (coeffs[1] + data[ind[stokes_x]] * coeffs[0]) 
+             
         return corr

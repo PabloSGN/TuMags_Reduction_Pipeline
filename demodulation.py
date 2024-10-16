@@ -6,7 +6,7 @@
 import numpy as np
 
 # Own-libs
-
+import alignment as al
 # ------------------------------ CONFIG ------------------------------------------ #
 
 # Mean - Matrix Demodulation 
@@ -89,6 +89,33 @@ for filt in mod_matrices_david:
         demod_matrices_david[filt][cam] = np.linalg.inv(mod_matrices_david[filt][cam])
 
 # ------------------------------  CODE  ------------------------------------------ # 
+
+def demodulate_v2(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_david, verbose = False):
+    
+    # All wavelengths
+
+    size = np.shape(data)[-1]
+    demod = np.zeros(np.shape(data))
+    dual_beam = np.zeros((nlambdas, nmods, size, size))
+
+    
+    # Each wavelength independently
+    for wl in range(nlambdas):
+        
+        dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
+        dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
+
+        demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
+        demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
+    
+    int_ratio = np.median(demod[0, -1, 0]) / np.median(demod[1, -1, 0])
+
+    if verbose:
+        print(f"Intensity ratio between cameras : {int_ratio}")
+
+    dual_beam = (demod[0] + demod[1] * int_ratio) / 2 
+
+    return dual_beam, demod
 
 def demodulate(data, nmods, nlambdas, filt, mode = 'standard', dmod_matrices = demod_matrices_david):
    

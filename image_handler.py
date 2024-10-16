@@ -447,5 +447,27 @@ def check_timestamps(paths, verbose = True):
     plt.tight_layout()
     plt.show()
 
+def snapshot_processing(paths, dc, verbose = True):
+
+    if verbose:
+        print(f"Proccessing snapshot mode...")
+
+    c1 = []
+    c2 = []
+    for ind, im in enumerate(paths):
+
+        I, H = read(im)
+
+        # Correct dark-current and save image data into main data array
+        if H["cam"] == 0:
+            c1.append(I - dc[0] * H["nAcc"])
+        else:
+            c2.append(np.flip(I, axis = -1) - dc[1] * H["nAcc"])# Flip cam 2 image. 
+
+    return np.array([c1, c2])
+
+        
+    
+
 
 

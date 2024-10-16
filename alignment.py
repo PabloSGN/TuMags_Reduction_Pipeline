@@ -15,7 +15,7 @@ from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 
 margin = 10 # Margin from fieldstop
 
-# ------------------------------  CODE  ------------------------------------------ # 
+# ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
 def dftreg(F,G,kappa):
     """
@@ -94,7 +94,9 @@ def FTpad(IM,Nout):
     IMout=np.fft.ifftshift(IMout)*Nout*Nout/(Nin*Nin)
     return IMout
 
-def realign_subpixel(ima, accu=0.05, verbose = True):
+# ------------------------------  MAIN FUNCTS  --------------------------------- # 
+
+def realign_subpixel(ima, accu=0.01, verbose = True):
     """
     This function aligns a series of images with subpixel images using the Sicairos
     method.
@@ -189,6 +191,27 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     return cam1_fieldstop
 
+def align_obsmode(data, acc = 0.01, verbose = False):
+    
+    # First align the modulations
+    mods_realigned = align_modulations(data, verbose = True)
+
+    cams_alig = np.zeros(np.shape(mods_realigned))
+
+    shape = np.shape(data)
+    nlambda = shape[1]
+    nmods = shape[0]
+
+    if verbose:
+        print(f"\nAligning cameras..")
+
+    for mod in range(nmods):
+        for lamb in range(nlambda):
+            cams_alig[:, lamb, mod] = realign_subpixel(mods_realigned[:, lamb, mod], accu=acc, verbose = verbose)
+
+    return cams_alig
+
+
 
 def apply_fieldstop(im, fs):
 
@@ -210,3 +233,22 @@ def apply_fieldstop_and_align_cameras(data, fs):
     mask[:, fs[0][0] : fs[0][1], fs[1][0] : fs[1][1]] = 1 
 
     return aligned * mask
+
+def align_modulations(data, acc = 0.01, verbose = False):
+
+    shp = np.shape(data)
+
+    # New array to store fieldstopped and align images
+    aligned = np.zeros((np.shape(data)))
+
+    # Align each wavelength separately
+    for lambd in range(shp[1]):
+        if verbose:
+            print(f"\nAligning modulations from wavlength : {lambd} / {shp[1]}")
+        
+        aligned[0, lambd] = realign_subpixel(data[0, lambd], verbose = verbose, accu = acc)
+        aligned[1, lambd] = realign_subpixel(data[1, lambd], verbose = verbose, accu = acc)
+
+    return aligned
+
+        
