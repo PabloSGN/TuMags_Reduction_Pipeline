@@ -114,15 +114,17 @@ def realign_subpixel(ima, accu=0.01, verbose = True):
     
     for j in range(ima.shape[0]):
         
-        F0=Gshift
+        F0=np.copy(Gshift)
 
-        F_comp = fft2(ima[j, :, :])
-        error, row_shift, col_shift, Gshift = dftreg(F0, F_comp, kappa)
+        F_comp = fft2(ima[j])
+        error, row_shift, col_shift, Gshift2 = dftreg(F0, F_comp, kappa)
         if verbose:
-            print(f"Shift of image: {j} -> row : {round(row_shift, 3)} col : {round(col_shift, 3)}")
-        
-        ima_aligned[j, :, :] = np.real(ifft2(Gshift))
-
+            print(f"Shift of image: {j} -> row : {round(row_shift, 4)} col : {round(col_shift, 4)}")
+        if j != 0:
+            ima_aligned[j] = np.real(ifft2(Gshift2))
+        else:
+            ima_aligned[j] = ima[0]
+    
     return ima_aligned
 
 def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = margin):
@@ -191,7 +193,7 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     return cam1_fieldstop
 
-def align_obsmode(data, acc = 0.01, verbose = False):
+def align_obsmode(data, acc = 0.001, verbose = False):
     
     # First align the modulations
     mods_realigned = align_modulations(data, verbose = True)
@@ -200,51 +202,31 @@ def align_obsmode(data, acc = 0.01, verbose = False):
 
     shape = np.shape(data)
     nlambda = shape[1]
-    nmods = shape[0]
+    nmods = shape[2]
 
     if verbose:
         print(f"\nAligning cameras..")
 
     for mod in range(nmods):
         for lamb in range(nlambda):
+            
             cams_alig[:, lamb, mod] = realign_subpixel(mods_realigned[:, lamb, mod], accu=acc, verbose = verbose)
 
     return cams_alig
 
-
-
-def apply_fieldstop(im, fs):
-
-    # Field stop of cam 1
-    mask = np.zeros(np.shape(im))
-    mask[fs[0][0] : fs[0][1], fs[1][0] : fs[1][1]] = 1
-
-    # Apply cam 1 field stop
-    fieldstopped = mask * im
-
-    return fieldstopped
-
-def apply_fieldstop_and_align_cameras(data, fs):
-
-    aligned = realign_subpixel(data, accu=0.05, verbose = True)
-
-    # Mask to set outer bound to 0
-    mask = np.zeros(np.shape(data))
-    mask[:, fs[0][0] : fs[0][1], fs[1][0] : fs[1][1]] = 1 
-
-    return aligned * mask
-
 def align_modulations(data, acc = 0.01, verbose = False):
 
-    shp = np.shape(data)
+    shape = np.shape(data)
+    nlambda = shape[1]
+    nmods = shape[2]
 
     # New array to store fieldstopped and align images
     aligned = np.zeros((np.shape(data)))
 
     # Align each wavelength separately
-    for lambd in range(shp[1]):
+    for lambd in range(nlambda):
         if verbose:
-            print(f"\nAligning modulations from wavlength : {lambd} / {shp[1]}")
+            print(f"\nAligning modulations from wavelength : {lambd} / {nlambda}")
         
         aligned[0, lambd] = realign_subpixel(data[0, lambd], verbose = verbose, accu = acc)
         aligned[1, lambd] = realign_subpixel(data[1, lambd], verbose = verbose, accu = acc)

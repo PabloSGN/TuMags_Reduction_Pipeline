@@ -37,7 +37,20 @@ white_viridis = LinearSegmentedColormap.from_list('white_viridis', [
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def compute_xtalk(data, stokes_x, stokes_y, savefig = False, filename = 'image'):
+def compute_xtalk_full(data):
+
+        xtalked = np.copy(data)
+
+        fig = plt.figure(figsize = (19, 5))
+
+        xtalked[1], axq = compute_xtalk(data, "I", "Q", fig = fig, fig_ind = 1)
+        xtalked[2], axu = compute_xtalk(data, "I", "U", fig = fig, fig_ind = 2)
+        xtalked[3], axv = compute_xtalk(data, "I", "V", fig = fig, fig_ind = 3)
+
+        return xtalked
+
+
+def compute_xtalk(data, stokes_x, stokes_y, fig, fig_ind):
         
         ind = {"I" : 0,
                "Q" : 1,
@@ -66,19 +79,18 @@ def compute_xtalk(data, stokes_x, stokes_y, savefig = False, filename = 'image')
 
         fit = [np.min(xaxis) * coeffs[0] + coeffs[1], np.max(xaxis) * coeffs[0] + coeffs[1]]
         
-        
-        def using_mpl_scatter_density(fig, x, y):
-            ax = fig.add_subplot(1, 1, 1, projection='scatter_density')
+        def using_mpl_scatter_density(fig, fig_ind,  x, y):
+            ax = fig.add_subplot(1, 3, fig_ind, projection='scatter_density')
             density = ax.scatter_density(x, y, cmap=white_viridis)
             fig.colorbar(density, label='Number of points per pixel')
             
             return ax
+
+        ax = using_mpl_scatter_density(fig, fig_ind, xaxis, yaxis)
+
         
-
+        
         line = [np.min(xaxis) * fit[0] + fit[1], np.max(xaxis) * fit[0] + fit[1]]
-
-        fig = plt.figure(figsize = (5.5, 5))
-        ax = using_mpl_scatter_density(fig, xaxis, yaxis)
 
 
         ax.set_title(f"{stokes_x} -> {stokes_y}")
@@ -95,5 +107,5 @@ def compute_xtalk(data, stokes_x, stokes_y, savefig = False, filename = 'image')
         ax.legend(edgecolor = 'k', facecolor = 'darkorange')
 
         corr = data[ind[stokes_y]] - (coeffs[1] + data[ind[stokes_x]] * coeffs[0]) 
-             
-        return corr
+
+        return corr, ax
