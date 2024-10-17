@@ -101,7 +101,7 @@ def realign_subpixel(ima, accu=0.01, verbose = True):
     This function aligns a series of images with subpixel images using the Sicairos
     method.
     Input:
-     ima: 3D array of the type (Nx, Ny, Nima). Last dimension corresponds to the
+     ima: 3D array of the type (Nima, Nx, Ny). First dimension corresponds to the
         index of the image through the series
      accu: accuracy of the alignment in pixel units
     Output: returns the aligned 3D array
