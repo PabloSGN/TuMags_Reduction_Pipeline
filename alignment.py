@@ -229,7 +229,8 @@ def align_modulations(data, acc = 0.01, verbose = False):
             print(f"\nAligning modulations from wavelength : {lambd} / {nlambda}")
         
         aligned[0, lambd] = realign_subpixel(data[0, lambd], verbose = verbose, accu = acc)
-        aligned[1, lambd] = realign_subpixel(data[1, lambd], verbose = verbose, accu = acc)
+        #aligned[1, lambd] = realign_subpixel(data[1, lambd], verbose = verbose, accu = acc)
+        aligned[1, lambd] = data[1, lambd]
 
     return aligned
 
