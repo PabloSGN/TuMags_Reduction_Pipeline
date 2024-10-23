@@ -193,10 +193,10 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     return cam1_fieldstop
 
-def align_obsmode(data, acc = 0.001, verbose = False):
+def align_obsmode(data, acc = 0.01, verbose = False):
     
     # First align the modulations
-    mods_realigned = align_modulations(data, verbose = True)
+    mods_realigned = align_modulations(data, acc = acc, verbose = True)
 
     cams_alig = np.zeros(np.shape(mods_realigned))
 
@@ -229,7 +229,7 @@ def align_modulations(data, acc = 0.01, verbose = False):
             print(f"\nAligning modulations from wavelength : {lambd} / {nlambda}")
         
         aligned[0, lambd] = realign_subpixel(data[0, lambd], verbose = verbose, accu = acc)
-        #aligned[1, lambd] = realign_subpixel(data[1, lambd], verbose = verbose, accu = acc)
+
         aligned[1, lambd] = data[1, lambd]
 
     return aligned
