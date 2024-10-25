@@ -309,6 +309,74 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
 
     return I, H
 
+def separate_ocs_v2(paths, verbose = True, flat_fieldmode = False):
+    print(f"\nSeparating Observation counters...")
+    tic = time.time()
+    OCs = {}
+
+    if flat_fieldmode:
+        mult = 4
+    else:
+        mult = 1
+
+    completed_ocs = []
+
+    def labelling(oc, completed_ocs):
+        annex = 0
+        flag = True
+        label = oc
+        while flag:
+            if label not in completed_ocs:
+                flag = False
+            else:
+                label = f"{oc}_{annex}"
+                annex += 1
+        return label
+
+    for ind, im in enumerate(paths):
+        
+        print(f"{ind}/{len(paths)} read.")
+        _, H = read(im)
+
+        oc = H['ObservationCounter']
+        oc_ind = labelling(oc, completed_ocs)
+
+        if oc_ind not in OCs:
+            OCs[oc_ind] = {}
+            OCs[oc_ind]["OM"] = H["ObservationMode"]
+            OCs[oc_ind]["ims"] = []
+            OCs[oc_ind]["empty"] = True
+            OCs[oc_ind]["ims"].append(im)
+
+            if H["ObservationMode"] in cf.om_config:
+                OCs[oc_ind]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"]  * mult
+            else:
+                OCs[oc_ind]["Expected Nim"] = 999
+
+        elif OCs[oc_ind]["empty"]:
+            OCs[oc_ind]["ims"].append(im)
+            if len( OCs[oc_ind]["ims"]) == OCs[oc_ind]["Expected Nim"]:
+                OCs[oc_ind]["empty"] = False
+                completed_ocs.append(oc_ind)
+
+    if verbose:
+        ocs = [x for x in OCs]
+        print(f"Images processed in {round(time.time() - tic, 2)}s.")
+        print(f"{len(ocs)} found.")
+        print(f"Images por mode:")
+     
+        for OC in OCs:
+            if OCs[OC]["empty"]:
+                state = "Incomplete"
+            else:
+                state = "Complete"
+                
+            print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])} - {state}")
+
+    return OCs
+
+
+
 def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
     print(f"\nSeparating Observation counters...")
@@ -324,7 +392,9 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
         
         print(f"{ind}/{len(paths)} read.")
         _, H = read(im)
+
         oc = H['ObservationCounter']
+        
         if oc not in OCs:
             OCs[oc] = {}
             OCs[oc]["OM"] = H["ObservationMode"]
@@ -351,7 +421,7 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
                 if OCs[oc]["OM"] in cf.om_config:
                     OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] * mult
                 else:
-                    OCs[oc]["Expected Nim"] = 999
+                    OCs[new_oc]["Expected Nim"] = 999
                 OCs[new_oc]["ims"] = []
                 OCs[new_oc]["empty"] = True
                 OCs[new_oc]["ims"].append(im)
@@ -466,6 +536,48 @@ def snapshot_processing(paths, dc, verbose = True):
 
     return np.array([c1, c2])
 
+def polarizers_parser(paths, filt, dc):
+
+    Nfilts = 3
+    Nmods = 4
+    Ncams = 2
+
+    if filt == "525.02":
+        nfilt = 0
+    elif filt == "517":
+        nfilt = 1
+    elif filt == "525.06":
+        nfilt = 2
+    elif filt == "all":
+        nfilt = -1
+    else:
+        raise Exception("Please provide filt string within: 525.02 / 517 / 525.06 for the micropols")
+
+    reshaped = np.array(paths).reshape(Nfilts, Nmods, Ncams)
+
+    if nfilt >= 0:
+        micros = np.zeros((Ncams, Nmods, 2016, 2016))    
+        for mod in range(Nmods):
+            for cam in range(Ncams):
+                print(f"Mod: {mod} - Cam: {cam}")
+                im0, H = read(reshaped[nfilt, mod, 0]) # Cam 1
+                im1, _ = read(reshaped[nfilt, mod, 1]) # Cam 2
+                
+                micros[0,  mod] = im0 - (dc[0] * H["nAcc"])
+                micros[1,  mod] = np.flip(im1, axis = -1) - (dc[1] * H["nAcc"]) # Flip cam 2 image. 
+    else:
+        micros = np.zeros((Ncams, Nfilts, Nmods, 2016, 2016))   
+        for filt in range(Nfilts): 
+            for mod in range(Nmods):
+                for cam in range(Ncams):
+                    print(f"Mod: {mod} - Cam: {cam}")
+                    im0, H = read(reshaped[filt, mod, 0]) # Cam 1
+                    im1, _ = read(reshaped[filt, mod, 1]) # Cam 2
+                    
+                    micros[0, filt, mod] = im0 - (dc[0] * H["nAcc"])
+                    micros[1, filt, mod] = np.flip(im1, axis = -1) - (dc[1] * H["nAcc"]) # Flip cam 2 image. 
+                
+    return micros
         
     
 

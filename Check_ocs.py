@@ -13,7 +13,7 @@ if __name__ == "__main__":
         flatflag = False
    
     paths = ih.get_images_paths(args[1])
-    ocs = ih.separate_ocs(paths, verbose = True, flat_fieldmode = flatflag)
+    ocs = ih.separate_ocs_v2(paths, verbose = True, flat_fieldmode = flatflag)
 
     if "save" in args:
         count = 1

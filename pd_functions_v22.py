@@ -43,7 +43,7 @@ introduced by the user or computed within a function
 #from skimage.morphology import square, erosion
 from matplotlib import pyplot as plt
 from PIL import Image as im
-from photutils import CircularAperture #conda install -c astropy photutils
+from photutils.aperture import CircularAperture #conda install -c astropy photutils
 from scipy.ndimage import median_filter
 from scipy import ndimage
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
