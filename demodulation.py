@@ -1,5 +1,9 @@
 # ---------------------------- DESCRIPTION --------------------------------------- #
 
+"""
+Demodulation functions
+"""
+
 # ------------------------------ IMPORTS ----------------------------------------- #
 
 # Built-in libs
@@ -90,7 +94,7 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate_v2(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_david, verbose = False):
+def demodulate(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_david, verbose = False):
     
     # All wavelengths
 
@@ -98,7 +102,6 @@ def demodulate_v2(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_da
     demod = np.zeros(np.shape(data))
     dual_beam = np.zeros((nlambdas, nmods, size, size))
 
-    
     # Each wavelength independently
     for wl in range(nlambdas):
         
@@ -113,104 +116,20 @@ def demodulate_v2(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_da
     if verbose:
         print(f"Intensity ratio between cameras : {int_ratio}")
 
-    dual_beam = (demod[0] + demod[1] * int_ratio) / 2 
+    #dual_beam = (demod[0] + demod[1] * int_ratio) / 2 
+    dual_beam = (demod[0] + demod[1]) / 2
 
     return dual_beam, demod
 
-def demodulate(data, nmods, nlambdas, filt, mode = 'standard', dmod_matrices = demod_matrices_david):
-   
-    if mode == 'standard':
+def demodulate_quadrants(data, nlambda, nmods, filt, nquads = 16, Np_quad = 354):
 
-        size = np.shape(data)[-1]
-        demod = np.zeros(np.shape(data))
-        dual_beam = np.zeros((nlambdas, nmods, size, size))
+    demod = np.zeros((2, nlambda, nmods, nquads, Np_quad, Np_quad))
+    dual = np.zeros((nlambda, nmods, nquads, Np_quad, Np_quad))
 
-        for wl in range(nlambdas):
+    for quad in range(nquads):
 
-            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
-            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
+        du, dem = demodulate(data[:, :, :, quad], nmods, nlambda, filt)
+        demod[:, :, :, quad] = dem
+        dual[:, :, quad] = du
 
-            demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
-            demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
-
-        dual_beam = demod[0] * 0.5 + demod[1] * 0.5
-
-    if mode == 'standard_single_wavelength':
-
-        size = np.shape(data)[-1]
-        demod = np.zeros(np.shape(data))
-        dual_beam = np.zeros((nmods, size, size))
-
-        dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0], (4, size * size)))
-        dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1], (4, size * size)))
-
-        demod[0] = np.reshape(dm_cam1, (4, size, size))
-        demod[1] = np.reshape(dm_cam2, (4, size, size))
-
-        dual_beam = demod[0] * 0.5 + demod[1] * 0.5
-
-    """
-    elif mode == 'pixel':
-
-        Npix = 1656
-        data = np.zeros((2, 4, Npix, Npix))
-
-        for ind, im in enumerate(sorted_files[filt_index, wvl_index, :, 0]):
-            I, _ = read_Tumag(im)
-            
-            data[0, ind] = I[dmod_px2px_c1["RECT"][0][0]:dmod_px2px_c1["RECT"][0][0] + dmod_px2px_c1["RECT"][0][2] + 1,
-                             dmod_px2px_c1["RECT"][0][1]:dmod_px2px_c1["RECT"][0][1] + dmod_px2px_c1["RECT"][0][3] + 1]
-
-        for ind, im in enumerate(sorted_files[filt_index, wvl_index, :, 1]):
-            I, _ = read_Tumag(im)
-            data[1, ind] = I[dmod_px2px_c2["RECT"][0][0]:dmod_px2px_c2["RECT"][0][0] + dmod_px2px_c2["RECT"][0][2] + 1,
-                             dmod_px2px_c2["RECT"][0][1]:dmod_px2px_c2["RECT"][0][1] + dmod_px2px_c2["RECT"][0][3] + 1]
-
-        data[0] /= np.max(data[0])
-        data[1] /= np.max(data[1])
-
-        demod = np.zeros(np.shape(data))
-
-        #d1 = np.transpose(dmod_px2px_c1["O"], axes = (2, 3, 0, 1))
-        #d2 = np.transpose(dmod_px2px_c2["O"], axes = (2, 3, 0, 1))
-
-        demod[0] = np.einsum('ijlk,kij->lij', np.transpose(dmod_px2px_c1["O"], axes =(3, 2)), data[0])
-        demod[1] = np.einsum('ijlk,kij->lij', dmod_px2px_c2["O"], data[1]) 
-        
-        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = 2) * 0.5
-
-    elif mode == 'pixel_slow':
-
-        print("Started slooooow dem...")
-        Npix = 1656
-        data = np.zeros((2, 4, Npix, Npix))
-
-        for ind, im in enumerate(sorted_files[filt_index, wvl_index, :, 0]):
-            I, _ = read_Tumag(im)
-            
-            data[0, ind] = I[dmod_px2px_c1["RECT"][0][0]:dmod_px2px_c1["RECT"][0][0] + dmod_px2px_c1["RECT"][0][2] + 1,
-                             dmod_px2px_c1["RECT"][0][1]:dmod_px2px_c1["RECT"][0][1] + dmod_px2px_c1["RECT"][0][3] + 1]
-
-        for ind, im in enumerate(sorted_files[filt_index, wvl_index, :, 1]):
-            I, _ = read_Tumag(im)
-            data[1, ind] = I[dmod_px2px_c2["RECT"][0][0]:dmod_px2px_c2["RECT"][0][0] + dmod_px2px_c2["RECT"][0][2] + 1,
-                             dmod_px2px_c2["RECT"][0][1]:dmod_px2px_c2["RECT"][0][1] + dmod_px2px_c2["RECT"][0][3] + 1]
-
-        data[0] /= np.max(data[0])
-        data[1] /= np.max(data[1])
-
-        demod = np.zeros(np.shape(data))
-
-        for x in range(Npix):
-            print(f"R:{x}/{Npix}")
-            for y in range(Npix):
-                
-                dm_cam1 = np.matmul(dmod_px2px_c1["O"][y, x], np.reshape(data[0], (4, Npix * Npix)))
-                dm_cam2 = np.matmul(dmod_px2px_c2["O"][y, x], np.reshape(data[1], (4, Npix * Npix)))
-
-                demod[0] = np.reshape(dm_cam1, (4, Npix, Npix))
-                demod[1] = np.reshape(dm_cam2, (4, Npix, Npix))
-
-        dual_beam = demod[0] * 0.5 + np.flip(demod[1], axis = 2) * 0.5"""
-
-    return demod, dual_beam
+    return dual, demod

@@ -1475,7 +1475,7 @@ def prepare_PD(ima,nuc,N,wind=True,kappa=100):
     susf=np.sum(wind*ima[:,:,0])/np.sum(wind)
     of=(ima[:,:,0]-susf)*wind
 
-    plt.close()
+    #plt.close()
     #Of=mf.fourier2(of)
     Of=fft2(of)
     Of=Of/(N**2)
