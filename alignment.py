@@ -233,11 +233,11 @@ def align_obsmode(data, acc = 0.01, verbose = False):
 
     return aligned, shifts
 
-def reshape_into_16_quadrants(images):
+def reshape_into_16_quadrants(images, nlambda, nmods):
     # Reshape the last two dimensions into a 4x4 grid of (354, 354)
-    reshaped = images.reshape(2, 10, 4, 4, 354, 4, 354)
+    reshaped = images.reshape(2, nlambda, nmods, 4, 354, 4, 354)
     # Rearrange axes to group quadrants into a single dimension
-    return reshaped.transpose(0, 1, 2, 3, 5, 4, 6).reshape(2, 10, 4, 16, 354, 354)
+    return reshaped.transpose(0, 1, 2, 3, 5, 4, 6).reshape(2, nlambda, nmods, 16, 354, 354)
 
 def align_quadrants(data, acc = 0.01, verbose = False):
 
