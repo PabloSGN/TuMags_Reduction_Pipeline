@@ -111,13 +111,7 @@ def demodulate(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_david
         demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
         demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
     
-    int_ratio = np.median(demod[0, -1, 0]) / np.median(demod[1, -1, 0])
-    int_ratio = 1
-    if verbose:
-        print(f"Intensity ratio between cameras : {int_ratio}")
-
-    #dual_beam = (demod[0] + demod[1] * int_ratio) / 2 
-    dual_beam = (demod[0] + demod[1]) / 2
+        dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
 
     return dual_beam, demod
 
