@@ -31,6 +31,7 @@ def compute_xtalk_full(data, center_flag = False, savefig = False, figname = "xt
         xtalked[2], axu = compute_xtalk(data, "I", "U", fig = fig, ax = axs[1], center = center_flag, rad = rad)
         xtalked[3], axv = compute_xtalk(data, "I", "V", fig = fig, ax = axs[2], center = center_flag, rad = rad)
         plt.tight_layout()
+        
         if savefig:
             plt.tight_layout()
             plt.savefig(figname, bbox_inches = "tight")

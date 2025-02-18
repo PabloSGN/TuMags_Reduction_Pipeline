@@ -309,7 +309,7 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
 
     return I, H
 
-def separate_ocs_v2(paths, verbose = True, flat_fieldmode = False):
+def separate_ocs(paths, verbose = True, flat_fieldmode = False):
     print(f"\nSeparating Observation counters...")
     tic = time.time()
     OCs = {}
@@ -376,7 +376,8 @@ def separate_ocs_v2(paths, verbose = True, flat_fieldmode = False):
     return OCs
 
 
-
+"""
+OLDER VERSION
 def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
     print(f"\nSeparating Observation counters...")
@@ -446,7 +447,7 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
             print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])} - {state}")
 
     return OCs
-
+"""
 
 def get_time_from_filename(filename):
     split = [int(x) for x in filename[:-4].split("_")]
