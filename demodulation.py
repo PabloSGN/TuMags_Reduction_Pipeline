@@ -94,16 +94,22 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, nmods, nlambdas, filt, dmod_matrices = demod_matrices_david, verbose = False):
+def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False):
+
+    if onelambda:
+        data = data[:, np.newaxis] # To allow for only one lamdba.
+
+    shape = np.shape(data)
+    nlambda = shape[1]
+    nmods = shape[2]
     
     # All wavelengths
-
     size = np.shape(data)[-1]
     demod = np.zeros(np.shape(data))
-    dual_beam = np.zeros((nlambdas, nmods, size, size))
+    dual_beam = np.zeros((nlambda, nmods, size, size))
 
     # Each wavelength independently
-    for wl in range(nlambdas):
+    for wl in range(nlambda):
         
         dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
         dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))

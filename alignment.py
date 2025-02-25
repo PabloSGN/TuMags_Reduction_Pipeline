@@ -205,12 +205,13 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     return cam1_fieldstop
   
-def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True):
+def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, zkes = np.zeros(21)):
 
     # Get shape for data
     shape = np.shape(data)
     nlambda = shape[1]
     nmods = shape[2]
+
 
     filtered_n_rotated  = np.zeros(shape)
 
@@ -226,8 +227,8 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True):
             # Apply noise filter
 
             if filterflag:
-                filtered_n_rotated[0, lambd, mod], _ = restore_ima(data[0, lambd, mod], np.zeros(21))
-                cam2_filtered, _ = restore_ima(data[1, lambd, mod], np.zeros(21))
+                filtered_n_rotated[0, lambd, mod], _ = restore_ima(data[0, lambd, mod], zkes)
+                cam2_filtered, _ = restore_ima(data[1, lambd, mod], zkes)
                 filtered_n_rotated[1, lambd, mod] = rotate(cam2_filtered, theta, reshape=False, order = 2)
             else:
                 filtered_n_rotated[0, lambd, mod] = data[0, lambd, mod]
@@ -235,7 +236,10 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True):
     
     return filtered_n_rotated
 
-def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag = True):
+def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, zkes = np.zeros(21)):
+
+    if onelambda:
+        data = data[:, np.newaxis] # To allow for only one lamdba.
 
     shape = np.shape(data)
     nlambda = shape[1]
@@ -246,7 +250,7 @@ def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag
 
     # Start by applying noise and rotation
     filtered_and_rotated = filter_and_rotate(data, verbose = verbose, 
-                                             theta=theta, filterflag = filterflag)  
+                                             theta=theta, filterflag = filterflag, zkes= zkes)  
 
     for lambd in range(nlambda):
 
