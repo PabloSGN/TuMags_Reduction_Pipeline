@@ -274,7 +274,10 @@ def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag
 
             aligned[1, lambd, mod] = cams_aligned[1]
 
-    return aligned, shifts
+    if onelambda:
+        return aligned[:, 0], shifts
+    else:    
+        return aligned, shifts
 
 def reshape_into_16_quadrants(images, nlambda, nmods):
     # Reshape the last two dimensions into a 4x4 grid of (354, 354)

@@ -79,6 +79,7 @@ mod_matrices_david = {
                               [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
  }
 
+
 # Compute demodulation matrixes by inverting
 demod_matrices = {}
 for filt in mod_matrices:
@@ -118,8 +119,11 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
         demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
     
         dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
-
-    return dual_beam, demod
+    
+    if onelambda:
+        return dual_beam[0], demod[:, 0]
+    else:
+        return dual_beam, demod
 
 def demodulate_quadrants(data, nlambda, nmods, filt, nquads = 16, Np_quad = 354):
 
