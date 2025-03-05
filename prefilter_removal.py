@@ -219,7 +219,7 @@ def fit_prefilter(V, I, filt, save_flag = False, plot_flag = False, plot_filenam
         fig, axs = plt.subplots(figsize = (13, 5))
         axs.plot(wavelengths, Spectrum, c = 'k', lw = 2)
         axs.plot(wavelengths, prefilter(wavelengths, a, fitted_b, c), c = 'dodgerblue', lw = 2, label = "Fitted Prefilter")
-        axs.plot(Wvls, I, c = "darkorange", ls ='', marker = "X", markersize = 20, label = 'Measure')
+        axs.plot(Wvls, I, c = "darkorange", ls ='', marker = ".", markersize = 10, label = 'Measure')
         axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b, c, G, Et, config), c = 'indigo', lw = 3, label = "Fitted profile")
 
         pref_effect = compute_profile(Wvls, wavelengths, np.ones(len(wavelengths)), a, fitted_b, c, G, Et, config) 
