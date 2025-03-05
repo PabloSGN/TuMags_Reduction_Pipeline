@@ -24,6 +24,9 @@ import config as cf
 
 # ------------------------------ CONFIG ------------------------------------------ #
 
+__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+
+
 plt.style.use("default")
 plt.rc('font', family='serif')
 plt.rc('xtick', labelsize='small')
@@ -89,7 +92,7 @@ def fts_spectra(wli, wlf):
     """'Kitt Peak FTS-Spectral-Atlas'"""
     # print('Enter end wavelength (3290 - 12508 A)')
     #path = '/Users/dorozco/Dropbox (IdAdA)/Python/'
-    file = 'fts.npz'
+    file = os.path.join(__location__, 'fts.np')
     # np.savez('fts.npz', fts=fts, fts_w=fts_w)
     data = np.load(file)
     fts = data['fts']
