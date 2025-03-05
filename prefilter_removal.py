@@ -235,8 +235,8 @@ def fit_prefilter(V, I, filt, save_flag = False, plot_flag = False, plot_filenam
 
     return fitted_model
 
-def load_model(file):
-    with open('interp1d_data.pkl', 'rb') as file:
+def load_model(filename):
+    with open(filename, 'rb') as file:
         data = pickle.load(file)
 
     model = interp1d(data['x'], data['y'], kind='cubic')
