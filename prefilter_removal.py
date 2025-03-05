@@ -167,7 +167,7 @@ def parse_prefilter_scan(images_paths, filt, verbose = True, cam = 0):
 
 # ------------------------------ MAIN CODE ------------------------------------------ #
 
-def fit_prefilter(V, I, filt, save_flag = False):
+def fit_prefilter(V, I, filt, save_flag = False, plot_flag = False, plot_filename = "Prefilter_fitting.png"):
 
     def volts_2_lambda(volts, config):
         return config['Pend'] * volts + config['Ord']
@@ -198,7 +198,6 @@ def fit_prefilter(V, I, filt, save_flag = False):
 
     fitted_b = minimize(minimizing_funct, x0 =config["guess"], method = "Powell").x
 
-
     whole_volts_range = np.linspace(-4000, 4000, 1000)
 
     fitted_prefilter = compute_profile(volts_2_lambda(whole_volts_range, config), wavelengths, np.ones(len(wavelengths)), a, fitted_b, c, G, Et, config)
@@ -211,6 +210,24 @@ def fit_prefilter(V, I, filt, save_flag = False):
         # Save using pickle
         with open('prefilter_model.pkl', 'wb') as file:
             pickle.dump(data, file)
+
+    if plot_flag:
+        fig, axs = plt.subplots(figsize = (13, 5))
+        axs.plot(wavelengths, Spectrum, c = 'k', lw = 2)
+        axs.plot(wavelengths, prefilter(wavelengths, a, fitted_b, c), c = 'dodgerblue', lw = 2, label = "Fitted Prefilter")
+        axs.plot(Wvls, I, c = "darkorange", ls ='', marker = "X", markersize = 20, label = 'Measure')
+        axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b, c, G, Et, config), c = 'indigo', lw = 3, label = "Fitted profile")
+
+        pref_effect = compute_profile(Wvls, wavelengths, np.ones(len(wavelengths)), a, fitted_b, c, G, Et, config) 
+        pref_effect /= np.max(pref_effect)
+        axs.plot(Wvls, pref_effect, c = 'forestgreen', lw = 3, label = "Fitted prefilter effect [Normalized]")
+        axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b, c, G, Et, config) / pref_effect,  c = 'deeppink', lw = 3, label = "Corrected profile")
+        axs.legend(edgecolor = 'k')
+        axs.set_ylim(-0.05, 1.15)
+        axs.grid(True, c = 'k', alpha = 0.2)
+        plt.tight_layout()
+        fig.savefig(plot_filename, bbox_inches="tight")
+        plt.close(fig)
 
     return fitted_model
 
