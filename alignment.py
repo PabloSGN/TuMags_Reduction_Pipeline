@@ -16,6 +16,7 @@ from scipy.ndimage import rotate
 
 # Own functions
 from pd_functions_v22 import restore_ima
+from image_filtering import filter_frecuencies
 
 # Config
 margin = 10 # Margin from fieldstop
@@ -205,13 +206,32 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
 
     return cam1_fieldstop
   
-def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, zkes = np.zeros(21)):
+def rotate_camera2(data, theta = 0.065, onelambda = False):
+
+    if onelambda:
+        data = data[:, np.newaxis] # To allow for only one lamdba.
 
     # Get shape for data
     shape = np.shape(data)
     nlambda = shape[1]
     nmods = shape[2]
 
+    print("Computing camera 2 rotation...")
+
+    rotated = np.copy(data)
+    for lambd in range(nlambda):
+        for mod in range(nmods):    
+            rotated[1, lambd, mod] = rotate(data[1, lambd, mod], theta, reshape=False, order = 2)  
+    print("Rotation finished.\n")  
+
+    return rotated
+
+def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, zkes = np.zeros(21)):
+
+    # Get shape for data
+    shape = np.shape(data)
+    nlambda = shape[1]
+    nmods = shape[2]
 
     filtered_n_rotated  = np.zeros(shape)
 
@@ -248,16 +268,22 @@ def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag
     shifts = np.zeros((nlambda, 2, 2, nmods))
     aligned = np.zeros(np.shape(data))
 
+    if filterflag:
+        filtered = filter_frecuencies(data)
+        rotated = rotate_camera2(filtered, theta = theta)
+    else:
+        rotated = rotate_camera2(data, theta = theta)
+
     # Start by applying noise and rotation
-    filtered_and_rotated = filter_and_rotate(data, verbose = verbose, 
-                                             theta=theta, filterflag = filterflag, zkes= zkes)  
+    """filtered_and_rotated = filter_and_rotate(data, verbose = verbose, 
+                                             theta=theta, filterflag = filterflag, zkes= zkes)""" 
 
     for lambd in range(nlambda):
 
         print(f"Aligning wavelengh: {lambd}/{nlambda}")
 
         print(f"Modulations of cam 1 alignment...")
-        mods_aligned, srow, scol = realign_subpixel(filtered_and_rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
+        mods_aligned, srow, scol = realign_subpixel(rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
 
         shifts[lambd, 0, 0] = srow
         shifts[lambd, 0, 1] = scol
@@ -267,7 +293,7 @@ def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag
         print("Aligning cam2...")
         for mod in range(nmods):
             print(f"mod -> {mod}...")
-            cams_aligned, srow, scol = realign_subpixel(np.array([mods_aligned[mod], filtered_and_rotated[1, lambd, mod]]), verbose = verbose, accu = acc, return_shift=True )
+            cams_aligned, srow, scol = realign_subpixel(np.array([mods_aligned[mod], rotated[1, lambd, mod]]), verbose = verbose, accu = acc, return_shift=True )
 
             shifts[lambd, 1, 0, mod] = srow[1]
             shifts[lambd, 1, 1, mod] = scol[1]
@@ -275,7 +301,7 @@ def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag
             aligned[1, lambd, mod] = cams_aligned[1]
 
     if onelambda:
-        return aligned[:, 0], shifts
+        return aligned[:, 0], shifts[0]
     else:    
         return aligned, shifts
 
