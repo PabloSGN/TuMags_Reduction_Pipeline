@@ -1,6 +1,5 @@
 __pycache__/
 *fits
 *pyc
-*npz
 Analysis/
 venv/
