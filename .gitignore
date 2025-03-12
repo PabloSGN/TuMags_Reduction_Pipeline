@@ -1,5 +1,6 @@
 __pycache__/
 *fits
 *pyc
+mod4*
 Analysis/
 venv/
