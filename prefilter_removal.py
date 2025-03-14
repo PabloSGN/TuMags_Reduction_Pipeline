@@ -15,7 +15,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib as mp
 from astropy.io import fits
 from scipy.optimize import minimize
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from scipy.interpolate import interp1d
 
 
@@ -35,11 +35,11 @@ plt.rc('ytick', labelsize='small')
 mp.rcParams["font.size"] = "12.5"
 
 # Etalon params 
-Et = {
+"""Et = {
     'R' : 0.75,
     'n' : 2.56,
     'd' : 281e-6, #0.0003159677641232576,
-    'theta' : 0}
+    'theta' : 0}"""
 
 
 Config = {
@@ -47,25 +47,40 @@ Config = {
          'wls_norm' : 0,
          'Pend'     : 0.00030907042253499933,
          'Ord'      : 5173.432608450703,
-         'guess'    : 5172.5,
+         'pref_b'    : 5172.5,
          'Min_wvl'  : 5170,
-         'Max_wvl'  : 5176},
-'02': {
+         'Max_wvl'  : 5176,
+         'R'        : 0.81,
+         'n'        : 2.56,
+         'd'        : 281e-6,
+         'theta'    : 0,
+         "pref_c" : 0.5},
+'525.02': {
         'Gamma'    : 0.98,
         'wls_norm' : -5,
         'Pend'     : 0.0002957121398329138,
         'Ord'      : 5249.543594995222,
-        'guess'    : 5250.5,
+        'pref_b'    : 5250.5,
         'Min_wvl'  : 5246,
-        'Max_wvl'  : 5255},
-'06' : {
+        'Max_wvl'  : 5255,
+        'R'        : 0.77,
+        'n'        : 2.56,
+        'd'        : 281e-6,
+        'theta'    : 0,
+        "pref_c" : 0.65},
+'525.06' : {
         'Gamma'    : 1,
         'wls_norm' : 7,
         'Pend'     : 0.000288733333332857,
         'Ord'      : 5251.371833333332,
-        'guess'    : 5250.5,  
+        'pref_b'    : 5250.5,  
         'Min_wvl'  : 5246,
-        'Max_wvl'  : 5255 }}
+        'Max_wvl'  : 5255,
+        'R'        : 0.75,
+        'n'        : 2.56,
+        'd'        : 281e-6,
+        'theta'    : 0,
+        "pref_c" : 0.65 }}
 
 # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
@@ -109,11 +124,11 @@ def prefilter(wavelengths, a, b, c):
 
 def Int(Wavelengths, l0, Spectrum, a, b, c, R, dR, n, d, theta):
   
-    I = simps(Spectrum * prefilter(Wavelengths, a, b, c) * Etalon(Wavelengths * 1E-10, l0 * 1E-10,  R, dR, n, d, theta) ** 2, x = Wavelengths)
+    I = simpson(Spectrum * prefilter(Wavelengths, a, b, c) * Etalon(Wavelengths * 1E-10, l0 * 1E-10,  R, dR, n, d, theta) ** 2, x = Wavelengths)
     
     return I
 
-def Prof(Wls, Wavelengths, Spectrum,  a, b, c, R, dR, n, d, theta, wl_norm, Gamma):
+def Prof(Wls, Wavelengths, Spectrum, a, b, c, R, dR, n, d, theta, wl_norm, Gamma):
     
     Scan = [Int(Wavelengths, wl, Spectrum, a, b, c, R, dR, n, d, theta) for wl in Wls] 
     
@@ -123,15 +138,17 @@ def Prof(Wls, Wavelengths, Spectrum,  a, b, c, R, dR, n, d, theta, wl_norm, Gamm
     
     return Scan 
 
-def diff(I, Wvls, wavelengths, Spectrum, a, b, c, gamma, Et, config):
+def diff(I, Wvls, wavelengths, Spectrum, a, b, c, gamma, R, n, d, theta, config):
 
-    diff_profs = (I - Prof(Wvls, Wavelengths = wavelengths, Spectrum=Spectrum, a = a, b=b, c = c, R=Et["R"], dR=1, n=Et["n"], d=Et["d"], theta= Et["theta"], wl_norm=config["wls_norm"], Gamma = gamma))
+    diff_profs = (I - Prof(Wvls, Wavelengths = wavelengths, Spectrum=Spectrum, 
+                           a=a, b=b, c=c, R=R, dR=1, n = n, d=d, 
+                           theta= theta, wl_norm=config["wls_norm"], Gamma = gamma))
 
     return np.sum([x** 2 for x in diff_profs])
 
-def compute_profile(wls, wavelengths, Spectrum, a, b, c, gamma, Et, config):
+def compute_profile(wls, wavelengths, Spectrum, a, b, c, gamma, R, n, d, theta, config):
     
-    return Prof(wls, Wavelengths = wavelengths, Spectrum=Spectrum, a=a, b=b, c=c, R=Et["R"], dR=1, n=Et["n"], d=Et["d"], theta= Et["theta"], wl_norm=config["wls_norm"], Gamma = gamma)
+    return Prof(wls, Wavelengths = wavelengths, Spectrum=Spectrum, a=a, b=b, c=c, R=R, dR=1, n=n, d=d, theta = theta, wl_norm=config["wls_norm"], Gamma = gamma)
 
 
 def parse_prefilter_scan(images_paths, filt, verbose = True, cam = 0):
@@ -152,7 +169,7 @@ def parse_prefilter_scan(images_paths, filt, verbose = True, cam = 0):
         if H["cam"] not in found_cams:
             found_cams.append(H["cam"])
         if H["cam"] == cam and H["FW2"] == filt:
-            volts.append(H["hvps_comm_volts"])
+            volts.append(H["hvps_read_volts"])
             intensity.append(np.mean(I[500:-500, 500:-500]))
         else:
             pass
@@ -171,16 +188,24 @@ def parse_prefilter_scan(images_paths, filt, verbose = True, cam = 0):
 
 # ------------------------------ MAIN CODE ------------------------------------------ #
 
-def fit_prefilter(V, I, filt, save_flag = False, plot_flag = False, plot_filename = "Prefilter_fitting.png"):
 
-    def volts_2_lambda(volts, config):
-        return config['Pend'] * volts + config['Ord']
+def loss_r_n_b_c(params, wvls_measured, int_measured, wavelengths_spectrum, spectrum, 
+               a, gamma, d, theta, config):
+    R, n, b, c = params
+    guess  = compute_profile(wvls_measured, wavelengths_spectrum, spectrum, a, b, c, gamma, R, n, d, theta, config)
+    error = np.sum((guess - int_measured) ** 2)  # Sum of squared errors
+    return error
+
+
+def volts_2_lambda(volts, config):
+    return config['Pend'] * volts + config['Ord']
     
-    def lambda_2_volts(lambd, config):
-        return (lambd - config["Ord"]) / config["Pend"]
+def lambda_2_volts(lambd, config):
+    return (lambd - config["Ord"]) / config["Pend"]
+
+def fit_prefilter(V, I, filt, save_flag = False, bounds = None, plot_flag = False, plot_filename = "Prefilter_fitting.png"):
 
     a = 0.8
-    c = 0.5
 
     config = Config[filt]
 
@@ -194,17 +219,31 @@ def fit_prefilter(V, I, filt, save_flag = False, plot_flag = False, plot_filenam
 
     G = config["Gamma"]
 
-    def minimize_center(b, I, Wvls, wavelengths, Spectrum, a, c, gamma, Et, config):
-        return diff(I, Wvls, wavelengths, Spectrum, a, b, c, gamma, Et, config)
+    initial_guess = [config["R"], config["n"], config["pref_b"], config["pref_c"]]
 
-    # Partial function with fixed arguments
-    minimizing_funct = partial(minimize_center, I = I, Wvls = Wvls, wavelengths = wavelengths, Spectrum = Spectrum, a = a, c = c, gamma = G, Et = Et, config = config)
+    if bounds is None:
+        bounds = [(0.6, 0.81), 
+                  (2.4, 2.7),
+                  (config["pref_b"] - 0.1, config["pref_b"] + 0.1),
+                  (0.4, 0.6)]
 
-    fitted_b = minimize(minimizing_funct, x0 =config["guess"], method = "Powell").x
+    result = minimize(loss_r_n_b_c, initial_guess,
+                      args=(Wvls, I, wavelengths, Spectrum, a, G, config["d"], config["theta"], config), 
+                      method='L-BFGS-B', bounds=bounds)
+
+    fitted_r = result.x[0]
+    fitted_n = result.x[1]
+    fitted_b = result.x[2]
+    fitted_c = result.x[3]
+
+    print(f"FITTED MODEL : \nR: {fitted_r}, n: {fitted_n}, b: {fitted_b}, c: {fitted_c}")
 
     whole_volts_range = np.linspace(-4000, 4000, 1000)
 
-    fitted_prefilter = compute_profile(volts_2_lambda(whole_volts_range, config), wavelengths, np.ones(len(wavelengths)), a, fitted_b, c, G, Et, config)
+    fitted_prefilter = compute_profile(volts_2_lambda(whole_volts_range, config), wavelengths,
+                                       np.ones(len(wavelengths)), a, fitted_b, fitted_c, 
+                                       G, fitted_r, fitted_n, config["d"], config["theta"],
+                                       config)
 
     fitted_model = interp1d(whole_volts_range, fitted_prefilter / np.max(fitted_prefilter), kind='cubic')  
 
@@ -218,20 +257,29 @@ def fit_prefilter(V, I, filt, save_flag = False, plot_flag = False, plot_filenam
     if plot_flag:
         fig, axs = plt.subplots(figsize = (13, 5))
         axs.plot(wavelengths, Spectrum, c = 'k', lw = 2)
-        axs.plot(wavelengths, prefilter(wavelengths, a, fitted_b, c), c = 'dodgerblue', lw = 2, label = "Fitted Prefilter")
+        axs.plot(wavelengths, prefilter(wavelengths, a, fitted_b, fitted_c), c = 'dodgerblue', 
+                 lw = 2, label = "Fitted Prefilter")
         axs.plot(Wvls, I, c = "darkorange", ls ='', marker = ".", markersize = 10, label = 'Measure')
-        axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b, c, G, Et, config), c = 'indigo', lw = 3, label = "Fitted profile")
+        axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b,  fitted_c, G, 
+                                       fitted_r, fitted_n, config["d"], config["theta"],
+                                       config), c = 'indigo', lw = 3, label = "Fitted profile")
 
-        pref_effect = compute_profile(Wvls, wavelengths, np.ones(len(wavelengths)), a, fitted_b, c, G, Et, config) 
+        pref_effect = compute_profile(Wvls, wavelengths, np.ones(len(wavelengths)), a, fitted_b,
+                                       config["pref_c"], G, fitted_r, fitted_n, config["d"], 
+                                       config["theta"], config) 
         pref_effect /= np.max(pref_effect)
         axs.plot(Wvls, pref_effect, c = 'forestgreen', lw = 3, label = "Fitted prefilter effect [Normalized]")
-        axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b, c, G, Et, config) / pref_effect,  c = 'deeppink', lw = 3, label = "Corrected profile")
+        axs.plot(Wvls, compute_profile(Wvls, wavelengths, Spectrum, a, fitted_b, 
+                                       config["pref_c"], G, fitted_r, fitted_n, config["d"], 
+                                       config["theta"], config) / pref_effect, 
+                                         c = 'deeppink', lw = 3, label = "Corrected profile")
         axs.legend(edgecolor = 'k')
         axs.set_ylim(-0.05, 1.15)
+        axs.set_xlim(min(Wvls) - 0.2, max(Wvls) + 0.2)
         axs.grid(True, c = 'k', alpha = 0.2)
         plt.tight_layout()
         fig.savefig(plot_filename, bbox_inches="tight")
-        plt.close(fig)
+        #plt.close(fig)
 
     return fitted_model
 
@@ -243,7 +291,10 @@ def load_model(filename):
 
     return model
 
-def remove_line_from_flat_fields(ff, om, pref_model, volts = None ):
+def remove_line_from_flat_fields(ff, om, pref_model, volts = None, verbose = False):
+
+    if verbose:
+        print(f"\nRemoving prefilter effect from flat-fields...")
 
     if isinstance(pref_model, str):
         pref_model = load_model(pref_model)
@@ -259,6 +310,9 @@ def remove_line_from_flat_fields(ff, om, pref_model, volts = None ):
     for lambd in range(nlambda):
         factor = pref_model(volts[lambd])
         new_flat_field[:, lambd] = ff[:, lambd] * factor
+
+    if verbose:
+        print(f"done.\n")
 
     return new_flat_field
 

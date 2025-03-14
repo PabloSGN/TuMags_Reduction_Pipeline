@@ -9,14 +9,17 @@ a single observation mode.
 import numpy as np
 import time
 
+# Own modules
 import config as cf
 import image_handler as ih
+import prefilter_removal as pr
 
 # ------------------------------ CONFIG ------------------------------------------ #
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False):
+def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
+                              norm_method = "avg", remove_prefilter = False, pref_model = None, volts = None):
     tic = time.time()
 
     if verbose:
@@ -47,15 +50,38 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
 
     data = flat_obs.get_data()
 
-    norm_ff = np.zeros(np.shape(data))
     # Normalize flat-fields
-    for lambd in range(N_wls):
-        for mod in range(N_mods):
-            norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, mod, 300:-300, 300:-300])
-            norm_ff[1, lambd, mod] = data[1, lambd, mod] / np.mean(data[1, lambd, mod, 300:-300, 300:-300])
+    norm_ff = np.zeros(np.shape(data))
+    
+    # Normalize flat by average of all modulations.
+    if norm_method == "avg":
+        for lambd in range(N_wls):
+            for mod in range(N_mods):
+                norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, :, 300:-300, 300:-300])
+                norm_ff[1, lambd, mod] = data[1, lambd, mod] / np.mean(data[1, lambd, :, 300:-300, 300:-300])
+    
+    # Normalize flat by each modulation separately.
+    elif norm_method == "mod":
+        for lambd in range(N_wls):
+            for mod in range(N_mods):
+                norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, mod, 300:-300, 300:-300])
+                norm_ff[1, lambd, mod] = data[1, lambd, mod] / np.mean(data[1, lambd, mod, 300:-300, 300:-300])
 
-    print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
-    return norm_ff, flat_obs.get_info()
+    else:
+        raise Exception("Invalid normalization method. Please select 'avg' or 'mod'.")
+
+    if remove_prefilter:
+
+        if pref_model is None:
+            raise Exception("Please provide a prefilter model to remove from flat-fields.")
+        else:
+            flats_pref_removed = pr.remove_line_from_flat_fields(norm_ff, om = om, pref_model = pref_model, volts=volts, verbose = verbose)
+
+            print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
+            return flats_pref_removed, flat_obs.get_info()
+    else:
+        print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
+        return norm_ff, flat_obs.get_info()
     
 
 
