@@ -43,7 +43,7 @@ introduced by the user or computed within a function
 #from skimage.morphology import square, erosion
 from matplotlib import pyplot as plt
 from PIL import Image as im
-from photutils.aperture import CircularAperture #conda install -c astropy photutils
+from photutils import CircularAperture #conda install -c astropy photutils
 from scipy.ndimage import median_filter
 from scipy import ndimage
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
@@ -58,6 +58,8 @@ import time
 import scipy
 import shift_func as sf
 from astropy.io import fits
+from tqdm import tqdm
+from matplotlib.colors import LogNorm
 try:
     import pyfftw
     flag_pyfftw=1
@@ -65,15 +67,23 @@ except:
     flag_pyfftw=0
 
 
-#TuMag parameters
+def tumag_params(pref='52502'):
+    try:
+        #Wavelength [m]
+        if pref=='52502':
+            wvl=525.02e-9 
+        elif pref=='52506':
+            wvl=525.06e-9 
+        elif pref=='517':
+            wvl=517.3e-9        
+        fnum=60 # f-number
+        Delta_x=11e-6 ##Size of the pixel [m]
+        return wvl,fnum,Delta_x
+    except UnboundLocalError:
+        print('Error in function "tumag_params": pref must be one'
+        'of the following strings: "52502", "52506" or "517"')
+        sys.exit()    
 
-
-
-def tumag_params():
-    wvl=525.02e-9 #517.3e-9 #Wavelength [m]
-    fnum=60 # f-number
-    Delta_x=11e-6 ##Size of the pixel [m]
-    return wvl,fnum,Delta_x
 
 def compute_nuc(N,wvl,fnum,Delta_x):
     """
@@ -376,17 +386,18 @@ def OTF(a,a_d,RHO,THETA,ap,norm=None,K=2,tiptilt=False):
                 norma[i]=1
     return otf,norma
 
-def OTF_jitt(sigma,nuc,N,norm=None):
+def OTF_jitt(sigma,plate_scale,N,norm=None):
     """
     This function computes the OTFs of jitter corresponding to a pair of images:
     one free of jitter and another one affected by it. It is based on the
-    model of Fiete 2014 (Eq. 19)
+    model of Fiete 2019 (Eq. 19)
     Input:
-        sigma: vector with the rms of jitter in x,y and its correlation
-            (sigma_x,sigma_y,sigma_xy)
-            
+        sigma: vector with the rms of jitter in x,y (in arcsec)
+                and its correlation (sigma_x,sigma_y,sigma_xy). The correlation factor
+                "sigma_xy" goes from -1 to 1 and is equivalent to rho_xy in Fiete (2019).
+        plate_scale: plate scale in arcsec/pixel
         norm:{None,True}, optional. 'True' for normalization purpose. Default
-         is None
+                is None
         
     Output:
         otf: 2D complex array representing the OTFs of the image free of
@@ -395,8 +406,7 @@ def OTF_jitt(sigma,nuc,N,norm=None):
 
     """
     #Meshgrid with frequency coordinates
-    delta_theta=0.0378 #Plate scale in arcseconds (arcsec/pixel)
-    nu_lim=1/(2*delta_theta) 
+    nu_lim=1/(2*plate_scale) 
     nu_vec=np.linspace(-nu_lim,nu_lim,int(N)+1) #Odd number of samples to center the stray-light OTF
     NU,ETA=np.meshgrid(nu_vec,nu_vec)
     NU=NU[:-1,:-1] #To have again an even number of samples
@@ -405,7 +415,8 @@ def OTF_jitt(sigma,nuc,N,norm=None):
     #OTF_jitter model for the jitter-free and the jitter-affected images
     otf_jitt=np.zeros((N,N,2))
     otf_jitt[:,:,0]=np.ones((N,N))
-    otf_jitt[:,:,1]=np.exp(-2*np.pi**2*(NU**2*sigma[0]**2+ETA**2*sigma[1]**2+NU*ETA*sigma[2]**2))
+    otf_jitt[:,:,1]=np.exp(-2*np.pi**2*(NU**2*sigma[0]**2+ETA**2*sigma[1]**2+\
+                                        2*NU*ETA*sigma[0]*sigma[1]*sigma[2]))
     
     if norm==True:
         norma=np.max(np.abs(otf_jitt)[:])
@@ -457,7 +468,7 @@ def convPSF(I,a,a_d,RHO,THETA,ap,norm=None):
         d: real 2D numpy array representing the convolution of I and the system
     """
     if I.dtype != 'float64':
-        print(I.dtype,'Error: I must be a Numpy array of type float64')
+        print(I.dtype,'Error in convPSF: I must be a Numpy array of type float64')
         sys.exit()
     #Fourier transform of the image
     O=fft2(I)
@@ -465,6 +476,8 @@ def convPSF(I,a,a_d,RHO,THETA,ap,norm=None):
 
     #Aberrated image
     otf,norma=OTF(a,a_d,RHO,THETA,ap,norm=norm)
+    otf=otf[:,:,0]
+
     D=O*otf
 
     d=ifftshift(D)
@@ -562,7 +575,6 @@ def noise_power(Of,nuc,N,filterfactor=1.5):
     #Circular obscuration mask to calculate the noise beyond the critical freq.
     cir_obs=pmask(nuc,N)
 
-
     #Calculation of noise
     #power=np.sum(np.abs(Of)**2*cir_obs)/np.sum(cir_obs)
 
@@ -577,9 +589,28 @@ def noise_power(Of,nuc,N,filterfactor=1.5):
      #4th quadrant
     power+=np.sum((np.abs(Of)**2*cir_obs)[x3:N,x3:N])/np.sum(cir_obs[x3:N,x3:N])
 
+    #Average power over the four quadrants
+    power=power/4
+
     #To obtain a more conservative filter in filter_sch
     power=filterfactor*power
     return power
+
+def noise_rms(ima):
+    """
+    Computes the rms of noise in a noisy region by computing the mean
+    power of the signal beyond the critical frequency
+    """
+    wvl,fnum,Delta_x=tumag_params()
+    N=ima.shape[0]
+    nuc,_=compute_nuc(N,wvl,fnum,Delta_x)
+
+    Of=fft2(ima)
+    Of=Of/(N**2)
+    Of=fftshift(Of)
+    power=noise_power(Of,nuc,N,filterfactor=1)
+    sigma=np.sqrt(power*N**2)
+    return sigma
 
 def filter_sch(Q,Ok,Hk,gamma,nuc,N,low_f=0.2):
     """
@@ -1213,16 +1244,27 @@ gamma,nuc,N,disp=True,cut=None,ffolder='',K=2,jac=True):
     print(minim)
     return np.array([minim.x]).T #To return an array consisting of 1 column
 
-def minimization_jitter(Ok,gamma,nuc,N,cut=None):
+def minimization_jitter(Ok,gamma,plate_scale,nuc,N,cut=None,print_res=True):
     """
     Function that optimizes the jitter term for a set of two images,
     one free from jitter and another one affected by it.
     We do not take into account derivatives of the OTF.
     The image free from jitter must be the one at index 0.
+
+    Inputs:
+        Ok: output of 'prepare_PD'. Consists of an array with
+            the FFT of the images. The first index
+            must correspond to the 'jitter-free' image.
+        gamma: output of "prepare_PD". Level of noise among images.
+        plate_scale: plate scale in arcsec/pixel
+        nuc: critical frequency of the telescope (computed at the beginning
+            of this module)
+        N: size of each PD image
+
     """
     def merit_func(sigma):
         #OTFs for the jitter term
-        Hk_jitt,_=OTF_jitt(sigma,nuc,N,norm=None)
+        Hk_jitt,_=OTF_jitt(sigma,plate_scale,N,norm=None)
        
         #Q factor and noise filtering
         Q=Qfactor(Hk_jitt,gamma,nuc,N,reg1=0,reg2=1)
@@ -1236,23 +1278,178 @@ def minimization_jitter(Ok,gamma,nuc,N,cut=None):
         e=merite(E)
         L=meritl(e,cut=cut)
         #print('Merit function:',L)
-        #If L=0 because of an error computing Q
-        #set it to one to avoid the program to think that the convergence succeeded
+        #If L=0 because of an error computing Q,set it to one to
+        #avoid the program to think that the convergence succeeded
         if L==0:
             L=1 
         return L
 
 
-    meth='Nelder-Mead'#'L-BFGS-B' #'Nelder-Mead'
-    #opt={'ftol':1e-9,'gtol':1e-8}#
-    #opt={'ftol':1e-11,'gtol':1e-10}
-    opt={'ftol':1e-15,'gtol':1e-14}
-    minim=scipy.optimize.minimize(merit_func,[0,0,0],method=meth,options=opt,
-                                  bounds=((0,None),(0,None),(0,None)))
-    print(minim)
-    return np.array([minim.x]).T #To return an array consisting of 1 column
+    meth='Nelder-Mead'#'L-BFGS-B' or 'Nelder-Mead'
+    opt={'ftol':1e-15,'gtol':1e-14} #Options for L-BFGS-B method
+    minim=scipy.optimize.minimize(merit_func,[0,0,0],method=meth,#options=opt,
+                                  bounds=((0,None),(0,None),(-.9999,0.9999)))
+    if print_res is True:
+        print(minim)
+    return minim.x#np.array([minim.x]).T #To return an array consisting of 1 column
 
-def read_image(file,ext,num_im=0,norma='yes'):
+
+def minimization_jitter2(Ok,gamma,plate_scale,nuc,N,sigma0,cut=None,print_res=True):
+    """
+    Function that optimizes the jitter term for a set of two images,
+    THE TWO OF THEM affected by jitter. Jitter is known
+    for one of them
+    We do not take into account derivatives of the OTF.
+    The image for which we know jitter must be the one at index 0.
+
+    Inputs:
+        Ok: output of 'prepare_PD'. Consists of an array with
+            the FFT of the images. The first index
+            must correspond to the 'jitter-free' image.
+        gamma: output of "prepare_PD". Level of noise among images.
+        plate_scale: plate scale in arcsec/pixel
+        nuc: critical frequency of the telescope (computed at the beginning
+            of this module)
+        N: size of each PD image
+        sigma0: jittter of the image at index 0
+        print_res(True or False): to print the optimization results
+
+    """
+    #Compute jitter OTF for the reference image
+    Hk_jitt0,_=OTF_jitt(sigma0,plate_scale,N,norm=None)
+    Hk_jitt0=Hk_jitt0[:,:,1]
+
+    def merit_func(sigma):
+        #OTFs for the jitter term
+        Hk_jitt,_=OTF_jitt(sigma,plate_scale,N,norm=None)
+        Hk_jitt[:,:,0]=Hk_jitt0 #OTF of the referenc image
+       
+        #Q factor and noise filtering
+        Q=Qfactor(Hk_jitt,gamma,nuc,N,reg1=0,reg2=1)
+        noise_filt=filter_sch(Q,Ok,Hk_jitt,gamma,nuc,N)
+        Ok_filt=np.zeros((N,N,2),dtype='complex128')
+        for i in range(2):
+            Ok_filt[:,:,i]=noise_filt*Ok[:,:,i] #Filtered FFT
+
+        #Calculation of merit function
+        E=meritE(Ok_filt,Hk_jitt,Q)
+        e=merite(E)
+        L=meritl(e,cut=cut)
+        #print('Merit function:',L)
+        #If L=0 because of an error computing Q,set it to one to
+        #avoid the program to think that the convergence succeeded
+        if L==0:
+            L=1 
+        return L
+
+
+    meth='Nelder-Mead'#'L-BFGS-B' or 'Nelder-Mead'
+    opt={'ftol':1e-15,'gtol':1e-14} #Options for L-BFGS-B method
+    minim=scipy.optimize.minimize(merit_func,[0,0,0],method=meth,#options=opt,
+                                  bounds=((0,None),(0,None),(-.9999,0.9999)))
+    if print_res is True:
+        print(minim)
+    return minim.x#np.array([minim.x]).T #To return an array consisting of 1 column
+
+def correct_jitter_along_series(ima,zernikes,pref='52502',cut=None,cobs=32.4,
+                                low_f=0.2,reg1=0.05,reg2=1,
+                                plate_scale=0.0378,print_res=False):
+    """
+    Function that infers andcorrect jitter  for a series of
+    images recorded by TuMag. All images must be recorded at the 
+    same wavelength and modulation state of the LCVRs.
+    Input:
+        ima: 3D array with the images. The first index corresponds to the
+            image index. The second and third indices correspond to the
+            spatial dimensions of the images: (frame #, x, y)
+        zernikes: Numpy array with the Zernike coefficients to be optimized,
+            the first three terms being zero: np.array([0,0,0,a4,a5,...])
+        cobs: central obscuration of the telescope (0 if off-axis).
+        cut: number of pixels to be excluded near the edges of the image (to
+            compute the merit function).
+        low_f: low limit of the noise filter, as defined in 'filter_sch'      
+        pref: '515', '52502' (default) or '52506'. Prefilter corresponding
+            to the images
+        reg1, reg2: regularization parametersn of the type reg1*(nu/nuc)**reg2
+            for the restoration
+        plate_scale: plate scale in arcsec/pixel
+        print_rest: True or False (default). To print detailed results of the
+            minimization process.
+    Output:
+        ima_series: 3D array with the images corrected from wavefront error and
+            jitter along the series
+        sigma_vec: 2D array with the results of the optimization process for
+            each image along the series
+    """
+    #Move axis with frame index to last axis and compute the # of frames
+    ima=np.moveaxis(ima,0,-1)
+    Nframes=ima.shape[2]
+    N=ima.shape[0] #Size of each spatial dimension of the images
+
+    #Find image with highest contrast along the series
+    contrast=np.zeros(Nframes)
+    for i in range(Nframes):
+        contrast[i]=np.std(ima[:,:,i])/np.mean(ima[:,:,i])
+
+    i_max=np.argmax(contrast)
+    print('Image with highest contrast along the series:',i_max)
+
+    #Settings for object_estimate
+    a_aver=zernikes #Zernike coefficients 
+    a_d=0 #For object_estimate to restore a single image
+    wvl,fnum,Delta_x=tumag_params(pref=pref)
+    nuc,R=compute_nuc(N,wvl,fnum,Delta_x)
+
+    #Image padding to reduce edge effects when restoring
+    ima_pad,pad_width=padding(ima)
+    cut=pad_width#To later select the non-padded region
+
+    # Correct from jitter along the series
+    sigma_vec=np.zeros((Nframes,3))
+    ima_series=ima.copy()
+    ima_series[:,:,i_max]=ima[:,:,i_max]
+
+    #Correct jitter from i_max to last index 
+    for i in range(i_max,Nframes-1):
+        print('-----------------')
+        print('Image index %g'%(i+1))
+
+                     
+        #Compute jitter 
+        ima_jitt=ima_series[:,:,(i,i+1)]
+        Ok,gamma,wind,susf=prepare_PD(ima_jitt,nuc,N)
+        sigma0=sigma_vec[i,:]    
+        sigma=minimization_jitter2(Ok,gamma,plate_scale,nuc,N,sigma0,
+                                            cut=int(0.15*N),print_res=print_res)  
+        sigma_vec[i+1,:]=sigma
+        print('Sigma:',sigma)  
+
+    #Correct jitter from i_max to 0    
+    for i in range(i_max,0,-1):
+        print('-----------------')
+        print('Image index %g'%i)
+
+         
+        #Compute jitter
+        ima_jitt=ima_series[:,:,(i,i-1)] 
+        Ok,gamma,wind,susf=prepare_PD(ima_jitt,nuc,N)
+        sigma0=sigma_vec[i,:]    
+        sigma=minimization_jitter2(Ok,gamma,plate_scale,nuc,N,sigma0,
+                                          cut=int(0.15*N),print_res=print_res)     
+        sigma_vec[i-1,:]=sigma
+        print('Sigma:',sigma)  
+
+    #Restore images from jitter and aberrations
+    for i in range(Nframes): 
+        o_plot,_,noise_filt=object_estimate_jitter(ima_pad[:,:,i],
+                        sigma_vec[i,:],a_aver,a_d,cobs=cobs,low_f=low_f,wind=True,reg1=reg1,reg2=reg2)
+        ima_series[:,:,i]=o_plot[cut:-cut,cut:-cut]
+
+    # Move again axis with frame index to first axis 
+    ima_series=np.moveaxis(ima_series,-1,0)    
+    return ima_series,sigma_vec
+
+def read_image(file,ext,num_im=0,norma='yes',header=False):
     """
     Function that opens an image and resizes it to fill the NxN detector
     """
@@ -1264,11 +1461,14 @@ def read_image(file,ext,num_im=0,norma='yes'):
         I = s.imagen
         I = np.array(I,dtype='float')
         return I
+    elif ext=='.npz':
+        I=np.load(file+ext)
+        print('Files contained in .npz:',I.files)
+        data=I['map'] 
+        return data
     elif ext=='.fits':
-        from astropy.io import fits
         I=fits.open(file+ext)
         data = I[0].data
-
 
         #If first dimension corresponds to focused and defocused images
         if data.ndim==3:
@@ -1280,7 +1480,10 @@ def read_image(file,ext,num_im=0,norma='yes'):
                 l2=int(N/2)
                 data=data[(xcen-l2):(xcen+l2),(xcen-l2):(xcen+l2),:]
         elif data.ndim==4:
-            return data
+            if header is True:
+                return data,I[0].header
+            else:
+                return data
         #If last dimension corresponds to focused and defocused images
         if data.shape[0]==data.shape[1]:
             if data.ndim==3: #If 'data' contains 3 dimensions
@@ -1305,12 +1508,18 @@ def read_image(file,ext,num_im=0,norma='yes'):
                     #    defoc=I[1].data
                     #    return data,defoc
                     #except:
-                    return data
+                    if header is True:
+                        return data,I[0].header
+                    else:
+                        return data
                 elif data.ndim==2:
                     data=data/np.mean(data)
                     data=data[0:data.shape[0],0:data.shape[1]]
                     data = np.array(data,dtype='float64')
-                    return data
+                    if header is True:
+                        return data,I[0].header
+                    else:
+                        return data
             else:
                 I = data
                 I = np.array(I,dtype='float64')
@@ -1465,22 +1674,19 @@ def prepare_PD(ima,nuc,N,wind=True,kappa=100):
         gamma[i]=noise_power(Of,nuc,N)/noise_power(Ok[:,:,i],nuc,N)
 
     #Normalization to get mean 0 and apodization
-    per_apod=10 #Percentage of apodization
+    per_apod=12.5 #Percentage of apodization
     if wind==True:
         wind=apod(ima.shape[0],ima.shape[1],per_apod) #Apodization of subframes
     else:
         wind=np.ones((ima.shape[0],ima.shape[1]))
 
-    #Apodization and FFT of focused image
+    #Apodization, mean substraction and FFT of focused image
     susf=np.sum(wind*ima[:,:,0])/np.sum(wind)
     of=(ima[:,:,0]-susf)*wind
-
-    #plt.close()
-    #Of=mf.fourier2(of)
     Of=fft2(of)
     Of=Of/(N**2)
 
-    #Apodization and FFTs of each of the K images
+    #Apodization and FFTs of each of the defocused images
     for i in range(1,Nima):
         susi=np.sum(wind*ima[:,:,i])/np.sum(wind)
         imak=(ima[:,:,i]-susi)*wind
@@ -1490,9 +1696,9 @@ def prepare_PD(ima,nuc,N,wind=True,kappa=100):
         Ok[:,:,i]=fft2(imak)
         Ok[:,:,i]=Ok[:,:,i]/(N**2)
 
-        #Compute and correct the shifts between images
-        error,row_shift,col_shift,Gshift=sf.dftreg(Of,Ok[:,:,i],kappa)
-        print('Residual shift:',row_shift,col_shift)
+        #Compute and correct the shifts wich respect to the focused image
+        _,row_shift,col_shift,Gshift=sf.dftreg(Of,Ok[:,:,i],kappa)
+        print('Residual shift among the pair of images:',row_shift,col_shift)
 
         Ok[:,:,i]=Gshift #We shift Ok[:,:,i]
         #Shift to center the FTTs
@@ -1543,6 +1749,7 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
     #Fourier transform images
     Ok, gamma, wind, susf=prepare_PD(ima,nuc,N,wind=wind)
 
+
     if isinstance(a_d, np.ndarray): #If a_d is an array...
         if a_d[0]==a_d[1]:#In this case, the 2nd image is a dummy image
             if a_d[0]==0:
@@ -1560,8 +1767,6 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
     else:
         noise_filt=noise
 
-    
-
     Nima=Ok.shape[2]
     for i in range(0,Nima):
         #Filtering in Fourier domain
@@ -1577,7 +1782,6 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
 
     #Restoration
     O=Ffactor(Q,Ok,Hk,gamma)
-
     Oshift=np.fft.fftshift(O)
     o=np.fft.ifft2(Oshift)
     #o=np.fft.fftshift(o)
@@ -1587,8 +1791,9 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
 
 
 
-def object_estimate_jitter(ima,sigma,a,a_d,cobs=0,wind=True,low_f=0.2,
-                    tiptilt=False,noise='default',reg1=0,reg2=1,inst='tumag'):
+def object_estimate_jitter(ima,sigma,a,a_d,cobs=0,wind=True,
+                           low_f=0.2,tiptilt=False,noise='default',
+                           reg1=0,reg2=1,inst='tumag'):
     """
     This function restores the OTF part of a jittered image.
     Inputs:
@@ -1610,6 +1815,10 @@ def object_estimate_jitter(ima,sigma,a,a_d,cobs=0,wind=True,low_f=0.2,
     """
     #Sampling according to image size
     if inst=='tumag':
+        plate_scale=0.0378 #Plate scale in arcseconds (arcsec/pixel)
+        wvl,fnum,Delta_x=tumag_params()
+    elif inst=='imax':
+        plate_scale=0.055
         wvl,fnum,Delta_x=tumag_params()
     N=ima.shape[0]
     nuc,R=compute_nuc(N,wvl,fnum,Delta_x)
@@ -1618,7 +1827,9 @@ def object_estimate_jitter(ima,sigma,a,a_d,cobs=0,wind=True,low_f=0.2,
 
     #Fourier transform images
     Ok, gamma, wind, susf=prepare_PD(ima,nuc,N,wind=wind)
-    
+    Nima=Ok.shape[2] #Number of images to be employed in the reconstruction
+
+
     #Set gamma[1] to zero, as we do want to reconstruct only the first imag
     if isinstance(a_d, np.ndarray): #If a_d is an array...
         if a_d[0]==a_d[1]:#In this case, the 2nd image is a dummy image
@@ -1626,36 +1837,30 @@ def object_estimate_jitter(ima,sigma,a,a_d,cobs=0,wind=True,low_f=0.2,
                 gamma=[1,0] #To account only for the 1st image
     
     #Jitter OTF
-    Hk_jitt,_=OTF_jitt(sigma,nuc,N,norm=False)
+    Hk_jitt,_=OTF_jitt(sigma,plate_scale,N,norm=False)
     Hk_jitt[:,:,0]=Hk_jitt[:,:,1] #To employ the OTF of the jittered image
 
-    #Aberration OTF
-    Hk_aberr,_=OTF(a,a_d,RHO,THETA,ap,norm=True,K=Ok.shape[2],tiptilt=tiptilt)
  
-
+    #Aberration OTF
+    Hk_aberr,_=OTF(a,a_d,RHO,THETA,ap,norm=True,K=Nima,tiptilt=tiptilt)
+ 
     #Total OTF
     if np.all(a==0): #If all aberrations are zero
         Hk=Hk_jitt
     else:
         Hk=0*Hk_aberr
-        for i in range(Ok.shape[2]):    
+        for i in range(Nima):    
             Hk[:,:,i]=Hk_jitt[:,:,i]*Hk_aberr[:,:,i]
     
     #Restoration
     Q=Qfactor(Hk,gamma,nuc,N,reg1=reg1,reg2=reg2)
     
     if noise=='default':
-        if np.all(sigma==0):
-            noise_filt=filter_sch(Q,Ok,Hk,gamma,nuc,N,low_f=low_f)
-        else:
-            #If we have jitter, we reduce the cut-off frequency to avoid
-            #spurious artifacts close to the Nyquist frequency
-            nuc2=int(0.5*nuc)
-            noise_filt=filter_sch(Q,Ok,Hk,gamma,nuc2,N,low_f=low_f)  
+        noise_filt=filter_sch(Q,Ok,Hk,gamma,nuc,N,low_f=low_f)
     else:
         noise_filt=noise
 
-    Nima=Ok.shape[2]
+
     for i in range(0,Nima):
         #Filtering in Fourier domain
         Ok[:,:,i]=noise_filt*Ok[:,:,i]
@@ -1810,7 +2015,11 @@ def radial_profile(data, center):
 
 def power_radial(ima):
     """
-    Radial power of a 2D image
+    Radial power of a 2D image. 
+    If we want to see the steep drop in frequency
+    on the restored image, we must compute the radial power
+    on the Fourier transform of the restored image computed in object_estimate,
+    before applying the IFFT to obtain the restored image in spatial domain.  
     """
     power=np.abs(mf.fourier2(ima)/(ima.shape[0])**2)**2
     xp0=int(ima.shape[0]/2)
@@ -1818,7 +2027,7 @@ def power_radial(ima):
     return power_radial
 
 
-def retrieve_aberr(N,R,k_max,Jmax,cobs,txtfolder):
+def retrieve_aberr(k_max,Jmax,txtfolder):
     """
     Function that retrieves the average of the Zernike coeeficients saved in the
     txt files of a given directory.
@@ -1864,16 +2073,17 @@ def padding(ima):
     the image to reduce edge effects when reconstructing it.
     """
     size=ima.shape[0]
-    pad_width = int(size*10/(100-10*2))
+    pw = int(size*10/(100-10*2)) #Pad width to reduce edge effects
     if ima.ndim==3:
-        ima_pad = np.zeros((size+pad_width*2,size+pad_width*2,ima.shape[-1]))
+        ima_pad = np.zeros((size+pw*2,size+pw*2,ima.shape[-1]))
         for i in range(ima.shape[-1]):
-            ima_pad[:,:,i]=np.pad(ima[:,:,i], pad_width=((pad_width, pad_width), (pad_width, pad_width)), mode='symmetric')  
+            ima_pad[:,:,i]=np.pad(ima[:,:,i], pad_width=((pw,pw),(pw,pw)),mode='symmetric')  
     elif ima.ndim==2:
-        ima_pad=np.pad(ima, pad_width=((pad_width, pad_width), (pad_width, pad_width)), mode='symmetric')
-    return ima_pad
+        ima_pad=np.pad(ima, pad_width=((pw, pw), (pw, pw)), mode='symmetric')
+    return ima_pad,pw
 
-def restore_ima(ima,zernikes,pd=0,low_f=0.2,reg1=0.05,reg2=1,cobs=32.4):
+def restore_ima(ima,zernikes,pd=0,low_f=0.2,noise='default',reg1=0.05,
+                reg2=1,cobs=32.4):
     """
     This function restores a 2D or a 3D image using a given set of Zernike 
     coefficients and a modified Wiener filter that includes a 
@@ -1885,6 +2095,8 @@ def restore_ima(ima,zernikes,pd=0,low_f=0.2,reg1=0.05,reg2=1,cobs=32.4):
             following Noll's 1979 rule
         pd: phase diversity between the images in case ima is a 3D array
         low_f: lower threshold of the optimum (Wiener's) filter
+        noise: 'default' to be computed as filt_scharmer. Otherwise, this variable
+            should contain a 2x2 array with the filter.
         reg1: 1st parameter of regularization term
         reg2: 2nd parameter of the regularization term 
         cobs: percentage of the central obscuration
@@ -1893,12 +2105,119 @@ def restore_ima(ima,zernikes,pd=0,low_f=0.2,reg1=0.05,reg2=1,cobs=32.4):
         noise_filt: noise filter employed for the restoration
     """
     #Image padding to reduce edge effects
-    ima_pad=padding(ima)
-    cut=int(0.1*ima_pad.shape[0]) #To later select the non-padded region
+    ima_pad,pad_width=padding(ima)
+    cut=pad_width #To later select the non-padded region
 
     #If we select only one image of the series
-    ima_rest,_,noise_filt=object_estimate(ima_pad,zernikes,pd,
-                                                wind=True,cobs=cobs,cut=cut,
-                                                low_f=low_f,reg1=reg1,reg2=reg2)
+    ima_rest,_,noise_filt=object_estimate(ima_pad,zernikes,pd,wind=True,
+                                          cobs=cobs,cut=cut,low_f=low_f,
+                                          noise=noise,reg1=reg1,reg2=reg2)
     ima_rest=ima_rest[cut:-cut,cut:-cut]
     return ima_rest, noise_filt
+
+def simulate_jitter(ima,sigmax,sigmay,plate_scale,Nacc):
+    """
+    Simulate jitter in an accumulated image as the sum of Nacc
+    individual images with a shift that follows a Gaussian distribution
+    over directions X and Y.
+    Inputs:
+        ima: image to which we apply a given jitter 
+        sigmax, sigmay: rms of the jitter (in arcsec)
+        plate_scale: plate scale of the instrument (arcsec/pixel)
+        Nacc: number of accumulated images that are shifted
+    Output:
+        ima_shift: jittered image
+        rms_x, rms_y: rms of the effective jitter (closer to sigmax and sigmay
+            as Nacc increases)
+    """
+    IMA=fft2(ima) #FFT of the image to be "jittered"
+    ima_shift=0*ima #Initialize "jittered" image
+    x=np.random.normal(0, sigmax/plate_scale,Nacc) #shift in pixel units
+    y=np.random.normal(0, sigmay/plate_scale,Nacc) #shift in pixel units
+    rms_x=np.round(np.std(x)*plate_scale,4) #rms in arcsec
+    rms_y=np.round(np.std(y)*plate_scale,4) #rms in arcsec
+
+    #print('Computing the jittered image')
+    #We add individual shifted images to simulate jitter
+    for i in range(Nacc):
+        ima_shift+=sf.subpixel_shift(IMA,x[i],y[i])
+    ima_shift=ima_shift/Nacc
+    return ima_shift,rms_x,rms_y
+
+def read_crop_reorder(path,ext,cam,wave,modul,header=False,crop=False,
+                      crop_region=[200,1800,200,1800]):
+    """
+    Function that reads a TuMag image, crops its central part
+    and reorders the axes as follows: (dimx, dimy, frame)
+        path: path of the image
+        ext: extension of the image
+        cam: camera (0 or 1)
+        wave: wavelength (From 0 to 10)
+        modul: modulation (From 0 to 4)
+        header: True to read the header (valid for FITS files)
+        crop: True to crop the image
+        crop_region: region to crop the image if 'crop' is True
+    """
+    #Read image
+    if ext=='.npy':
+        ima=np.load(path+ext)
+        ima=ima[cam,wave,modul,:,:]
+    else:
+        if header==True:
+            ima,hdr=read_image(path,ext,norma='no',header=True)
+        else:    
+            ima=read_image(path,ext,norma='no')
+
+
+    #Crop the image
+    x0,xf,y0,yf=crop_region
+    if crop==True:
+        if ima.ndim==2:
+            ima=ima[x0:xf,y0:yf]
+        elif ima.ndim==3:
+            ima=ima[x0:xf,y0:yf,:]
+        elif ima.ndim==4:
+            ima=ima[:,:,x0:xf,y0:yf] 
+
+    #Reorder axis if necessary
+    if ima.ndim==4: 
+        ima=ima[:,modul,:,:]  #Select first modulation          
+        ima=np.moveaxis(ima,0,-1) #Move image index to last index
+        ima=ima/np.mean(ima[:200,:200,0])#Normalize images to continuum
+    if header is True:
+        return ima,hdr
+    else:
+        return ima
+
+def radial_MTF(a,a_d,sigma,plate_scale,cobs=0,inst='tumag',
+               tiptilt=False):
+    #System parameters
+    if inst=='tumag':
+        plate_scale=0.0378 #Plate scale in arcseconds (arcsec/pixel)
+        wvl,fnum,Delta_x=tumag_params()
+    elif inst=='imax':
+        plate_scale=0.055
+        wvl,fnum,Delta_x=tumag_params()
+    N=1000
+    nuc,R=compute_nuc(N,wvl,fnum,Delta_x)
+    ap=aperture(N,R,cobs=cobs)
+    RHO,THETA=sampling2(N,R)
+
+    #Jitter OTF
+    Hk_jitt,_=OTF_jitt(sigma,plate_scale,N,norm=False)
+    Hk_jitt[:,:,0]=Hk_jitt[:,:,1] #To employ the OTF of the jittered image
+
+    #Aberration OTF
+    Hk_aberr,_=OTF(a,a_d,RHO,THETA,ap,norm=True,K=2,tiptilt=tiptilt)
+ 
+
+    #Total OTF
+    if np.all(a==0): #If all aberrations are zero
+        Hk=Hk_jitt
+    else:
+        Hk=0*Hk_aberr
+        Hk[:,:,0]=Hk_jitt[:,:,0]*Hk_aberr[:,:,0]
+    
+    #Radial OTF
+    MTF_radial=radial_profile(np.abs(Hk[:,:,0]), [int(N/2),int(N/2)])
+    return MTF_radial,nuc
