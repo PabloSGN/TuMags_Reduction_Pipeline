@@ -126,7 +126,7 @@ class nominal_observation:
         _, h1 = read(images_path_reshaped[0, 0, 0]) # read first image to get acc
        
         for lambd in range(nlambda):
-            print(lambd)
+            print(f"Processing wavelength : {lambd + 1} / {nlambda}")
             self.info["Images_headers"][f"wv_{lambd}"] = {}
             for mod in range(nmods):
                 # Reading each image

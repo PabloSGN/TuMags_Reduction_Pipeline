@@ -15,7 +15,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib as mp
 from astropy.io import fits
 from scipy.optimize import minimize
-from scipy.integrate import simpson
+from scipy.integrate import simps
 from scipy.interpolate import interp1d
 
 
@@ -47,10 +47,10 @@ Config = {
          'wls_norm' : 0,
          'Pend'     : 0.00030907042253499933,
          'Ord'      : 5173.432608450703,
-         'pref_b'    : 5172.5,
+         'pref_b'    : 5172.66,
          'Min_wvl'  : 5170,
          'Max_wvl'  : 5176,
-         'R'        : 0.81,
+         'R'        : 0.75,
          'n'        : 2.56,
          'd'        : 281e-6,
          'theta'    : 0,
@@ -124,7 +124,7 @@ def prefilter(wavelengths, a, b, c):
 
 def Int(Wavelengths, l0, Spectrum, a, b, c, R, dR, n, d, theta):
   
-    I = simpson(Spectrum * prefilter(Wavelengths, a, b, c) * Etalon(Wavelengths * 1E-10, l0 * 1E-10,  R, dR, n, d, theta) ** 2, x = Wavelengths)
+    I = simps(Spectrum * prefilter(Wavelengths, a, b, c) * Etalon(Wavelengths * 1E-10, l0 * 1E-10,  R, dR, n, d, theta) ** 2, x = Wavelengths)
     
     return I
 
@@ -221,6 +221,8 @@ def fit_prefilter(V, I, filt, save_flag = False, bounds = None, plot_flag = Fals
 
     initial_guess = [config["R"], config["n"], config["pref_b"], config["pref_c"]]
 
+    print(f"Initial Guess : \nR: {initial_guess[0]}, n: {initial_guess[1]}, b: {initial_guess[2]}, c: {initial_guess[3]}")
+
     if bounds is None:
         bounds = [(0.6, 0.81), 
                   (2.4, 2.7),
@@ -229,7 +231,7 @@ def fit_prefilter(V, I, filt, save_flag = False, bounds = None, plot_flag = Fals
 
     result = minimize(loss_r_n_b_c, initial_guess,
                       args=(Wvls, I, wavelengths, Spectrum, a, G, config["d"], config["theta"], config), 
-                      method='L-BFGS-B', bounds=bounds)
+                      method='Powell', bounds=bounds)
 
     fitted_r = result.x[0]
     fitted_n = result.x[1]
@@ -251,7 +253,7 @@ def fit_prefilter(V, I, filt, save_flag = False, bounds = None, plot_flag = Fals
         # Store necessary data
         data = {'x': whole_volts_range, 'y': fitted_prefilter / np.max(fitted_prefilter)}
         # Save using pickle
-        with open('prefilter_model.pkl', 'wb') as file:
+        with open(f'prefilter_model_{filt}.pkl', 'wb') as file:
             pickle.dump(data, file)
 
     if plot_flag:
