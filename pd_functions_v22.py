@@ -50,6 +50,7 @@ from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from scipy.optimize import minimize, minimize_scalar
 from astropy.convolution import convolve
 import numpy as np
+import pandas as pd
 import zernike as zk
 import math_func2 as mf
 import sys
@@ -2221,3 +2222,27 @@ def radial_MTF(a,a_d,sigma,plate_scale,cobs=0,inst='tumag',
     #Radial OTF
     MTF_radial=radial_profile(np.abs(Hk[:,:,0]), [int(N/2),int(N/2)])
     return MTF_radial,nuc
+
+def import_zernikes(ID,csv_path='./TuMag PD results - All filters.csv'):
+    """
+    This function imports the Zernike coefficients from the CSV file
+    "TuMag PD results - All filters" as a Numpy array that can be
+    employed for restore_ima. A Google sheet with the information of the CSV
+    file can be found at:
+    https://docs.google.com/spreadsheets/d/1J9yXAVh042kcYkAjcfjirrsoC0gV_CxlgtW94qLWKp4/edit?usp=sharing
+    Input:
+        csv_path: path in which the CSV file "TuMag PD results - All filters"
+            is located. Default: current directory.
+        ID: identifier for each PD result in the format 
+            Sunrise_ID_ + filter (Fe2.02/Fe2.06/Mg1). An additional 
+            label of the type _0, _1, _2 etc. is employed when
+            several PD data are analyzed for the same Sunrise ID.
+            Example: "06_SPOT_Fe2.02_0"
+    Output:
+        zernikes: Numpy array with imported Zernike coefficients
+    """
+    zk_index=15 #Row at which the first Zernike coefficient starts
+    data=pd.read_csv(csv_path,sep=",",header=0,index_col=0,dayfirst=True)
+    PD_info=data[ID]
+    zernikes=np.array(PD_info["Z1 (offset)":],dtype=float)
+    return zernikes
