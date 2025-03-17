@@ -1,7 +1,8 @@
 # ---------------------------- DESCRIPTION --------------------------------------- #
-
 """
-author: Pablo Santamarina Guerrero(pablosantamarinag@gmail.com) 
+
+Module with all the functions related to the alignment of the observation modes. 
+
 Instituto de Astrofísica de Andalucía (IAA-CSIC) 
 """
 
@@ -17,9 +18,6 @@ from scipy.ndimage import rotate
 # Own functions
 from pd_functions_v22 import restore_ima
 from image_filtering import filter_frecuencies
-
-# Config
-margin = 10 # Margin from fieldstop
 
 # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
@@ -140,7 +138,18 @@ def realign_subpixel(ima, accu=0.01, verbose = True, return_shift = False):
     else:
         return ima_aligned
 
-def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = margin):
+def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = 10):
+    """
+    Module to find the fieldstop of images. 
+
+    Inputs:
+        - cam1 (np.array): A single image to find the fieldstop.
+        - verbose (Boolean, default : False): Print info on terminal. 
+        - plot_flag (Boolean, default : False): Plot the fieldstop calculation. 
+        - margin (int, default : 10) : Number of pixels of margin from the detected field-stop       
+    Outputs:
+        - Fieldstop (list). 
+    """
 
     tic = time.time()
 
@@ -207,6 +216,16 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = mar
     return cam1_fieldstop
   
 def rotate_camera2(data, theta = 0.065, onelambda = False):
+    """
+    Function to rotate the camera 2 from an obs mode
+
+    Inputs:
+        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
+        - theta (float, default : 0.065): Angle of rotation
+        - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
+    Outputs:
+        - Rotation (np.array) : Same array as data with cam2 rotated by theta 
+    """
 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
@@ -227,6 +246,19 @@ def rotate_camera2(data, theta = 0.065, onelambda = False):
     return rotated
 
 def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, zkes = np.zeros(21)):
+
+    """
+    Function to filter an obs mode and rotate camera 2
+
+    Inputs:
+        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
+        - theta (float, default : 0.0655): Angle of rotation
+        - verbose (Boolean, ddefault : False) : Print info on terminal.
+        - filterflag (Boolean, default : True) : Set to False to skip Fourier filtration 
+        - zkes (np.array, default : np.zeros(21)): Zernike's array to use for the filtration. 
+    Outputs:
+        - Filtered and Rotated (np.array) : Same array as data filtrated and with cam2 rotated  
+    """
 
     # Get shape for data
     shape = np.shape(data)
@@ -256,7 +288,22 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, 
     
     return filtered_n_rotated
 
-def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, zkes = np.zeros(21)):
+def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, zkes = np.zeros(21)):
+    """
+    Function to filter, rotate camera 2 and align an obs mode. 
+
+    Inputs:
+        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
+        - acc (float,default : 0.01) : Accuracy for the alignemnt routine.
+        - theta (float, default : 0.0655): Angle of rotation
+        - verbose (Boolean, ddefault : False) : Print info on terminal.
+        - filterflag (Boolean, default : True) : Set to False to skip Fourier filtration 
+        - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
+        - zkes (np.array, default : np.zeros(21)): Zernike's array to use for the filtration. 
+    Outputs:
+        - Filtered, Rotated  and aligned (np.array) : Same array as data filtrated and with cam2 rotated  
+        - shifts (list) : shifts performed to each camera, modulation and wavelength
+    """
 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
@@ -306,13 +353,31 @@ def align_obsmode(data, acc = 0.001, verbose = False, theta = 0.0655, filterflag
         return aligned, shifts
 
 def reshape_into_16_quadrants(images, nlambda, nmods):
+    """
+    Function to reshape an observing mode into 16 quadrant along the FoV (4 x 4):
+    Inputs: 
+        - images (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x 1416 x 1416)
+        - nlambda (int): Number of wavelengths
+        - nmods (int) : Number of modulations. 
+    Outputs:
+        - reshaped (np.array) : Array with an additional axis to go over the quadrants (Ncams x Nlambda x Nmods x 16 x 354 x 35)
+    """
     # Reshape the last two dimensions into a 4x4 grid of (354, 354)
     reshaped = images.reshape(2, nlambda, nmods, 4, 354, 4, 354)
     # Rearrange axes to group quadrants into a single dimension
     return reshaped.transpose(0, 1, 2, 3, 5, 4, 6).reshape(2, nlambda, nmods, 16, 354, 354)
 
 def align_quadrants(data, acc = 0.01, verbose = False):
-
+    """
+    Function to align the quadrants separately
+    Inputs: 
+        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x 1416 x 1416)
+        - acc (int, default : 0.01): accuracy for the alignment routine
+        - verbose (Boolean, default : False) : Print info on terminal 
+    Outputs:
+        - aligned (np.array) : Array with an additional axis to go over the quadrants (Ncams x Nlambda x Nmods x 16 x 354 x 35)
+        - shifts (list) : shifts performed to each camera, modulation and wavelength
+    """
     shape = np.shape(data)
     nlambda = shape[1]
     nmods = shape[2]

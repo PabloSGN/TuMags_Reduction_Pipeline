@@ -162,9 +162,11 @@ class nominal_observation:
     # Get the data array
     def get_data(self):
         return self.data
-
+    
+# Class to process flat-field modes -> headers and array 
 class nominal_flat:
 
+    # Process the observations
     def __init__(self, om, images_path, nreps, dc, lambda_repeat = 4, verbose = False):
 
         print(f"Processing images...")
@@ -275,6 +277,18 @@ def get_images_paths(queries):
     return selection
         
 def read_ID(image_index, plotflag = False, verbose = False, header = False, binning = False):
+    """
+    Reads an image with a given ID.
+    Inputs: 
+        - image_index : format DXX-YYYY
+        - plotflag : Boolean to select plotting
+        - verbose : Boolean info on terminal
+        - header : Boolean to print header. 
+        - Binning : Boolean to bin for faster reading
+    Outputs:
+        - I : Image data
+        - H : Header data
+    """
     
     day = image_index[:3]
     index = int(image_index[4:])
@@ -310,6 +324,13 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
     return I, H
 
 def separate_ocs(paths, verbose = True, flat_fieldmode = False):
+
+    """
+    
+    
+    """
+
+
     print(f"\nSeparating Observation counters...")
     tic = time.time()
     OCs = {}
@@ -374,80 +395,6 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
             print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])} - {state}")
 
     return OCs
-
-
-"""
-OLDER VERSION
-def separate_ocs(paths, verbose = True, flat_fieldmode = False):
-
-    print(f"\nSeparating Observation counters...")
-    tic = time.time()
-    OCs = {}
-
-    if flat_fieldmode:
-        mult = 4
-    else:
-        mult = 1
-
-    for ind, im in enumerate(paths):
-        
-        print(f"{ind}/{len(paths)} read.")
-        _, H = read(im)
-
-        oc = H['ObservationCounter']
-        
-        if oc not in OCs:
-            OCs[oc] = {}
-            OCs[oc]["OM"] = H["ObservationMode"]
-            OCs[oc]["ims"] = []
-            OCs[oc]["empty"] = True
-            OCs[oc]["ims"].append(im)
-
-            if OCs[oc]["OM"] in cf.om_config:
-                OCs[oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"]  * mult
-            else:
-                OCs[oc]["Expected Nim"] = 999
-
-        elif OCs[oc]["empty"]:
-            OCs[oc]["ims"].append(im)
-            if len( OCs[oc]["ims"]) == OCs[oc]["Expected Nim"]:
-                OCs[oc]["empty"] = False
-
-        else:
-            new_oc = f"{oc}_a"
-
-            if new_oc not in OCs:
-                OCs[new_oc] = {}
-                OCs[new_oc]["OM"] = H["ObservationMode"]
-                if OCs[oc]["OM"] in cf.om_config:
-                    OCs[new_oc]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] * mult
-                else:
-                    OCs[new_oc]["Expected Nim"] = 999
-                OCs[new_oc]["ims"] = []
-                OCs[new_oc]["empty"] = True
-                OCs[new_oc]["ims"].append(im)
-
-            elif OCs[new_oc]["empty"]:
-                OCs[new_oc]["ims"].append(im)
-                if len( OCs[oc]["ims"]) == OCs[new_oc]["Expected Nim"]:
-                    OCs[new_oc]["empty"] = False
-
-    if verbose:
-        ocs = [x for x in OCs]
-        print(f"Images processed in {round(time.time() - tic, 2)}s.")
-        print(f"{len(ocs)} found.")
-        print(f"Images por mode:")
-     
-        for OC in OCs:
-            if OCs[OC]["empty"]:
-                state = "Incomplete"
-            else:
-                state = "Complete"
-                
-            print(f"OC : {OC} - Obs Mode : {OCs[OC]['OM']} - Nims : {len(OCs[OC]['ims'])} - {state}")
-
-    return OCs
-"""
 
 def get_time_from_filename(filename):
     split = [int(x) for x in filename[:-4].split("_")]
