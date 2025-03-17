@@ -96,6 +96,17 @@ for filt in mod_matrices_david:
 # ------------------------------  CODE  ------------------------------------------ # 
 
 def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False):
+    """
+    Function to perform the demodulation of the observation mode. 
+    Inputs: 
+        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
+        - filt (str) : Filter to demodulate (517, 525.02 or 525.06)
+        - demod_matrices (np.array : default : demod_matrices_David) : Demodulations matrix to use
+       - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
+    Outputs:
+        - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
+        - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
+    """
 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
@@ -126,6 +137,19 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
         return dual_beam, demod
 
 def demodulate_quadrants(data, nlambda, nmods, filt, nquads = 16, Np_quad = 354):
+    """
+    Function to perform the demodulation of the observation mode separated in quadrants. 
+    Inputs: 
+        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
+        - nlambda (int): Number of wavelengths
+        - nmods (int) : Number of modulations
+        - filt (str) : Filter to demodulate (517, 525.02 or 525.06)
+        - nquads (int, default : 16) : Number of quadrants
+        - Np_quad (int, defaulr : 354) : Pixel soize of quadrant
+    Outputs:
+        - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
+        - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
+    """
 
     demod = np.zeros((2, nlambda, nmods, nquads, Np_quad, Np_quad))
     dual = np.zeros((nlambda, nmods, nquads, Np_quad, Np_quad))
