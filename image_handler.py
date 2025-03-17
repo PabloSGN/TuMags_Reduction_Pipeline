@@ -327,7 +327,7 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
     """
     
-    
+    Function to etyc. 
     """
 
 
