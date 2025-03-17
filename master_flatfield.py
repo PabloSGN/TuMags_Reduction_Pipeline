@@ -72,13 +72,15 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         raise Exception("Invalid normalization method. Please select 'avg' or 'mod'.")
 
     if remove_prefilter:
-
         if volts == "read":
             ff_header = flat_obs.get_info()
             volts = [ff_header["Images_headers"][f"wv_{lambd}"][f"Mod_0"]["hvps_read_volts"][0] for lambd in range(N_wls)]
+            print(volts)
 
             if verbose:
                 print(f"Using read voltages: {volts}")
+        else:
+            print("Using fixed voltages.")
 
         if pref_model is None:
             raise Exception("Please provide a prefilter model to remove from flat-fields.")
