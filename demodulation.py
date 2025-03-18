@@ -95,7 +95,7 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False):
+def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 
@@ -131,10 +131,17 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
     
         dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
     
-    if onelambda:
-        return dual_beam[0], demod[:, 0]
+    if BothCams:
+        if onelambda:
+            return dual_beam[0], demod[:, 0]
+        else:
+            return dual_beam, demod
     else:
-        return dual_beam, demod
+        if onelambda:
+            return dual_beam[0]
+        else:
+            return dual_beam
+
 
 def demodulate_quadrants(data, nlambda, nmods, filt, nquads = 16, Np_quad = 354):
     """

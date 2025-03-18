@@ -288,7 +288,7 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, 
     
     return filtered_n_rotated
 
-def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, zkes = np.zeros(21)):
+def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, zkes = np.zeros(21), returnshifts = False):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
@@ -327,7 +327,7 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
 
     for lambd in range(nlambda):
 
-        print(f"Aligning wavelengh: {lambd}/{nlambda}")
+        print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
 
         print(f"Modulations of cam 1 alignment...")
         mods_aligned, srow, scol = realign_subpixel(rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
@@ -347,10 +347,16 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
 
             aligned[1, lambd, mod] = cams_aligned[1]
 
-    if onelambda:
-        return aligned[:, 0], shifts[0]
-    else:    
-        return aligned, shifts
+    if returnshifts:
+        if onelambda:
+            return aligned[:, 0], shifts[0]
+        else:    
+            return aligned, shifts
+    else:
+        if onelambda:
+            return aligned[:, 0]
+        else:    
+            return aligned
 
 def reshape_into_16_quadrants(images, nlambda, nmods):
     """

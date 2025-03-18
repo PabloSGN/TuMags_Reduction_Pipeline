@@ -8,8 +8,6 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-from field_stop_finder import find_fieldstop
-
 # ------------------------------ CONFIG ------------------------------------------ #
 
 ## Readout noise
