@@ -5,9 +5,8 @@
 This module provides functionality to handle and process `.img` files, specifically for reduced observations in astrophysics. It includes classes for reading image headers and metadata, performing calculations, and managing observational data.
 
 **Author:**  
-Pablo Santamarina Guerrero  
+ 
 Instituto de Astrofísica de Andalucía (IAA-CSIC)  
-Email: pablosantamarinag@gmail.com  
 
 ---
 

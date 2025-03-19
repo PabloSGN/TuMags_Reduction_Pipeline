@@ -235,13 +235,14 @@ class nominal_flat:
 def get_images_paths(queries):
 
     """
+    Provides the paths of the images associated to the quieres. 
+
     Queries have to be in format: "DXX-start-end"]
     start and end are integers. 
     "DXX" has to be one of the observation days -> D09 - D16 
     """
     
     "Allowing for various queries in case observation changed day"
-
     if isinstance(queries, list):
         selection = []
         for qry in queries:
@@ -326,8 +327,16 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
 def separate_ocs(paths, verbose = True, flat_fieldmode = False):
 
     """
+    Function to separate the images provided into different OCS. 
+
+    Inputs: 
+        - paths (list) : path to the images. 
+        -flat_fieldmode (Boolean, default : False) : Boolean to enable flat-field mode. 
+     In flat_field mode, the number of images expected per mode increases to evaluate the 
+     completeness of the mode in case of aborts. 
     
-    
+    Returns:
+        - OCs dictionary containing the organized data.
     """
 
 
@@ -397,10 +406,23 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
     return OCs
 
 def get_time_from_filename(filename):
+    """
+    Function to get the time as a datetime object from the file name. 
+    """
+
     split = [int(x) for x in filename[:-4].split("_")]
     return datetime(split[0], split[1], split[2], split[3], split[4], split[5])
 
 def obs_mode_separator(paths, verbose = False):
+    """
+    Function to organize the images of an observing mode based on the properties of the header. 
+    Used in case an observing mode is incomplete. 
+
+    inputs:
+        - paths (list) : LÑist of paths to the images. 
+    returns:
+        - obs: dictionary containing the organized images. 
+    """
 
     obs = {}
     for ind, im in enumerate(paths):
@@ -433,39 +455,41 @@ def obs_mode_separator(paths, verbose = False):
     return obs
 
 def check_timestamps(paths, verbose = True):
+    """
+    Function to check the intervals between images. Generates a plot showing the intervals.
+    inputs:
+        - paths (list) : list of paths to the images.
+    """
 
     intervals = []
-
     prev = get_time_from_filename(os.path.basename(paths[0]))
-
     times = []
 
     for ind, file in enumerate(paths[1:]):
-
         filename = os.path.basename(file)
-
         time = get_time_from_filename(filename)
-
         times.append(time)
-
         intervals.append(time - prev)
-
         prev = time
 
     intervals = [ x.total_seconds() for x in intervals]
-
     fig, axs = plt.subplots(figsize = (10, 5))
-
     axs.plot(times, intervals, c = 'indigo', lw = 1)
-
     axs.grid(True, c = 'k', alpha = 0.3)
-
     axs.set_ylabel("Interval between consecutive images [s]")
     axs.set_xlabel("Time of image accquisition.")
     plt.tight_layout()
     plt.show()
 
 def snapshot_processing(paths, dc, verbose = True):
+    """
+    Function to process the snapshot images (HC timelines.)
+    inputs: 
+        - paths (list) : list of paths to the images.
+        - dc (np.array) : numpy array of the dark current
+    returns:
+        - np.array containing all the images separated into the different cameras.
+    """
 
     if verbose:
         print(f"Proccessing snapshot mode...")
@@ -485,6 +509,15 @@ def snapshot_processing(paths, dc, verbose = True):
     return np.array([c1, c2])
 
 def polarizers_parser(paths, filt, dc):
+    """
+    Function to parse micropolarizer observations. 
+    inputs:
+        - paths (list) : list of paths to the images. 
+        - filt (str) : filter to parse 525.02 / 525.06 / 517
+        - dc (np.array) : Dark current.
+    returns:
+        - nparray containing the micropolarizers obs separated in cameras and modulations.
+    """
 
     Nfilts = 3
     Nmods = 4

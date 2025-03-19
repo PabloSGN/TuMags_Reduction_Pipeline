@@ -14,13 +14,32 @@ import config as cf
 import image_handler as ih
 import prefilter_removal as pr
 
-# ------------------------------ CONFIG ------------------------------------------ #
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
 def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
                               norm_method = "avg", remove_prefilter = False, pref_model = None, 
                               volts = None):
+    """
+    Function to compute the flat-field observation from the images paths. 
+
+    inputs:
+        - flat_field_paths (list) : List containing all the paths to the images composing a single 
+        flat-field observation. 
+        - dc (np.array) : Dark current. 
+        - lambda_repeat (int, default : 4) : Lambda repeat parameter of the observation.
+        - norm_method (str, default : "avg) : Normalization method. avg or mod.
+        - remove_prefilter (Boolean, default : False) : Option to remove prefilter from the flats profiles. 
+        - pref_model : Prefilter model file rerquired if remove_prefilter = True. 
+        - volts (str / None, default = None) : Set to "read" if read voltages are to be used for the pref_removal.
+        If None, fixed voltages are used. 
+    returns:
+        - ff_data (np.array) : Array containing the flat field (cams, Nlambda, Nmods, Nx, Ny)
+        - ff_info (dictionary) : Dictionary containing all info of the flat-field.    
+    """
+    
+    
+    
     tic = time.time()
 
     if verbose:

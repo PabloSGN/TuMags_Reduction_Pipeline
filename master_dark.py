@@ -11,11 +11,17 @@ import numpy as np
 from utils import read_Tumag
 import time
 
-# ------------------------------ CONFIG ------------------------------------------ #
-
 # ------------------------------  CODE  ------------------------------------------ # 
 
 def compute_master_darks(dark_paths, verbose = False):
+    """
+    Function to compute the dark current from the paths to the images. 
+    inputs:
+        - dark_paths (list) : List of paths to the dark current images.
+    returns: 
+        - dc (np.array) : Array of the dark current for both cameras.
+    
+    """
 
     tic = time.time()
     # Read first image to obtain image size.

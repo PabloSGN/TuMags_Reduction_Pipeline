@@ -26,7 +26,6 @@ def create_frequency_mask(image_shape, fu, du, fv, dv):
     - image_shape: Tuple (rows, cols) of the new image.
     - fu, fv: Center of the unwanted frequency (normalized).
     - du, dv: Bandwidth around the center frequency to remove.
-    - tolerance: Additional margin for frequency matching.
 
     Returns:
     - Binary mask (same shape as image) with 0 at unwanted frequencies.
@@ -47,15 +46,18 @@ def create_frequency_mask(image_shape, fu, du, fv, dv):
 def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, dv = dv_readout, onelambda = False):
     
     """
-    Filters an image by removing specific frequencies.
+    Filters an image by removing specified frequencies.
 
     Parameters:
-    - image: 2D numpy array (grayscale image)
-    - target_freqs: List of (fu, fv) normalized frequencies to remove
-    - tolerance: Allowed deviation in frequency matching
+    - data (np.array): data array dims (2, lambda, mods, Nx, Ny) 
+    - fu (float, default : readout freq) : frequency to filter in the u dimension
+    - fv (float, default : readout freq) : frequency to filter in the v dimension
+    - du (float, default : readout freq) : margin to create the mask in the u dimension
+    - dv (float, default : readout freq) : margin to create the mask in the v dimension
+    - onelambda (Boolean, default : False) : Boolean in case only onelambda is passed
 
     Returns:
-    - Filtered image in the spatial domain
+    - Filtered data.
     """
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
