@@ -288,7 +288,7 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, 
     
     return filtered_n_rotated
 
-def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, zkes = np.zeros(21), returnshifts = False):
+def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, returnshifts = False):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
@@ -320,10 +320,6 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
         rotated = rotate_camera2(filtered, theta = theta)
     else:
         rotated = rotate_camera2(data, theta = theta)
-
-    # Start by applying noise and rotation
-    """filtered_and_rotated = filter_and_rotate(data, verbose = verbose, 
-                                             theta=theta, filterflag = filterflag, zkes= zkes)""" 
 
     for lambd in range(nlambda):
 

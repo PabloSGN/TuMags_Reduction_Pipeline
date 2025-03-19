@@ -223,4 +223,4 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
     #Move again axis to original positoin
     data_corrected=np.moveaxis(data_corrected,0,-1)
     data_corrected=np.moveaxis(data_corrected,0,-1)
-    return data_corrected,MM1a
+    return data_corrected, MM1a

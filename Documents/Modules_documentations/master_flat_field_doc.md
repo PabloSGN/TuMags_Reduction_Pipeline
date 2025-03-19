@@ -48,5 +48,4 @@ from master_flatfield import compute_master_flat_field
 # Compute the master flat field
 flat_field_data, flat_field_info = compute_master_flat_field(flat_fields_paths, dc, verbose=True, remove_prefilter=True, pref_model="prefilter_model.pkl")
 ```
-
 ---

@@ -1,8 +1,4 @@
-Here is the documentation for the `jaeggli.py` file, following the format and style of the provided `image_filtering_doc.md` template:
-
----
-
-# Jaeggli Module Documentation
+# Xtalk_Jaeggli Module Documentation
 
 ## Description
 This module contains functions to correct for crosstalk using the method described in Jaeggli et al. 2022. The module implements diattenuation and retarder modeling to minimize the correlation between Stokes parameters (I, Q, U, V) in weakly polarized regions of spectral lines. The method is based on the paper [Jaeggli et al. 2022](https://doi.org/10.3847/1538-4357/ac6506) and the associated [GitHub repository](https://github.com/sajaeggli/adhoc_xtalk).

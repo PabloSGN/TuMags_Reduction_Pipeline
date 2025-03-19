@@ -1,5 +1,7 @@
-# TuMag's reduction step by step guide. 
+# Working with Fits files. 
 
+
+When working with TuMag's fits files, the first step is to identify the reduction level of the provided file. 
 
 ## Reduction levels
 

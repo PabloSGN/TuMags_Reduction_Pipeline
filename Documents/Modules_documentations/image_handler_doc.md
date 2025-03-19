@@ -1,7 +1,3 @@
-Here is the documentation for the `image_handler.py` file, following the format and style of the provided `image_filtering_doc.md` template:
-
----
-
 # Image Handler Module Documentation
 
 ## Description

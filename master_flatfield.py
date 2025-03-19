@@ -112,6 +112,34 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
         return norm_ff, flat_obs.get_info()
     
+def correct_observation(data, ff, onelambda = False):
+    """
+    Function to apply the flat_field correction. 
 
+    Inputs:
+        - data (np.array) : observing mode data
+        - ff (np.array) : flat_field data
+        - onelambda (Boolean, default : False) : Select if only one lambda is passed.
+    returns:
+        - corrected : Corrected data.  
+    """
 
+    if onelambda:
+        data = data[:, np.newaxis] # To allow for only one lamdba.
+
+    # Get shape for data
+    shape = np.shape(data)
+    nlambda = shape[1]
+    nmods = shape[2]
+
+    om_corr = np.zeros(np.shape(data))
+    for lambd in range(nlambda):
+        for mod in range(nmods):
+            for cam in range(2):
+                om_corr[cam, lambd, mod] = data[cam, lambd, mod] / ff[cam, lambd, mod]
+
+    if onelambda:
+        return om_corr[:, 0]
+    else:    
+        return om_corr 
 
