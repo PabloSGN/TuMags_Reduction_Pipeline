@@ -18,9 +18,9 @@ Fits files at different stages of the reduction process will be provided, identi
 
 TuMag's fits file names have the following structure: 
 
-**{ SunriseID }_TM_{ BlockIndex } _ { Line }{ Observing Mode }_{ Nº Wavelengths } _ { Tstart } _ LV_{ reduction level} _ v{pipeline version}.fits**
+**{ Sunrise_ID } _ TM _ { BlockIndex } _ { Line }{ Observing Mode } _ { Nº Wavelengths } _ { Tstart } _ LV _ { reduction level} _ v{pipeline version}.fits**
 
- - SunriseID : Common ID that identifies the timeline for the three instruments.
+ - Sunrise_ID : Common ID that identifies the timeline for the three instruments.
  - BlockIndex : Index (00, 01, 02, etc) that identifies the different observing blocks within the timeline for TuMag. 
  - Line : Mg or Fe
  - Observing Mode : [Observing Modes](../README.md#observation-modes-om) of TuMag
@@ -28,7 +28,9 @@ TuMag's fits file names have the following structure:
  - Tstart : Time of the first image of the observing mode. Format : ddmmYYYYTHH:MM:SS 
  - reduction level : [Reduction level](./TuMags_reduction_guide.md#reduction-levels)
  - Pipeline version : Version of the pipeline generated to use the fits. 
- 
+
+Example: 01_QSUN_TM_00_Fe2.02_8_10072024T133713_LV_1.0_v1.0.fits
+
 ### Fits headers
 
 All fits files have in the header the relevant information of each observing modes namely:

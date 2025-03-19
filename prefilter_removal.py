@@ -151,7 +151,7 @@ def compute_profile(wls, wavelengths, Spectrum, a, b, c, gamma, R, n, d, theta, 
     return Prof(wls, Wavelengths = wavelengths, Spectrum=Spectrum, a=a, b=b, c=c, R=R, dR=1, n=n, d=d, theta = theta, wl_norm=config["wls_norm"], Gamma = gamma)
 
 
-def parse_prefilter_scan(images_paths, filt, verbose = True, cam = 0):
+def parse_prefilter_scan(images_paths, filt = None, verbose = True, cam = 0):
 
     if verbose:
         print(f"Parsing prefilter scan images...")
@@ -163,6 +163,9 @@ def parse_prefilter_scan(images_paths, filt, verbose = True, cam = 0):
     found_cams = []
     for ind, img_path in enumerate(images_paths):
         I, H = ih.read(img_path)
+
+        if filt is None and ind == 0:
+            filt = H["FW2"]
 
         if H["FW2"] not in found_filters:
             found_filters.append(H["FW2"])

@@ -95,14 +95,15 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False):
+def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False, verbose = False):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 
         - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
         - filt (str) : Filter to demodulate (517, 525.02 or 525.06)
         - demod_matrices (np.array : default : demod_matrices_David) : Demodulations matrix to use
-       - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
+        - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
+        - BothCams (Boolean, default : False) : Set to true to output individual cameras in addition to dual beam.
     Outputs:
         - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
         - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
@@ -114,22 +115,45 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
     shape = np.shape(data)
     nlambda = shape[1]
     nmods = shape[2]
-    
+
+    # Checking nuimber of modulations to select demoduylation scheme
+    if nmods == 4:
+        lcvr_mode = "vectorial"
+    elif nmods == 2:
+        lcvr_mode = "longitudinal"
+    else:
+        raise Exception(f"Expected 2 or 4 modulations but got: {nmods}.")
+    if verbose:
+        print(f"Using {lcvr_mode} demodulation scheme")
+
     # All wavelengths
     size = np.shape(data)[-1]
     demod = np.zeros(np.shape(data))
     dual_beam = np.zeros((nlambda, nmods, size, size))
 
-    # Each wavelength independently
-    for wl in range(nlambda):
-        
-        dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
-        dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
 
-        demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
-        demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
-    
-        dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
+    if lcvr_mode == "vectorial":
+        # Each wavelength independently
+        for wl in range(nlambda):
+            
+            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
+            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
+
+            demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
+            demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
+        
+            dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
+
+    elif lcvr_mode == "longitudinal":
+        # Each wavelength independently
+        for wl in range(nlambda):
+            for cam in range(2):
+                demod[cam, wl, 0] = data[cam, wl, 0] + data[cam, wl, 1]
+                demod[cam, wl, 1] = data[cam, wl, 0] - data[cam, wl, 1]
+            
+            dual_beam[wl] = (demod[0, wl] + demod[1, wl]  ) / 2
+    else:
+        raise Exception("Please provide a valid lcvr mode: vectorial (default) or longitudinal")
     
     if BothCams:
         if onelambda:
