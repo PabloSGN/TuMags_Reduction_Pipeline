@@ -12,8 +12,8 @@ TuMag's reduction pipeline is thought to process an individual [Observing Mode](
 
 Some other data can also be employed for optional steps.
 Optional:
- 4. Closest and corresponding pre-filter scan (for prefilter removal)
- 5. Associated Zernike coefficients (for wavelength reconstruction)
+ - Closest and corresponding pre-filter scan (for prefilter removal, see [Prefilter removal guide](./Fit_Prefilter_guide.md))
+ - Associated Zernike coefficients (for wavelength reconstruction)
 
 To learn how to identify the .img files see [Working with TuMag's data](./Working_with_Tumags_data.md)
 
@@ -27,7 +27,7 @@ ff_mode_1_paths = image_handler.get_images_paths("D10-7398-9637")
 ## Reduction steps.
 
 TuMag's reduction pipeline consist on the following steps: 
- 1.  [Compute the dark-current](#compute-the-dark-current). 
+ 1. [Compute the dark-current](#compute-the-dark-current). 
  2. [Compute the master flat-field.](#compute-the-master-flat-field) 
  3. [Process the observing mode](#process-the-observing-mode)
  4. [Aply the flat-field correction.](#aply-the-flat-field-correction)
@@ -45,7 +45,7 @@ The dark-current is computed with the [compute_master_darks](../master_dark.py#L
  1. dark_paths : list containing the paths to the dark current observations. 
 
 **Optional argument**
- 2. verbose (default False): boolean to print info on terminal. 
+ - verbose (default False): boolean to print info on terminal. 
 
 **Output**
  1. dc : dark-current observation (np.array -> dims : (2, Nx, Ny)) 
@@ -64,12 +64,12 @@ The master flat-field is computed with the [compute_master_flat_field](../master
  2. dc : dark_current as computed in [previous step](#compute-the-dark-current). 
 
 **Optional argument**
- 3. lambda_repeat (default 4): Number of repetitions per wavelength. 
- 4. (default False): boolean to print info on terminal.  
- 5. norm_method (default "avg") : Noormalization method, can be "avg" to normalize the the average of all moduulations or "mod" to normalize each modulation by its mean. 
- 6. remove_prefilter (default  False) : activate prefilter removal from flat-fields. 
- 7. pref_model (default None) : Pickle file containing the prefilter model. 
- 8. volts (default None) : if "read" read voltages are used in the prefilter removal. 
+ - lambda_repeat (default 4): Number of repetitions per wavelength. 
+ - (default False): boolean to print info on terminal.  
+ - norm_method (default "avg") : Noormalization method, can be "avg" to normalize the the average of all moduulations or "mod" to normalize each modulation by its mean. 
+ - remove_prefilter (default  False) : activate prefilter removal from flat-fields. 
+ - pref_model (default None) : Pickle file containing the prefilter model. 
+ - volts (default None) : if "read" read voltages are used in the prefilter removal. 
 
 **Output**
  1. norm_ff : master flat-field (np.array -> dims : (2, Nlambda, Nmods, Nx, Ny)) 
@@ -113,7 +113,7 @@ The flat-field correction can be computed with the [correct_observation](../mast
  2. Flat-field data : Numpy array contaiining the coputed flat-field (np.array -> dims : (2, Nlambda, Nmods, Nx, Ny)
 
 **Optional arguments**
- 3. onelambda (default : False) : Activate the possibility of using only one wavelength. 
+ - onelambda (default : False) : Activate the possibility of using only one wavelength. 
 
 **Output**
  1. corr_om : Corrected observing mode (np.array -> dims : (2, Nlambda, Nmods, Nx, Ny) / (2,Nmods, Nx, Ny) if one_lambda = True)
@@ -133,12 +133,12 @@ Both tasks are performed with the [align_obsmode](../alignment.py#L291) function
  1. Observing Mode data : Numpy array containing the observing mode data the (np.array -> dims : (2, Nlambda, Nmods, Nx, Ny) / (2,Nmods, Nx, Ny) if one_lambda = True)) 
 
 **Optional arguments**
- 2. acc (Default = 0.01) : Accuracy of the alignment method.
- 3. verbose (default : False): boolean to print info on terminal. 
- 4. theta (default : 0.0655) : Angle of camera's 2 rotation. 
- 5. filterflag (default : True) : Activate frequency filter. 
- 6. onelambda (default : False) : Activate the possibility of using only one wavelength. 
- 7. returnshifts (default : False) : Activate rewturn of shifts of images.  
+ - acc (Default = 0.01) : Accuracy of the alignment method.
+ - verbose (default : False): boolean to print info on terminal. 
+ - theta (default : 0.0655) : Angle of camera's 2 rotation. 
+ - filterflag (default : True) : Activate frequency filter. 
+ - onelambda (default : False) : Activate the possibility of using only one wavelength. 
+ - returnshifts (default : False) : Activate rewturn of shifts of images.  
 
 **Output**
  1. aligned : Aligned and filtered observing mode (np.array -> dims : (2, Nlambda, Nmods, Nx, Ny) / (2,Nmods, Nx, Ny) if one_lambda = True)
@@ -158,10 +158,10 @@ After alignment, the data can be demodulated with the [demodulate](../demodulati
  2. filt = pre-filter corresponding to the observing mode (517 / 525.02 / 525.06, can be obtained from obs mode info.) 
 
 **Optional arguments**
- 2. dmod_matrices : demodulation matrixes.
- 3. onelambda (default : False) : Activate the possibility of using only one wavelength. 
- 4. BothCams (default : False) : Activate rewturn of both cameras demodulation.
- 5. verbose (default : False): boolean to print info on terminal.  
+ - dmod_matrices : demodulation matrixes.
+ - onelambda (default : False) : Activate the possibility of using only one wavelength. 
+ - BothCams (default : False) : Activate rewturn of both cameras demodulation.
+ - verbose (default : False): boolean to print info on terminal.  
 
 **Output**
  1. dual_beam : Dual-beamed demodulated stokes parameters (np.array -> dims : (Nlambda, Nmods, Nx, Ny) / (Nmods, Nx, Ny) if one_lambda = True)
@@ -201,7 +201,7 @@ ff_mode_1_paths = image_handler.get_images_paths("D10-7398-9637")
 OCs_pickle = "path/to/ocs/picklefile.pickle
 oc_number = 176 # For example
 
-
+# Load observing modes - oc pickle file
 with open(OCs_pickle, "rb") as file:
     OCS = pickle.load(file) 
 
