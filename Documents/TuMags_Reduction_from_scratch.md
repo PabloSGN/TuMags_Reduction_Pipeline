@@ -27,13 +27,13 @@ ff_mode_1_paths = image_handler.get_images_paths("D10-7398-9637")
 ## Reduction steps.
 
 TuMag's reduction pipeline consist on the following steps: 
-    1. [Compute the dark-current](#compute-the-dark-current). 
-    2. [Compute the master flat-field.](#compute-the-master-flat-field) 
-    3. [Process the observing mode](#process-the-observing-mode)
-    4. [Aply the flat-field correction.](#aply-the-flat-field-correction)
-    5. [Filter and align.](#filter-and-align) 
-    6. [Demodulation](#demodulation)
-    7. [Cross-talk correction.](#cross-talk-correction) 
+ 1.  [Compute the dark-current](#compute-the-dark-current). 
+ 2. [Compute the master flat-field.](#compute-the-master-flat-field) 
+ 3. [Process the observing mode](#process-the-observing-mode)
+ 4. [Aply the flat-field correction.](#aply-the-flat-field-correction)
+ 5. [Filter and align.](#filter-and-align) 
+ 6. [Demodulation](#demodulation)
+ 7. [Cross-talk correction.](#cross-talk-correction) 
 
 Let's go over these steps in detail. 
 
