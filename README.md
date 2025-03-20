@@ -1,16 +1,26 @@
 # TuMag's pipeline
 
-Tools for reading and processing raw data from TuMag.
+This is the github for TuMag's reduction pipeline. 
 
-Disclaimer: Very early still...
+## Overview of the main modules for the reduction:
+ 1. [**alignment.py**](./alignment.py) : Module with functions to find the fieldstop and align the frames of observing modes. [Doc](Documents/Modules_documentations/alignment_doc.md)
+ 2. [**demodulation.py**](./demodulation.py) : Module with the functions to demodulate the data. [Doc](Documents/Modules_documentations/demodulation_doc.md)
+ 3. [**image_filtering.py**](./image_filtering.py) : Module to filter spurious frequencies from the image. [Doc](Documents/Modules_documentations/image_filtering_doc.md)
+ 4. [**image_handler.py**](./image_handler.py) : Module to manage .img files. [Doc](Documents/Modules_documentations/image_handler_doc.md)
+ 5. [**master_dark.py**](./master_dark.py) : Module to process dark current observations. [Doc](Documents/Modules_documentations/master_dark_doc.md)
+ 6. [**master_flatfield.py**](./master_flatfield.py) : Module to process flat-field observations. [Doc](Documents/Modules_documentations/master_flat_field_doc.md)
+ 7. [**xtalk_jaeggli.py**](./xtalk_jaeggli.py) : Module to compute the cross-talk from observations. [Doc](Documents/Modules_documentations/xtalk_jaeggli_doc.md)
 
-## Useful guides
+## Some useful guides
 - [Installation](Documents/Installation.md)
 - [Working with TuMag's data](Documents/Working_with_Tumags_data.md)
-- [Correcting observations](Documents/Correcting_observations.md)
-- [Module guide](Documents/Module_guide.md)
+- [Correcting observations from fits files](Documents/Working_with_fits_files.md)
+- [Correcting observations from scratch](Documents/TuMags_Reduction_from_scratch.md)
+- [Prefilter Removal](Documents/Fit_Prefilter_guide.md)
 
-## Overview of TuMag's observations
+## TuMag's data paroperties 
+
+When working with TuMag's data some key concepts should be known. 
 
 ### Timelines
 
@@ -47,20 +57,15 @@ Tumag observations are operated through pre-configured **observation modes**.
 
 <ins>Calibration obsering modes:</ins> 
 
-Calibration observing modes are more flexible than science observing modes nd can be confugured to match the observations. For a detailed description of each calibration OM see [Calibration OMs guide](Documents/Calibration_oms_guide.md)
+Calibration observing modes are more flexible than science observing modes and can be configured to match the observations. For a detailed description of each calibration OM see [Calibration OMs guide](Documents/Calibration_oms_guide.md)
 
 ### Observation Counters
 
 The **observation counter** (OC) is a field in the [images' header](Documents/Image_header.md) that identifies the observation mode corresponding to the image. All images of a specific observation mode share the same OC. The counter goes from 0 to 255 and then cycles.
 
-Usually observations are identified with this field in [TuMag's Logbook](Documents/TuMagCompass.csv).
+Usually observations are identified with this field in [TuMag's Logbook](Documents/TuMags%20Logsheet%20-%20Timelines%20detailed.csv).
 
 ## Contributing
 
-SPG team.
-more people. 
-
-And Julian.
-
-## License
-GPL 3.0? 
+IAA-SPG team and Julian.
+ 
