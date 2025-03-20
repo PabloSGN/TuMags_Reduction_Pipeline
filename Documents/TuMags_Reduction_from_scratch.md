@@ -45,11 +45,11 @@ Additionally, a pickle file of name "OCS.pickle" will be generated **when using 
 
 #### Separating the obs block in a python code:
 
-Instead of using a terminal, the [separate_ocs](../image_handler.py#L326) function from the [image_handler](../image_handler.py) module can be run inside a .py code. This function returns a dictionary with the sorted paths. **To use it in further tests remember to store it in a pickle file.**
+Instead of using a terminal, the [separate_ocs](../image_handler.py#L326) function from the [image_handler](../image_handler.py) module can be run inside a .py code. This function returns a dictionary with the sorted paths. **Remember to save it in a pickle file for further computations since the routine might take long for large number of files.**
 
 **EXAMPLE**
 ```python
-OCS = ih.separate_ocs(Obs_paths)
+OCS = ih.separate_ocs(image_handler.get_images_paths("D10-23675-36096"))
 with open("ocs_pickle_file.pickle", "wb") as file:
     pickle.dump(OCS, file)
 ```
@@ -72,7 +72,27 @@ Information about each observing mode can be accesed through the Observation Cou
 
 # Example of reduction.
 
-## Identify the calibration and observation data 
+
+
+## Reduction steps.
+
+TuMag's reduction pipeline consist on the following steps:
+ 1. [Identify the data](#1-identify-the-calibration-and-observation-data) 
+ 2. [Compute the dark-current](#2-compute-the-dark-current). 
+ 3. [Compute the master flat-field.](#3-compute-the-master-flat-field) 
+ 4. [Process the observing mode](#4-process-the-observing-mode)
+ 5. [Aply the flat-field correction.](#5-apply-the-flat-field-correction)
+ 6. [Filter and align.](#6-filter-and-align) 
+ 7. [Demodulation](#7-demodulation)
+ 8. [Cross-talk correction.](#8-cross-talk-correction) 
+
+Let's go over these steps in detail. Or jump to the [Summary](#summary)
+
+---
+
+### 1. Identify the calibration and observation data 
+
+Identify the calibration data through their IDs and the observation mode through the pickle file.  
 ```python
 dc_paths = image_handler.get_images_paths("D10-6844-6943")
 ff_mode_1_paths = image_handler.get_images_paths("D10-7398-9637")
@@ -80,20 +100,7 @@ with open("ocs_pickle_file.pickle", "rb") as file:
     OCS = pickle.load(file)
 ```
 
-## Reduction steps.
-
-TuMag's reduction pipeline consist on the following steps: 
- 1. [Compute the dark-current](#compute-the-dark-current). 
- 2. [Compute the master flat-field.](#compute-the-master-flat-field) 
- 3. [Process the observing mode](#process-the-observing-mode)
- 4. [Aply the flat-field correction.](#aply-the-flat-field-correction)
- 5. [Filter and align.](#filter-and-align) 
- 6. [Demodulation](#demodulation)
- 7. [Cross-talk correction.](#cross-talk-correction) 
-
-Let's go over these steps in detail. Or jump to the [Summary](#summary)
-
-### Compute the dark-current.
+### 2. Compute the dark-current.
 
 The dark-current is computed with the [compute_master_darks](../master_dark.py#L16) funtion from the [master_dark](../master_dark.py) module.
 
@@ -111,7 +118,7 @@ The dark-current is computed with the [compute_master_darks](../master_dark.py#L
 dc = compute_master_darks(dark_paths = dc_paths, verbose = True)
 ```
 
-### Compute the master flat-field.
+### 3. Compute the master flat-field.
 
 The master flat-field is computed with the [compute_master_flat_field](../master_flatfield.py#L20) funtion from the [master_flatfield](../master_flatfield.py) module.
 
@@ -138,7 +145,7 @@ ff_mode1, ff_mode1_info = master_flatfield.compute_master_flat_field(ff_mode_1_p
 
 For a more detailed explanaition of the prefilter removal parameters see [Prefilter removal guide](./Fit_Prefilter_guide.md)
 
-### Process the observing mode.
+### 4. Process the observing mode.
 
 The observing modes are handled with the [nominal_observation](../image_handler.py#L109) class from the [image_handler](../image_handler.py) module.
 
@@ -161,7 +168,7 @@ om = ih.nominal_observation(OCS[OC]["OM"], OCS[OC]["ims"], dc = dc)
 om_data = om.get_data()
 om_info = om.get_info()
 ```
-### Aply the flat-field correction.
+### 5. Apply the flat-field correction.
 
 The flat-field correction can be computed with the [correct_observation](../master_flatfield.py#L115) function from the [master_flatfield](../master_flatfield.py) module.
 
@@ -180,7 +187,7 @@ The flat-field correction can be computed with the [correct_observation](../mast
 om_corr = master_flatfield.correct_observation(data = om_data, ff = ff_mode1)
 ```
 
-### Filter and align
+### 6. Filter and align
 
 Before demodulating the data, the observing mode has to be filtered to remove some spurious signals and aligned to be able to combine both cameras and different modulations. 
 
@@ -206,7 +213,7 @@ Both tasks are performed with the [align_obsmode](../alignment.py#L291) function
 aligned = alignment.align_obs_mode(om_corr, verbose = True)
 ```
 
-### Demodulation
+### 7. Demodulation
 
 After alignment, the data can be demodulated with the [demodulate](../demodulation.py#96) function from the [demodulation](../demodulation.py) module.
 
@@ -229,7 +236,7 @@ After alignment, the data can be demodulated with the [demodulate](../demodulati
 ```python
 stokes = demodulation.demodulate(data = aligned, filt = om_info["line"] )
 ```
-### Cross-talk correction
+### 8. Cross-talk correction
 
 After demodulation, the cross-talk correction can be performed with the [fit_mueller_matrix](../xtalk_jaeggli.py#L131) function from the [xtalk_jaeggli](../xtalk_jaeggli.py) module.
 
