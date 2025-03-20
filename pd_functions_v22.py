@@ -43,7 +43,13 @@ introduced by the user or computed within a function
 #from skimage.morphology import square, erosion
 from matplotlib import pyplot as plt
 from PIL import Image as im
-from photutils import CircularAperture #conda install -c astropy photutils
+
+# Import Circular aperture
+try:
+    from photutils import CircularAperture  # If photutils is installed separately
+except ImportError:
+    from photutils.aperture import CircularAperture  # If photutils is inside astropy
+
 from scipy.ndimage import median_filter
 from scipy import ndimage
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
