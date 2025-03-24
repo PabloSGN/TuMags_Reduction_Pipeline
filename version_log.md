@@ -15,3 +15,12 @@ First stable version.
     - For each wavelength, all modulations and cameras are aligned with respect to the first modulation of camera 0.
 #### Cross - Talk correction
     - Standard cross-talk correction performed with jaeggli module (FJB approach). 
+
+## v1.1
+Changed output of demodulation and alignment.
+
+### Demodulation
+Demodualtion no longer returns both cameras unless specified. 
+
+### Alignment
+Alignment no longer returns shifts unless specified. 
