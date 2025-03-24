@@ -250,7 +250,7 @@ After demodulation, the cross-talk correction can be performed with the [fit_mue
 
 **EXAMPLE**
 ```python
-xtalk_corr = xtalk_jaeggli.fit_mueller_matrix(stokes)
+xtalk_corr, _ = xtalk_jaeggli.fit_mueller_matrix(stokes)
 ```
 
 ## Summary 
@@ -290,5 +290,5 @@ aligned = alignment.align_obs_mode(om_corr, verbose = True)
 stokes = demodulation.demodulate(data = aligned, filt = om_info["line"] )
 
 #Correct xtalk
-xtalk_corr = xtalk_jaeggli.fit_mueller_matrix(stokes)
+xtalk_corr, _ = xtalk_jaeggli.fit_mueller_matrix(stokes)
 ```

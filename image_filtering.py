@@ -43,7 +43,7 @@ def create_frequency_mask(image_shape, fu, du, fv, dv):
 
     return mask
 
-def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, dv = dv_readout, onelambda = False):
+def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, dv = dv_readout, onelambda = False, verbose = False):
     
     """
     Filters an image by removing specified frequencies.
@@ -55,6 +55,7 @@ def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, 
     - du (float, default : readout freq) : margin to create the mask in the u dimension
     - dv (float, default : readout freq) : margin to create the mask in the v dimension
     - onelambda (Boolean, default : False) : Boolean in case only onelambda is passed
+    - verbose (Boolea, default : False) : Print info on terminal. 
 
     Returns:
     - Filtered data.
@@ -70,10 +71,10 @@ def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, 
 
     filtered = np.zeros(shape)
 
-    print("Performing noise filtration ...")
     for lambd in range(nlambda):
         tic = time.time()
-        print(f"Procesing wavelength: {lambd + 1} / {nlambda}")
+        if verbose:
+            print(f"Procesing filtration of wavelength: {lambd + 1} / {nlambda}")
         for mod in range(nmods):
             for cam in range(2):
                 # Compute 2D Fourier Transform
@@ -83,7 +84,8 @@ def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, 
                 F_inverse_shifted = np.fft.ifftshift(F_filtered) # Return to original position
                 filtered[cam, lambd, mod] = np.fft.ifft2(F_inverse_shifted).real  # Take real part
         tac = time.time()
-        print(f"Time elapsed: {round(tac - tic, 3)} s.")
+        if verbose:
+            print(f"Time elapsed: {round(tac - tic, 3)} s.")
 
     print(f"Filtering process completed.\n")
    

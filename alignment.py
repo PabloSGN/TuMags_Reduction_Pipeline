@@ -304,6 +304,7 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
         - Filtered, Rotated  and aligned (np.array) : Same array as data filtrated and with cam2 rotated  
         - shifts (list) : shifts performed to each camera, modulation and wavelength
     """
+    tic = time.time() # Get the time to measure execution time.
 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
@@ -316,16 +317,16 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
     aligned = np.zeros(np.shape(data))
 
     if filterflag:
-        filtered = filter_frecuencies(data)
+        filtered = filter_frecuencies(data, verbose=verbose)
         rotated = rotate_camera2(filtered, theta = theta)
     else:
         rotated = rotate_camera2(data, theta = theta)
 
     for lambd in range(nlambda):
-
-        print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
-
-        print(f"Modulations of cam 1 alignment...")
+        
+        if verbose:
+            print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
+            print(f"Shifts for cam 1 - modulation alignment")
         mods_aligned, srow, scol = realign_subpixel(rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
 
         shifts[lambd, 0, 0] = srow
@@ -333,15 +334,22 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
 
         aligned[0, lambd] = mods_aligned
 
-        print("Aligning cam2...")
+        if verbose:
+            print("Shifts of camera 2 alignment")
         for mod in range(nmods):
-            print(f"mod -> {mod}...")
+            if verbose:
+                print(f"mod -> {mod}...")
             cams_aligned, srow, scol = realign_subpixel(np.array([mods_aligned[mod], rotated[1, lambd, mod]]), verbose = verbose, accu = acc, return_shift=True )
 
             shifts[lambd, 1, 0, mod] = srow[1]
             shifts[lambd, 1, 1, mod] = scol[1]
 
             aligned[1, lambd, mod] = cams_aligned[1]
+
+    tac = time.time()
+
+    if verbose:
+        print(f"Alignment finished in {round(tac - tic, 3)} s.")
 
     if returnshifts:
         if onelambda:
