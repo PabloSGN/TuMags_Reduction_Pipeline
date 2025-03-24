@@ -1,10 +1,10 @@
 # Installation guide
 
-All the required libraries are included in the [requirements.txt](../requirements.txt) file. Install them globaly or through an enviroment. 
+All the required libraries are included in the [requirements.txt](../requirements.txt) file. Install them globaly or through an [enviroment](#creating-an-enviroment). 
 
 If using the IAA server (recomended to be able to use images IDs) the use of an enviroment is mandatory. 
 
-### Installing the dependencies with an enviroment. 
+## Creating an enviroment. 
 
 - Anywhere on your directories -> run the command: 
 ```shell
@@ -13,16 +13,17 @@ If using the IAA server (recomended to be able to use images IDs) the use of an 
 Substituting "$myenv$" for whatever name you want to give it. 
 - Activate the enviroment: run the command: 
 ```shell
-source $myenv$/bin/activate.csh
-```
-Again substitute the name of "$myenv$". 
-
-If the previous command raises an error complaining about aliases remove the .csh: 
-```shell
 source $myenv$/bin/activate
 ```
+Again, substitute the name of "$myenv$". 
 
-- Install dependencies: 
+If the previous command raises an error try: 
+```shell
+source $myenv$/bin/activate.csh
+```
+
+## Install dependencies: 
+Run in terminal:
 ```shell
 pip install -r requirements.txt
 ```

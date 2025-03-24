@@ -9,8 +9,6 @@ Demodulation functions
 # Built-in libs
 import numpy as np
 
-# Own-libs
-import alignment as al
 # ------------------------------ CONFIG ------------------------------------------ #
 
 # Mean - Matrix Demodulation 

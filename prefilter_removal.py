@@ -11,11 +11,21 @@ import pickle
 
 from functools import partial
 
+import scipy
+from packaging.version import parse
+
+# Import sims or simpson depending on scipy's version
+if parse(scipy.__version__) >= parse("1.7"):  # Adjust the version as needed
+    from scipy.integrate import simpson as simps
+else:
+    from scipy.integrate import simps
+
+
+
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib as mp
 from astropy.io import fits
 from scipy.optimize import minimize
-from scipy.integrate import simps
 from scipy.interpolate import interp1d
 
 
