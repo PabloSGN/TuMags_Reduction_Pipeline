@@ -68,4 +68,7 @@ Usually observations are identified with this field in [TuMag's Logbook](Documen
 ## Contributing
 
 IAA-SPG team and Julian.
- 
+
+## Versions
+
+For a log of the version and the changes see: [versions Log](./version_log.md)
