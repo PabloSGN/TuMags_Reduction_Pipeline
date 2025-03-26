@@ -1,7 +1,3 @@
-Here is the documentation for the `master_flatfield.py` file, following the format and style of the provided `image_filtering_doc.md` template:
-
----
-
 # Master Flatfield Module Documentation
 
 ## Description
