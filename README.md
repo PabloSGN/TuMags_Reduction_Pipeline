@@ -70,6 +70,8 @@ Usually observations are identified with this field in [TuMag's Logbook](Documen
 
 IAA-SPG team and Julian.
 
+Feel free to report problems/suggestions : psanta@iaa.es
+
 ## Versions
 
 For a log of the version and the changes see: [versions Log](./version_log.md)
