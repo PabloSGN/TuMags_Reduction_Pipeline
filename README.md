@@ -16,7 +16,7 @@ This is the github for TuMag's reduction pipeline.
 - [Working with TuMag's data](Documents/Working_with_Tumags_data.md)
 - [Correcting observations from fits files](Documents/Working_with_fits_files.md)
 - [Correcting observations from fits files - Jupyter](./TuMags_reduction_example.ipynb)
-- [Correcting observations from scratch](Documents/TuMags_Reduction_from_scratch.md)
+- [Correcting observations from raw data.](Documents/TuMags_Reduction_from_scratch.md)
 - [Prefilter Removal](Documents/Fit_Prefilter_guide.md)
 
 ## TuMag's data paroperties 

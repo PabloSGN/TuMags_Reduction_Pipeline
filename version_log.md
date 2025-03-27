@@ -24,3 +24,10 @@ Demodualtion no longer returns both cameras unless specified.
 
 ### Alignment
 Alignment no longer returns shifts unless specified. 
+
+# Planned improvements:
+
+ - Implement prefilter fitting into flat-field calculation function seamlessly. 
+ - Blueshift and calculation and correction. 
+ - Overall improvement of flat-field computation.
+ - Inclusion of automatic rotation angle for camera 2. 
