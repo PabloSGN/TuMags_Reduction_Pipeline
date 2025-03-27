@@ -31,7 +31,7 @@ TuMag observations were stuctured through  **timelines**, a list of pre-configur
 
 For a guide describing TuMag's commands for each timeline see [Julián's webpage](https://www.uv.es/jublanro/TuMag_timeline_reference.html). 
 
-Go to [Tumag's official data website](https://www.uv.es/jublanro/tumag_data_test.html) for already reduced observations. 
+Go to [Tumag's official data website](https://www.uv.es/jublanro/tumag_TuMagthumb_testMar2025_links.html) for already reduced observations. 
 
 A summary of the observations, the corresponding timelines and pointing information can be found in [Observation summary](Documents/Sunrise_summary_observations.pdf).
 
