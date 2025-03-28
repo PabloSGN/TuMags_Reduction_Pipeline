@@ -211,7 +211,6 @@ class nominal_flat:
                         self.data[1, lambd, mod] += np.flip(im1, axis = -1) - (dc[1] * head0["nAcc"]) # Flip cam 2 image. 
         
         self.data /= (nreps * lambda_repeat)
-        self.data /= (nreps * lambda_repeat)
 
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
