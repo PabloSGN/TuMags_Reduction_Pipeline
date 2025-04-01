@@ -16,12 +16,14 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import time
 
 # Own libs
 import config as cf
 import image_handler as ih
 from master_dark import compute_master_darks
 from master_flatfield import compute_master_flat_field
+import pd_functions_v22 as pdf
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
@@ -93,3 +95,46 @@ def process_pd_observation(indexes, filt, verbose = False):
             images[1, pd, Nimg] = np.flip(I, axis = -1)
 
     return images
+
+def apply_reconstruction(data, ID = None, zkes = None, verbose = True):
+    """
+    Function that applies the restore ima routine to all images of an observing
+    mode. 
+
+    Inputs: 
+        - data : Numpy array containing obs mode.
+        - ID : Sunrise ID for automatic zernike identification 
+        - zkes : If direct zernikes are passed.
+    Returns: 
+        - Reconstructed data
+    """
+    tic = time.time()
+
+    if zkes is None:
+        zkes = pdf.import_zernikes(ID)
+
+    # Get shape for data
+    shape = np.shape(data)
+    nlambda = shape[1]
+    nmods = shape[2]
+
+    reconstructed = np.zeros_like(data)
+
+    print("Applying pd reconstruction...")
+    
+    for lamb in range(nlambda):
+        for mod in range(nmods):
+            if verbose:
+                print(f"Wl - {lamb} - Mod - {mod}")
+            for cam in range(2):
+                reconstructed[cam, lamb, mod], _ = pdf.restore_ima(data[cam, lamb, mod], zkes)
+
+    tac = time.time()
+    if verbose:
+        print(f"Wavefront reconstruction finished in {round(tac - tic, 3)}s.")
+    print("Reconstruction finished...")
+
+    return reconstructed, zkes
+
+
+

@@ -9,6 +9,8 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 
 # ------------------------------ CONFIG ------------------------------------------ #
 
+Pipeline_version = 1.1
+
 # Exposure time
 tauexp = 42 # ms
 xsize = 2016 # Size in pixels X-dimension

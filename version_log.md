@@ -31,3 +31,24 @@ Alignment no longer returns shifts unless specified.
  - Blueshift and calculation and correction. 
  - Overall improvement of flat-field computation.
  - Inclusion of automatic rotation angle for camera 2. 
+
+
+## v1.2
+
+### Config
+- Added Pipeline version for automatic labeling. 
+
+### Demodulation
+- Added camera intenisty compensation for the dual beam. 
+
+### fits_files_handling
+- Added function to generate fits and headers. 
+
+### main_processing
+- Added function to use for the dtaa processing and fits generation. 
+
+### phase_diversity
+ - Added function to apply wavefront reconstruction. 
+
+### reduction_example_generate_fits.py 
+- Example of use of the main processing module.

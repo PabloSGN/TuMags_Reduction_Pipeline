@@ -139,8 +139,6 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
 
             demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
             demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
-        
-            dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
 
     elif lcvr_mode == "longitudinal":
         # Each wavelength independently
@@ -149,10 +147,15 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
                 demod[cam, wl, 0] = data[cam, wl, 0] + data[cam, wl, 1]
                 demod[cam, wl, 1] = data[cam, wl, 0] - data[cam, wl, 1]
             
-            dual_beam[wl] = (demod[0, wl] + demod[1, wl]  ) / 2
     else:
         raise Exception("Please provide a valid lcvr mode: vectorial (default) or longitudinal")
-    
+
+    # Compute intensity ratio
+    int_ratio = np.median(demod[0, -1, 0]) / np.median(demod[1, -1, 0]) 
+    if verbose:
+        print(f"Intensity ratio between cameras: {int_ratio}")
+    dual_beam = (demod[0] + demod[1] * int_ratio) / 2
+
     if BothCams:
         if onelambda:
             return dual_beam[0], demod[:, 0]
