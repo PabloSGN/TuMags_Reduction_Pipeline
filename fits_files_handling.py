@@ -137,8 +137,10 @@ def generate_fits(data, fits_folder, filename, level, pipeline_version, om_info 
             header[f"Z_{zkind}"] = round(zk, 4)
             header.comments[f"Z_{zkind}"] = f"Zernike index {zkind}"
 
+    hdul_flag = False
     # Store alignment shifts if passed. (for levels 0.8 and 0.9)
     if shifts is not None:
+        hdul_flag = True
         shifts_hdu = fits.ImageHDU(shifts.astype(np.float32), name="Shifts")
 
         if fitted_muller is None:
@@ -146,12 +148,16 @@ def generate_fits(data, fits_folder, filename, level, pipeline_version, om_info 
 
     # Store fitted mueller matrix if passed. (for levels 1.0 and 1.1)
     if fitted_muller is not None:
+        hdul_flag = True
         muller_hdu = fits.ImageHDU(fitted_muller.astype(np.float32), name = "Fitted_Muller_Matrix")
         hdul = fits.HDUList([hdu, shifts_hdu, muller_hdu])
 
     # Save the file. 
-    hdu.writeto(os.path.join(fits_folder, extended_filename), overwrite=True)   
-
+    if hdul_flag:
+        hdul.writeto(os.path.join(fits_folder, extended_filename), overwrite=True)
+    else:
+        hdu.writeto(os.path.join(fits_folder, extended_filename), overwrite=True)
+        
     return os.path.join(fits_folder, extended_filename)
 
 
