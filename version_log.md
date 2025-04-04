@@ -52,3 +52,6 @@ Alignment no longer returns shifts unless specified.
 
 ### reduction_example_generate_fits.py 
 - Example of use of the main processing module.
+
+### alignment.py
+- Automatic rotation angle selection from interpolation.

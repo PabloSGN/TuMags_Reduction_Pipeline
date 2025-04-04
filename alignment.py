@@ -14,6 +14,9 @@ from matplotlib import pyplot as plt
 import matplotlib.patches as patches
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from scipy.ndimage import rotate
+from scipy.interpolate import interp1d
+import pandas as pd
+from datetime import datetime
 
 # Own functions
 from pd_functions_v22 import restore_ima
@@ -214,14 +217,50 @@ def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = 10)
     print(f"Field stop computation finished in {round(time.time() - tic, 3)}s.")
 
     return cam1_fieldstop
-  
-def rotate_camera2(data, theta = 0.065, onelambda = False):
+
+def get_rotation(time, filter):
+    """
+    Function that automatically gets the rotation value for a given time and filter for
+    camera 2.
+    Inputs:
+        - time (datetime object): Time to get the rotation value. 
+        - filter (str): Filter name. Choose between '517', '525.02', or '525.06'.
+    Returns:
+        - rotation_value (float): Rotation value for the given time and filter.
+        """
+    
+    if filter == "517":
+        filt_label = "517_Rot"
+    elif filter == "525.02":
+        filt_label = "525.02_Rot"
+    elif filter == "525.06":
+        filt_label = "525.06_Rot"
+    else:
+        raise ValueError("Invalid filter name. Choose '517', '525.02', or '525.06'.")
+
+    # Read the CSV
+    rotation_Data = pd.read_csv("Rotation_data.csv")
+    # Get the timestamps
+    date_timestamped = [datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timestamp() for x in rotation_Data["Date"]]
+    # Interpolate the data
+    interpolation =interp1d(date_timestamped, rotation_Data[filt_label], kind='cubic', fill_value="extrapolate")
+
+    # Convert the requested time to a timestamp
+    timestamp = time.timestamp()
+
+    # Interpolate the rotation value
+    rotation_value = interpolation(timestamp)
+    return rotation_value
+
+def rotate_camera2(data, theta = 0.0655, filter = None, tstart = "None", onelambda = False):
     """
     Function to rotate the camera 2 from an obs mode
 
     Inputs:
         - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
-        - theta (float, default : 0.065): Angle of rotation
+        - theta (float, default : = 0.065): Angle of rotation. 
+        - filter (str) : Filter to get the rotation value if interp is used. Choose between '517', '525.02', or '525.06'.
+        - tstart (str) : Time in the format 'ddmmyyTHHMMSS' to get the rotation value if interp is used.
         - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
     Outputs:
         - Rotation (np.array) : Same array as data with cam2 rotated by theta 
@@ -288,14 +327,16 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, 
     
     return filtered_n_rotated
 
-def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, returnshifts = False):
+def align_obsmode(data, acc = 0.01, verbose = False, theta = "Default", tstart = None, filter = None, filterflag = True, onelambda = False, returnshifts = False):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
     Inputs:
         - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
         - acc (float,default : 0.01) : Accuracy for the alignemnt routine.
-        - theta (float, default : 0.0655): Angle of rotation
+        - theta ("Default", "interp" or float, default : "Default" -> 0.0655): Angle of rotation. If "interp", rotation is interpolated from data. 
+        - tsart (datetime object, default : None): Time to get the rotation value if interp is used.
+        - filter (str) : Filter to get the rotation value if interp is used. Choose between '517', '525.02', or '525.06'.
         - verbose (Boolean, ddefault : False) : Print info on terminal.
         - filterflag (Boolean, default : True) : Set to False to skip Fourier filtration 
         - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
@@ -309,12 +350,29 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
 
+    # Get shape for data
     shape = np.shape(data)
     nlambda = shape[1]
     nmods = shape[2]
 
     shifts = np.zeros((nlambda, 2, 2, nmods))
     aligned = np.zeros(np.shape(data))
+
+    if theta == "Default":
+        if verbose:
+            print("Using default rotation value.")
+        theta = 0.0655
+    if theta == "interp":
+        if tstart is None or filter is None:
+            raise ValueError("Time and filter must be provided for interpolation.")
+        # Get the rotation value
+        theta = get_rotation(time=tstart, filter=filter)
+        if verbose:
+            print(f"Getting rotation from interpolation: {theta}")
+    else:
+        if verbose:
+            print(f"Using theta value: {theta}")
+    
 
     if filterflag:
         filtered = filter_frecuencies(data, verbose=verbose)
