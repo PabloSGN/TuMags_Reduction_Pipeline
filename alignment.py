@@ -9,6 +9,7 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 # ------------------------------ IMPORTS ----------------------------------------- #
 
 import numpy as np
+import os
 import time
 from matplotlib import pyplot as plt
 import matplotlib.patches as patches
@@ -22,6 +23,8 @@ from datetime import datetime
 from pd_functions_v22 import restore_ima
 from image_filtering import filter_frecuencies
 
+
+__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
 def dftreg(F,G,kappa):
@@ -239,7 +242,8 @@ def get_rotation(time, filter):
         raise ValueError("Invalid filter name. Choose '517', '525.02', or '525.06'.")
 
     # Read the CSV
-    rotation_Data = pd.read_csv("Rotation_data.csv")
+    file = os.path.join(__location__, "Rotation_data.csv")
+    rotation_Data = pd.read_csv(file)
     # Get the timestamps
     date_timestamped = [datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timestamp() for x in rotation_Data["Date"]]
     # Interpolate the data
@@ -335,7 +339,7 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = "Default", tstart =
         - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
         - acc (float,default : 0.01) : Accuracy for the alignemnt routine.
         - theta ("Default", "interp" or float, default : "Default" -> 0.0655): Angle of rotation. If "interp", rotation is interpolated from data. 
-        - tsart (datetime object, default : None): Time to get the rotation value if interp is used.
+        - tsart (datetime object, string,  default : None): Time to get the rotation value if interp is used. If string : '%d/%m/%Y, %H:%M:%S'
         - filter (str) : Filter to get the rotation value if interp is used. Choose between '517', '525.02', or '525.06'.
         - verbose (Boolean, ddefault : False) : Print info on terminal.
         - filterflag (Boolean, default : True) : Set to False to skip Fourier filtration 
@@ -365,6 +369,8 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = "Default", tstart =
     if theta == "interp":
         if tstart is None or filter is None:
             raise ValueError("Time and filter must be provided for interpolation.")
+        if isinstance(tstart, str):
+            tstart = datetime.strptime(tstart, '%d/%m/%Y, %H:%M:%S')
         # Get the rotation value
         theta = get_rotation(time=tstart, filter=filter)
         if verbose:

@@ -17,9 +17,19 @@ xsize = 2016 # Size in pixels X-dimension
 ysize = 2016 # Size in pixels Y-dimension
 
 # Etalon tuning constant
-tuning_ct = {"517" : 3.1E-4, # A/V
-             "525" : 2.9E-4  # A/V
-            }
+prefilters_config = {"517" : {
+                        "Pend" : 0.00030907042253499933, # A/V
+                        "Ord" : 5173.432608450703,
+                        "l0" : 5172.7}, # A
+                    "525.02" : {
+                        "Pend" : 0.0002957121398329138, # A/V
+                        "Ord" : 5249.543594995222,
+                        "l0" : 5250.2}, # A
+                    "525.06" : {
+                        "Pend" : 0.0002957121398329138, # A/V
+                        "Ord" : 5249.543594995222,
+                        "l0" : 5250.2} # A
+}
 
 # RAW Header information 
 filter_wheel = {

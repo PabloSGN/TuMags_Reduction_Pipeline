@@ -25,14 +25,6 @@ Demodualtion no longer returns both cameras unless specified.
 ### Alignment
 Alignment no longer returns shifts unless specified. 
 
-# Planned improvements:
-
- - Implement prefilter fitting into flat-field calculation function seamlessly. 
- - Blueshift and calculation and correction. 
- - Overall improvement of flat-field computation.
- - Inclusion of automatic rotation angle for camera 2. 
-
-
 ## v1.2
 
 ### Config
@@ -55,3 +47,6 @@ Alignment no longer returns shifts unless specified.
 
 ### alignment.py
 - Automatic rotation angle selection from interpolation.
+
+### Blueshift
+- Blueshift computation from flatfields. 
