@@ -73,6 +73,7 @@ try:
 except:
     flag_pyfftw=0
 
+__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 def tumag_params(pref='52502'):
     try:
@@ -2229,7 +2230,7 @@ def radial_MTF(a,a_d,sigma,plate_scale,cobs=0,inst='tumag',
     MTF_radial=radial_profile(np.abs(Hk[:,:,0]), [int(N/2),int(N/2)])
     return MTF_radial,nuc
 
-def import_zernikes(ID,csv_path='./TuMag PD results - All filters.csv'):
+def import_zernikes(ID, csv_path=None):
     """
     This function imports the Zernike coefficients from the CSV file
     "TuMag PD results - All filters" as a Numpy array that can be
@@ -2247,6 +2248,8 @@ def import_zernikes(ID,csv_path='./TuMag PD results - All filters.csv'):
     Output:
         zernikes: Numpy array with imported Zernike coefficients
     """
+    if csv_path is None:
+        csv_path = os.path.join(__location__, "TuMag_PD_results_All_filters.csv")
     zk_index=15 #Row at which the first Zernike coefficient starts
     data=pd.read_csv(csv_path,sep=",",header=0,index_col=0,dayfirst=True)
     PD_info=data[ID]

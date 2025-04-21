@@ -12,6 +12,8 @@ import time
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 
+import scipy
+from packaging.version import parse
 # Import sims or simpson depending on scipy's version
 if parse(scipy.__version__) >= parse("1.7"):  # Adjust the version as needed
     from scipy.integrate import simpson as simps
@@ -34,7 +36,8 @@ import prefilter_removal as pr
 
 def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
                               norm_method = "avg", remove_prefilter = False, pref_model = None, 
-                              volts = None, compute_blueshift = False, cpos = -1, plot_flag = False):
+                              volts = None, compute_blueshift_flag = False, cpos = -1, plot_flag = False,
+                              plotname = "blueshift.png"):
     """
     Function to compute the flat-field observation from the images paths. 
 
@@ -105,24 +108,29 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         raise Exception("Invalid normalization method. Please select 'avg' or 'mod'.")
 
     if remove_prefilter:
+        if verbose:
+            print(f"\nRemove prefilter activated.")
         if volts == "read":
             ff_header = flat_obs.get_info()
             volts = [ff_header["Images_headers"][f"wv_{lambd}"][f"Mod_0"]["hvps_read_volts"][0] for lambd in range(N_wls)]
-            print(volts)
 
             if verbose:
                 print(f"Using read voltages: {volts}")
         else:
+            volts = cf.om_config[om]["V_array"]
             print("Using fixed voltages.")
 
         if pref_model is None:
             raise Exception("Please provide a prefilter model to remove from flat-fields.")
+
         else:
             flats_pref_removed = pr.remove_line_from_flat_fields(norm_ff, om = om, pref_model = pref_model, volts=volts, verbose = verbose)
 
-            if compute_blueshift:
+            if compute_blueshift_flag:
+                if verbose:
+                    print(f"Computing blueshift...")
                 bc1, bc2 = compute_blueshift(ff_no_norm = data[:, :, :, 300:-300, 300:-300], pref_model = pref_model,
-                                             volts_axis = volts, line = line, cpos = cpos, plot_flag = plot_flag)
+                                             volts_axis = volts, line = line, cpos = cpos, plot_flag = plot_flag, plotname = plotname)
                 print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
                 return flats_pref_removed, flat_obs.get_info(), bc1, bc2
 
@@ -148,7 +156,7 @@ def cog(input_data, wave_axis, cpos = -1):
     return Itn
 
 
-def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_flag = False):
+def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_flag = False, plotname = "blueshift.png"):
 
     def fit_2d_surface(data):
         ny, nx = data.shape
@@ -173,7 +181,7 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
                 + a30 * y**3
                 + a21 * x**2 * y
                 + a12 * x * y**2
-            )  
+            ) 
         
         # Fit
         popt, _ = curve_fit(poly2d, (x_flat, y_flat), z_flat) # Fit to data.
@@ -183,6 +191,9 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
         z_fit = z_fit_flat.reshape((ny, nx))             # Reshape to 2d
 
         return z_fit
+    
+    if isinstance(pref_model, str):
+        pref_model = pr.load_model(pref_model)
 
     shape = np.shape(ff_no_norm)
     npix = shape[-1]
@@ -207,7 +218,7 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
             flattened_flat[cam, lambd_ind] = (avg_flat[cam, lambd_ind] / fitted_surface[cam]) / pref_model(volts) 
 
     central_wave = cf.prefilters_config[line]["l0"]
-    wave_axis = pr.volts_2_lambda(volts_axis, cf.prefilters_config[line]) # Convert volts to wavelength.
+    wave_axis = pr.volts_2_lambda(np.array(volts_axis), cf.prefilters_config[line]) # Convert volts to wavelength.
 
     # Get the central wavelength
     cog_map_cam1 = cog(flattened_flat[0], wave_axis, cpos = cpos) - central_wave
@@ -222,6 +233,7 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
     blueshift_cam2 = fit_2d_surface(smoothed_cog_cam2)
 
     if plot_flag:
+        print("Plotting.")
         # Auxiliary function to make colorbars
         def colorbar(mappable):
             ax = mappable.axes
@@ -231,7 +243,7 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
             return fig.colorbar(mappable, cax=cax)
         # Auxiliary function to plot blueshift
         def plot_blueshift(ax, data):
-            im = ax.imshow(data, cmap = 'Blues', origin = 'lower', clim = (-0.019, -0.007))
+            im = ax.imshow(data, cmap = 'Blues', origin = 'lower')
             colorbar(im)
             contour_levels = np.linspace(data.min(), data.max(), 10)  # You can customize the levels
             contours = ax.contour(data, levels=contour_levels, colors='w', linewidths=1)
@@ -256,7 +268,10 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
         axs[1, 1].set_xlabel("Smoothed COG")
         axs[1, 2].set_xlabel("Blueshift")
         fig.tight_layout()
-        fig.savefig("blueshift.png", bbox_inches='tight', dpi=300) 
+        
+        print(plotname)
+        plt.savefig(plotname, bbox_inches='tight') 
+        plt.show()
                     
         return blueshift_cam1, blueshift_cam2
 

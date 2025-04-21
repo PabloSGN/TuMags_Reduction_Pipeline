@@ -104,7 +104,7 @@ def compute_level_06(flat_fielded_data, header, obsname, obsmode = None, zkes = 
 
     if zkes is None and obsmode is not None:
         line = config.om_config[obsmode]["line"]
-        zkes_id = f"{Sunrise_id}_{line}{obsmode}"
+        zkes_id = f"{Sunrise_id}_{lines[line]}{obsmode}"
         reconstructed, zkes = phase.apply_reconstruction(data = flat_fielded_data, ID = zkes_id)
     elif zkes is not None:
         reconstructed, zkes = phase.apply_reconstruction(data = flat_fielded_data, zkes = zkes)
@@ -155,7 +155,7 @@ def process_observation(Compute_reduction_levels, csvfile, Tstart, picklefile = 
             ObsMode = OCS[oc]["OM"]
 
             fits_file_05 = compute_level_05(images_paths=images_paths, observing_mode=ObsMode, 
-                                            dark_current=dc, flat_field=ff)
+                                            dark_current=dc, flat_field=ff, field_stop=fs)
             
             update_csv_by_property(csvfile, "Tstart", Tstart, {f"L0.5" : 1, "Pipeline" : config.Pipeline_version})
             logging.info(f"Level 0.5 - succesfully processed and stored. -> {fits_file_05}")
