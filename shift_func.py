@@ -11,7 +11,7 @@ def dftreg(F,G,kappa):
     Sicairos 2008, Efficient subpixel image registration algorithm.
     Input:
         F,G: ffts of images 'f' and 'g' without applying any fftshift
-        kappa: inverse of subpixel precision (kappa=20 -> 0.05 pixel precision)
+        kappa: inverse of subpixel precision (kappa=20 -> 0.005 pixel precision)
     Output:
 
     """
@@ -400,13 +400,44 @@ def realign_subpixel(ima,accu=0.05):
     Output: returns the aligned 3D array
     """
     kappa=1/accu #Kappa factor defined in Sicairos method (1/fraction of pixel)
-    Gshift=fft2(ima[:,:,0]) #FFT of the first image of the series
     print('Re-aligning images ...')  
-    ima_aligned=0*ima
-    for j in range(ima.shape[-1]):
-        F0=Gshift
-        F_comp=fft2(ima[:,:,j])
-        error,row_shift,col_shift,Gshift=dftreg(F0,F_comp,kappa)
-        print('Shift of image',j,':',row_shift,col_shift)
-        ima_aligned[:,:,j]=np.real(ifft2(Gshift))
+    ima_aligned=ima.copy()
+    row_shift=accu+1
+    col_shift=accu+1
+    ii=-1
+
+
+    while np.max([np.abs(row_shift),np.abs(col_shift)])>accu:
+        ii+=1
+        F0=fft2(ima_aligned[:,:,0]) #FFT of the first image of the series
+        Fref=F0 #Reference frame for alignment
+        print('Iteration %g'%ii)
+        for j in range(ima.shape[-1]):
+            F_comp=fft2(ima_aligned[:,:,j])
+            error,row_shift,col_shift,Gshift=dftreg(Fref,F_comp,kappa)
+            Fref=Gshift #Update reference image to minimize temporal evolution effects
+            print('Shift of image',j,':',row_shift,col_shift)
+            ima_aligned[:,:,j]=np.real(ifft2(Gshift))
     return ima_aligned
+
+def subpixel_shift(F,deltax,deltay):
+    """
+    Shift an image 'f' by a certain amount (deltax, deltay)
+    with subpixel accuracy
+    Input:
+        F: fft of image 'f' without applying any fftshift
+        deltax, deltay: subpixel shifts of the image
+    Output:
+        fshift: shifted version of 'f'
+    """
+    nr,nc=np.shape(F)
+    Nr=np.fft.ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
+    Nc=np.fft.ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
+    
+    row_shift=deltay
+    col_shift=deltax
+
+    Nc,Nr=np.meshgrid(Nc,Nr)
+    Fshift=F*np.exp(1j*2*np.pi*(row_shift*Nr/nr+col_shift*Nc/nc))
+    fshift=ifft2(Fshift).real
+    return fshift    
