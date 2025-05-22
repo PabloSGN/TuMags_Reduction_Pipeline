@@ -1,0 +1,30 @@
+[build-system]
+requires = ["flit_core >=3.11,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "tumagpipe"
+authors = [{name = "Pablo Santamarina", email = "psanta@iaa.es"}]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+dynamic = ["version", "description"]
+dependencies = [
+    "astropy==7.0.1",
+    "matplotlib==3.10.3",
+    "mpl_scatter_density==0.8",
+    "numpy==2.2.6",
+    "packaging==25.0",
+    "pandas==2.2.3",
+    "photutils==2.2.0",
+    "Pillow==11.2.1",
+    "pyfftw==0.15.0",
+    "scikit_learn==1.6.1",
+    "scipy==1.15.3",
+    "torch==2.7.0",
+    "torchmfbd==0.9",
+    "tqdm==4.67.1"
+]
+
+[project.urls]
+Home = "https://github.com/PabloSGN/TuMags_Reduction_Pipeline"
