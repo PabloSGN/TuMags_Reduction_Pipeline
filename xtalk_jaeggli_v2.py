@@ -229,9 +229,8 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
     #Reorder axis to convert into dimensions: [x,y,wavelength,stokes]
     data=np.moveaxis(data,0,-1)
     data=np.moveaxis(data,0,-1)
-    Nwaves=data.shape[2]
-    
 
+  
     if norm is True:
         #Normalization of data
         norm_factor=np.median(data[:,:,0,0])
@@ -245,6 +244,7 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
 
     #Last wavelength to be considered in the minimization
     data=data[:,:,:last_wvl,:]
+    Nwaves=data.shape[2]
 
     # Choose initial guess parameters for the diattenuation minimization
     D = 0.5
@@ -287,8 +287,6 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         plt.close() 
 
     #Wrap function to use it in scipy.minimize with positional and keyword arguments
-   
-
     data_corrected=full_data.copy() 
     MM1a=np.zeros((Nwaves,4,4))   
     for wvli in range(Nwaves):
@@ -296,7 +294,6 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
             
         #Minimize merit function
         result = minimize(fun, initial_guess)
-
 
         # Apply correction for I<->QUV cross-talk
         MM1a[wvli,:,:] = polmodel1(result.x[0],result.x[1], result.x[2])
