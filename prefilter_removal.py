@@ -324,7 +324,7 @@ def remove_line_from_flat_fields(ff, om, pref_model, volts = None, verbose = Fal
 
     for lambd in range(nlambda):
         factor = pref_model(volts[lambd])
-        new_flat_field[:, lambd] = ff[:, lambd] * factor
+        new_flat_field[:, lambd] = ff[:, lambd] / factor
 
     if verbose:
         print(f"done.\n")

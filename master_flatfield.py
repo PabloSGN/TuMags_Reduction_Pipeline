@@ -205,7 +205,7 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
     x = np.arange(npix)
     y = np.arange(npix)
 
-    # FOT surface for each camera. 
+    # FIT surface for each camera. 
     for cam in range(2):
         smoothed_flat = gaussian_filter(np.mean(avg_flat[cam], axis = 0), sigma=31) # Smooth to remove spatial variations. 
         spline_model = RectBivariateSpline(x, y, smoothed_flat, kx=2, ky=2)  # Fit a 2D surface to remove spatial variation of flat. 
@@ -243,21 +243,21 @@ def compute_blueshift(ff_no_norm, pref_model, volts_axis, line, cpos = -1, plot_
             return fig.colorbar(mappable, cax=cax)
         # Auxiliary function to plot blueshift
         def plot_blueshift(ax, data):
-            im = ax.imshow(data, cmap = 'Blues', origin = 'lower')
+            im = ax.imshow(data, cmap = 'Spectral', origin = 'lower')
             colorbar(im)
-            contour_levels = np.linspace(data.min(), data.max(), 10)  # You can customize the levels
+            contour_levels = np.linspace(data.min(), data.max(), 10)  
             contours = ax.contour(data, levels=contour_levels, colors='w', linewidths=1)
             ax.clabel(contours, inline=True, fontsize=8, fmt="%.3f")
 
         fig, axs = plt.subplots(2, 3, figsize=(12, 8))
-        im = axs[0, 0].imshow(cog_map_cam1, cmap = 'Blues', origin = 'lower')
+        im = axs[0, 0].imshow(cog_map_cam1, cmap = 'Spectral', origin = 'lower')
         colorbar(im)
-        im = axs[0, 1].imshow(smoothed_cog_cam1, cmap = 'Blues', origin = 'lower')
+        im = axs[0, 1].imshow(smoothed_cog_cam1, cmap = 'Spectral', origin = 'lower')
         colorbar(im)
         plot_blueshift(axs[0, 2], blueshift_cam1)
-        im = axs[1, 0].imshow(cog_map_cam1, cmap = 'Blues', origin = 'lower')
+        im = axs[1, 0].imshow(cog_map_cam1, cmap = 'Spectral', origin = 'lower')
         colorbar(im)
-        im = axs[1, 1].imshow(smoothed_cog_cam1, cmap = 'Blues', origin = 'lower')
+        im = axs[1, 1].imshow(smoothed_cog_cam1, cmap = 'Spectral', origin = 'lower')
         colorbar(im)
         plot_blueshift(axs[1, 2], blueshift_cam1)
 
