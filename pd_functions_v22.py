@@ -43,13 +43,6 @@ introduced by the user or computed within a function
 #from skimage.morphology import square, erosion
 from matplotlib import pyplot as plt
 from PIL import Image as im
-
-# Import Circular aperture
-try:
-    from photutils import CircularAperture  # If photutils is installed separately
-except ImportError:
-    from photutils.aperture import CircularAperture  # If photutils is inside astropy
-
 from scipy.ndimage import median_filter
 from scipy import ndimage
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
@@ -67,11 +60,12 @@ import shift_func as sf
 from astropy.io import fits
 from tqdm import tqdm
 from matplotlib.colors import LogNorm
-try:
-    import pyfftw
-    flag_pyfftw=1
+try: 
+    #https://photutils.readthedocs.io/en/stable/getting_started/install.html
+    from photutils import CircularAperture 
 except:
-    flag_pyfftw=0
+    from photutils.aperture import CircularAperture
+
 
 
 def tumag_params(pref='52502'):
@@ -164,7 +158,31 @@ def cir_aperture(R,N,ct=None):
     A = A.to_image(shape=(N,N)) #Conversion from mask to image
     return A
 
+def circular_aperture_mask(R,N):
+    """
+    Create a circular aperture mask with 1s inside the circle of radius R
+    and 0s outside, centered at (N/2, N/2) in an NxN array.
+    Parameters:
+    - N (int): The size of the NxN array.
+    - R (float): The radius of the circular aperture.
+    Returns:
+    - np.ndarray: An NxN array with 1s inside the circle and 0s outside.
+    """
 
+    from scipy.ndimage import gaussian_filter
+
+    # Create a coordinate grid
+    y, x = np.ogrid[:N, :N]
+    center = (N / 2, N / 2)
+    # Calculate the distance from each point to the center
+    distance_from_center = np.sqrt((x - center[1])**2 + (y - center[0])**2)
+    # Create the circular mask
+    # mask = distance_from_center <= R
+
+    mask = np.clip(1 - (distance_from_center - R), 0, 1)  # Create soft-edged aperture
+    mask = gaussian_filter(mask, sigma=0.5)  # Apply slight blur for smooth edges
+
+    return mask    
 
 def pmask(nuc,N):
     """
@@ -322,7 +340,13 @@ def PSF(a,a_d,RHO,THETA,ap):
     wavefront with a wavefront aberration given by the Zernike coefficients.
     The aperture function is defined in 'aperture.py'
     Input:
-        a,a_d,RHO,THETA,A: defined in 'pupil' function
+        a: 1D array with Zernike coefficients in rads and following Noll's order
+           The first element,a[0], is the Piston, a[1] and a[2] are Tilts
+           in the X and Y direction, etc), except if tiptilt is True
+        a_d: Defocus Zernike coefficient for defocused image (float or int)
+            or array with ALL the aberrations introduced by the defocused image
+        RHO,THETA: meshgrid with polar coordinates (rho normalised to 1)
+        A: aperture 2D array ('aperture')
     Output:
         psf: 2D real array representing the PSF
     """
@@ -995,15 +1019,6 @@ gamma,nuc,N,disp=True,cut=None,method='svd',ffolder='',K=2,inst='tumag'):
     a_last=a[(Jmin-1):]+1
     a2=np.zeros((Jmax-1,1))
 
-    #Planning for pyfftw
-    if flag_pyfftw==1:
-        pf=pyfftw.empty_aligned((RHO.shape[1],RHO.shape[1]),dtype='complex128')
-        pd=pyfftw.empty_aligned((RHO.shape[1],RHO.shape[1]),dtype='complex128')
-        zi_pf=pyfftw.empty_aligned((RHO.shape[1],RHO.shape[1]),dtype='complex128')
-        zi_pd=pyfftw.empty_aligned((RHO.shape[1],RHO.shape[1]),dtype='complex128')
-        zj_pf=pyfftw.empty_aligned((RHO.shape[1],RHO.shape[1]),dtype='complex128')
-        zj_pd=pyfftw.empty_aligned((RHO.shape[1],RHO.shape[1]),dtype='complex128')
-
     if Jmin==2: #Activate tip/tilt correction in OTF
         tiptilt=True
     else:
@@ -1015,7 +1030,6 @@ gamma,nuc,N,disp=True,cut=None,method='svd',ffolder='',K=2,inst='tumag'):
             print('Iteration',it)
         #Focused and defocused OTFs
         Hk,normhk=OTF(a,a_d,RHO,THETA,ap,tiptilt=tiptilt,norm=True,K=K) #Focused OTFs
-        norma=normhk[0] #Norm for correlations
 
         #Q factor, merit function and focused and defocused pupils
         Q=Qfactor(Hk,gamma,nuc,N)
@@ -1038,10 +1052,6 @@ gamma,nuc,N,disp=True,cut=None,method='svd',ffolder='',K=2,inst='tumag'):
         L2=meritL(E)
 
         #A matrix and b vector
-        A_last=np.copy(A)
-        b_last=np.copy(b)
-
-
         for i in range(Jmin,Jmax):
             zi=zk.zernikej_Noll(i,RHO,THETA) #Starting from i=1 (offset)
             derHk_i=derHj2(zi,pk,normhk)
@@ -1091,12 +1101,6 @@ gamma,nuc,N,disp=True,cut=None,method='svd',ffolder='',K=2,inst='tumag'):
                 else:
                     A[i-Jmin,j-Jmin]=Aij(derivei,derivej,cut=cut)
                     A[j-Jmin,i-Jmin]=A[i-Jmin,j-Jmin] #A is symmetric
-
-        #plt.imshow(A,origin='lower',vmin=-1e-4,vmax=1e-4,cmap='seismic')
-        #plt.colorbar()
-        #plt.show()
-        #plt.close()
-        #quit()
 
 
         #SVD decomposition
@@ -1358,11 +1362,11 @@ def minimization_jitter2(Ok,gamma,plate_scale,nuc,N,sigma0,cut=None,print_res=Tr
         print(minim)
     return minim.x#np.array([minim.x]).T #To return an array consisting of 1 column
 
-def correct_jitter_along_series(ima,zernikes,pref='52502',cut=None,cobs=32.4,
+def correct_jitter_along_series(ima,zernikes,pref='52502',cobs=32.4,
                                 low_f=0.2,reg1=0.05,reg2=1,
                                 plate_scale=0.0378,print_res=False):
     """
-    Function that infers andcorrect jitter  for a series of
+    Function that infers and corrects jitter  for a series of
     images recorded by TuMag. All images must be recorded at the 
     same wavelength and modulation state of the LCVRs.
     Input:
@@ -1372,10 +1376,8 @@ def correct_jitter_along_series(ima,zernikes,pref='52502',cut=None,cobs=32.4,
         zernikes: Numpy array with the Zernike coefficients to be optimized,
             the first three terms being zero: np.array([0,0,0,a4,a5,...])
         cobs: central obscuration of the telescope (0 if off-axis).
-        cut: number of pixels to be excluded near the edges of the image (to
-            compute the merit function).
         low_f: low limit of the noise filter, as defined in 'filter_sch'      
-        pref: '515', '52502' (default) or '52506'. Prefilter corresponding
+        pref: '517', '52502' (default) or '52506'. Prefilter corresponding
             to the images
         reg1, reg2: regularization parametersn of the type reg1*(nu/nuc)**reg2
             for the restoration
@@ -2098,7 +2100,7 @@ def restore_ima(ima,zernikes,pd=0,low_f=0.2,noise='default',reg1=0.05,
     Input:
         ima: 2D array of dimensions NxN or 3D array of dimensions
             NxNxNima, where Nima is the number of PD images
-        zernikes: list or 1D array of Zernike coefficients ordered
+        zernikes: list or 1D array of Zernike coefficients (in rads) ordered
             following Noll's 1979 rule
         pd: phase diversity between the images in case ima is a 3D array
         low_f: lower threshold of the optimum (Wiener's) filter
@@ -2237,17 +2239,18 @@ def import_zernikes(ID,csv_path='./TuMag PD results - All filters.csv'):
     file can be found at:
     https://docs.google.com/spreadsheets/d/1J9yXAVh042kcYkAjcfjirrsoC0gV_CxlgtW94qLWKp4/edit?usp=sharing
     Input:
-        csv_path: path in which the CSV file "TuMag PD results - All filters"
-            is located. Default: current directory.
-        ID: identifier for each PD result in the format 
+        csv_path (str): path in which the CSV file "TuMag PD results - All filters"
+            containing the Zernike coefficientes (in radians) is located.
+            Default: current directory.
+        ID (str): identifier for each PD result in the format 
             Sunrise_ID_ + filter (Fe2.02/Fe2.06/Mg1). An additional 
             label of the type _0, _1, _2 etc. is employed when
             several PD data are analyzed for the same Sunrise ID.
             Example: "06_SPOT_Fe2.02_0"
     Output:
-        zernikes: Numpy array with imported Zernike coefficients
+        zernikes: Numpy array with imported Zernike coefficients 
+                  in radians.
     """
-    zk_index=15 #Row at which the first Zernike coefficient starts
     data=pd.read_csv(csv_path,sep=",",header=0,index_col=0,dayfirst=True)
     PD_info=data[ID]
     zernikes=np.array(PD_info["Z1 (offset)":],dtype=float)
