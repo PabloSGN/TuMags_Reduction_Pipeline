@@ -15,7 +15,7 @@ import torchmfbd
 import torch
 
 
-def destretch(data, ngrid=2, lr=0.50, reference_frame=0, border=6, n_iterations=200, lambda_tt=0.01,aling_cam='partial'):
+def destretch(data, ngrid=8, lr=0.50, reference_frame=0, border=6, n_iterations=200, lambda_tt=0.01,aling_cam='partial'):
     """
     Aligns modulations and camera data using the `torchmfbd` package.
 
@@ -211,7 +211,7 @@ def destretch(data, ngrid=2, lr=0.50, reference_frame=0, border=6, n_iterations=
             # run the destretching
             warped_frames, shifts = torchmfbd.destretch(
                 frames,
-                ngrid=8,
+                ngrid=ngrid,
                 lr=lr,
                 reference_frame=reference_frame,
                 border=border,
