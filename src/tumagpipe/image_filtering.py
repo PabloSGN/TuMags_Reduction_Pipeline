@@ -235,6 +235,7 @@ def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, 
     nmods = shape[2]
 
     if band:
+        tic = time.time()
 
         data = mirror_pad_5d(data, pad=100)
         shape = np.shape(data)

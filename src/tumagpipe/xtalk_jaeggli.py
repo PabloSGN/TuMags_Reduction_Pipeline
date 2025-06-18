@@ -6,11 +6,14 @@ through the method described in Jaeggli et al. 2022.
 https://github.com/sajaeggli/adhoc_xtalk/blob/main/Jaeggli_etal_2022ApJ_AdHoc_Xtalk.ipynb
 
 """
+import logging
+
 import numpy as np
 from matplotlib import colors, pyplot as plt
 from glob import glob
 from scipy.optimize import minimize
 import pandas as pd
+from .logutils import log_memory
 
 # These are the model and minimization functions as defined in the paper
 
@@ -155,6 +158,9 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         MM1a: Diattenuation Mueller matrix that converts the
             "real" Stokes parameters into the "observed" ones.
     """
+    logging.info(f"Starting cross-talk correction")
+    log_memory("Before crosstalk")
+
     #Reorder axis to convert into dimensions: [x,y,wavelength,stokes]
     data=np.moveaxis(data,0,-1)
     data=np.moveaxis(data,0,-1)
@@ -185,6 +191,8 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
     nyidx = notpolar[:,0]
     nzidx = notpolar[:,1]
 
+    log_memory("Before weak data")
+
     # Use just the region with weak polarization
     weak_region = data[nyidx,nzidx,:,:] #do selection for only strong polarization signals
 
@@ -197,13 +205,13 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
 
         #Plot original data at wavelength 0 and contour of weak/stron regions
         fig,axs=plt.subplots(2,2,layout='constrained',figsize=(10,10))
-        axs[0,0].imshow(data[:,:,0,0],cmap='gray')
+        axs[0,0].imshow(data[region[0]:region[1],region[2]:region[3],0,0],cmap='gray')
         axs[0,0].set_title('Stokes I')
-        axs[0,1].imshow(data[:,:,0,1],cmap='gray')
+        axs[0,1].imshow(data[region[0]:region[1],region[2]:region[3],0,1],cmap='gray')
         axs[0,1].set_title('Stokes Q')
-        axs[1,0].imshow(data[:,:,0,2],cmap='gray')
+        axs[1,0].imshow(data[region[0]:region[1],region[2]:region[3],0,2],cmap='gray')
         axs[1,0].set_title('Stokes U')
-        axs[1,1].imshow(data[:,:,0,3],cmap='gray')
+        axs[1,1].imshow(data[region[0]:region[1],region[2]:region[3],0,3],cmap='gray')
         axs[1,1].set_title('Stokes V')
         for i in range(2):
             for j in range(2):
@@ -214,6 +222,8 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
     #Minimize merit function
     result = minimize(fitfunc1, initial_guess, args=weak_region)
 
+    del weak_region
+    log_memory("After minimize")
 
     # Apply correction for I<->QUV cross-talk
     MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
