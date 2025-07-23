@@ -18,7 +18,7 @@ from . import prefilter_removal as pr
 
 def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
                               norm_method = "avg", remove_prefilter = False, pref_model = None, 
-                              volts = None, modify_linearity = (None, None)):
+                              volts = None, modify_linearity = ([1539,1540],[1.0,1.0]): 
     """
     Function to compute the flat-field observation from the images paths. 
 
@@ -74,9 +74,8 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     
     # Normalize flat by average of all modulations.
     if norm_method == "avg":
-        norma = np.zeros(np.shape(data[:,:]))
+        norma = np.mean(data[:, :, :, 300:-300, 300:-300],axis=(2,3,4))
         for lambd in range(N_wls):
-            norma[:,lambd] = np.mean(data[:, lambd, :, 300:-300, 300:-300],axis=(1,2,3))
             for mod in range(N_mods):
                 data[0, lambd, mod] = data[0, lambd, mod] / norma[0,lambd]
                 data[1, lambd, mod] = data[1, lambd, mod] / norma[1,lambd]
