@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 import scipy
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from tqdm import tqdm
-import shift_func as sf
+import tumagpipe.shift_func as sf
 
 flag=0
 #try:
