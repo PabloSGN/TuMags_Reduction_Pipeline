@@ -30,6 +30,7 @@ def compute_master_darks(dark_paths, verbose = False):
     
     darks_cam_1 = [x for x in dark_paths if "_0_" in x]
     darks_cam_2 = [x for x in dark_paths if "_1_" in x]
+    rms_dark = np.zeros((4,len(darks_cam_1)))
 
     # Proccessing cam 1 darks
     if verbose:
@@ -40,13 +41,17 @@ def compute_master_darks(dark_paths, verbose = False):
         print(f"N accumulations : {head['nAcc']}")
 
 
-    for _, img_path in enumerate(darks_cam_1):
+    for index, img_path in enumerate(darks_cam_1):
         I, _ = read_Tumag(img_path)
         dark_current[0] += I
+        rms_dark[0,index] = np.std(I)
+        rms_dark[2,index] = np.median(I)
 
-    for _, img_path in enumerate(darks_cam_2):
+    for index, img_path in enumerate(darks_cam_2):
         I, _ = read_Tumag(img_path)
         dark_current[1] += np.flip(I, axis = -1)
+        rms_dark[1,index] = np.std(I)
+        rms_dark[3,index] = np.median(I)
 
     dark_current[0] /= len(darks_cam_1)
     dark_current[1] /= len(darks_cam_2)
@@ -55,7 +60,7 @@ def compute_master_darks(dark_paths, verbose = False):
     dark_current /= head['nAcc']
 
     print(f"Dark current computed in {round(time.time() - tic, 3)} s.\n")
-    return dark_current
+    return dark_current, head, rms_dark
 
 
 
