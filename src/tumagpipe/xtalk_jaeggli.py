@@ -9,11 +9,102 @@ https://github.com/sajaeggli/adhoc_xtalk/blob/main/Jaeggli_etal_2022ApJ_AdHoc_Xt
 import logging
 
 import numpy as np
-from matplotlib import colors, pyplot as plt
-from glob import glob
+from matplotlib import pyplot as plt
 from scipy.optimize import minimize
-import pandas as pd
 from .logutils import log_memory
+from scipy.stats import linregress
+
+def generate_squares(radius,divisions: int = 6):
+    square_centers = np.linspace(-radius,radius,divisions+1,endpoint=True)[1:] - radius / divisions
+    X,Y = np.meshgrid(square_centers, square_centers)
+    return np.vstack([X.ravel(), Y.ravel()])
+
+def evaluate_crosstalk(dual_beam, verbose=False, size=0, 
+                       pol_limit=[3, 3, 3], center=[0, 0], png=False,
+                       n_sigma=5, method="linfit"):
+    
+    def minimize_rms(x, y):
+        norm = np.mean(y)
+        def objective(residual): return np.std((x - residual * y) / norm)
+        result = minimize(objective, 0.0, method='BFGS', 
+                          options={'maxiter': 100, 'gtol': 1e-8, 'disp': verbose})
+        return result.x[0]
+
+    def pfit(x, y, n_sigma=5):
+        # p = np.polyfit(x, y, deg=1)
+        # residuals = y - np.polyval(p, x)
+        # return np.polyfit(x[mask], y[mask], deg=1)
+        slope, intercept, _,_,_ = linregress(x, y)
+        residuals = y - (slope * x + intercept)
+        mask = np.abs(residuals) < (n_sigma * np.std(residuals))
+        return linregress(x[mask], y[mask])
+
+    # Determine cutout region
+    pn, xs, ys = dual_beam.shape
+
+    if size == 0:
+        size = min(xs, ys)
+    if size % 2 != 0:
+        size -= 1  # Ensure even size for symmetric crop
+
+    if center == [0, 0]:
+        center = [xs // 2, ys // 2]
+
+    # Clip to image bounds
+    half_size = size // 2
+    x0 = max(center[0] - half_size, 0)
+    x1 = min(center[0] + half_size, xs)
+    y0 = max(center[1] - half_size, 0)
+    y1 = min(center[1] + half_size, ys)
+
+    # Extract subregion and flatten
+    region = dual_beam[:, x0:x1, y0:y1].reshape(pn, -1)
+    y, q, u, v = region[0], region[1], region[2], region[3]
+
+    # Apply limits
+    idx_q = np.abs(q-np.mean(q)) < pol_limit[0]
+    idx_u = np.abs(u-np.mean(u)) < pol_limit[1]
+    idx_v = np.abs(v-np.mean(v)) < pol_limit[2]
+
+    # Compute slopes and intercepts
+    if method == "linfit":
+        slope_q, intercept_q, _, _, _ = pfit(y[idx_q], q[idx_q], n_sigma)
+        slope_u, intercept_u, _, _, _ = pfit(y[idx_u], u[idx_u], n_sigma)
+        slope_v, intercept_v, _, _, _ = pfit(y[idx_v], v[idx_v], n_sigma)
+    elif method == 'rms':
+        slope_q = minimize_rms(y[idx_q], q[idx_q])
+        slope_u = minimize_rms(y[idx_u], u[idx_u])
+        slope_v = minimize_rms(y[idx_v], v[idx_v])
+        intercept_q = np.mean(q[idx_q]) - slope_q * np.mean(y[idx_q])
+        intercept_u = np.mean(u[idx_u]) - slope_u * np.mean(y[idx_u])
+        intercept_v = np.mean(v[idx_v]) - slope_v * np.mean(y[idx_v])
+    else:
+        raise ValueError("Invalid method. Use 'linfit' or 'rms'.")
+
+    if verbose:
+        fig, axes = plt.subplots(1, 3, figsize=(16, 6))
+        titles = ['Q', 'U', 'V']
+        data = [(q, slope_q, intercept_q, idx_q),
+                (u, slope_u, intercept_u, idx_u),
+                (v, slope_v, intercept_v, idx_v)]
+
+        for ax, (comp, slope, intercept, idx), title in zip(axes, data, titles):
+            fit_line = slope * y[idx] + intercept
+            hb = ax.hexbin(y, comp, gridsize=50, cmap='inferno', mincnt=1)
+            ax.plot(y[idx], fit_line, color='green', label='Fit')
+            ax.set_title(f'Scatter Plot with Fit ({title})')
+            ax.set_xlabel('I')
+            ax.set_ylabel(title)
+            ax.legend()
+            fig.colorbar(hb, ax=ax, orientation='vertical', label='Density')
+
+        if png:
+            plt.savefig(f"{png}_fit.png")
+            plt.close()
+        else:
+            plt.show()
+
+    return intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
 
 # These are the model and minimization functions as defined in the paper
 
@@ -40,7 +131,7 @@ def polmodel1(D,theta,chi):
 
 #Function that returns the merit function from the Stokes vector
 #and the values of the parameters that define the diattenuation matrix
-def fitfunc1(param, stokesin):
+def fitfunc1(param, stokesin,wvl='all',method='jaeggli'):
     D = param[0]
     theta = param[1]
     chi = param[2]
@@ -58,25 +149,84 @@ def fitfunc1(param, stokesin):
 
 
     #Computes the merit function
-    out = minimize_for_model1(iMM,stokesin)
+    out = minimize_for_model1(iMM,stokesin,wvl=wvl,method=method)
 
     return(out)
 
 #Function that computes the merit function for a given Mueller matrix
-def minimize_for_model1(iMM,bs):
-    # apply a mueller matrix (rotation) to a 3D stokes vector 
-    # (npixel,wavelength,4)
+def minimize_for_model1(iMM,bs,wvl='all',method='jaeggli'):
+    """
+    Function that computes the merit function that considers
+    crosstalk from I to Q, U and V along the spectral profile
+    for a given Mueller matrix
+    Input:
+        iMM: inverse of Mueller matrix of the diattenuator
+        bs: measured Stokes I
+        wvl: 'all' or selected wavelength sample (0,1,2,...).
+            Wavelength to be employed to correct crosstalk.
+        method: 'jaeggli', 'all_wvls' or 'corr'. Merit function
+            ->jaeggli: metric defined in Eq. (16) of Jaeggli et al. (2022)
+            ->all_wvls: modified Jaeggli's metric to compute the
+                correlation between Stokes I at all wavelengths with
+                Q, U and V at each wavelength
+            ->corr: metric that computes the correlation of Stokes
+                I with Q, U and V along the spectral profile as the
+                 "sample correlation coefficient" defined in
+                in https://en.wikipedia.org/wiki/Correlation
+    Output:
+        out: computed merit function            
+    """    
     new_stokes = np.einsum('ij,abj->abi',iMM, np.squeeze(bs))
-
+    Nwaves=new_stokes.shape[1] #Number of wavelenth samples
     
     # Minimization criteria
     out = np.abs(np.sum(new_stokes[:,:,0]*new_stokes[:,:,3],axis=1)) + \
           np.abs(np.sum(new_stokes[:,:,0]*new_stokes[:,:,2],axis=1)) + \
           np.abs(np.sum(new_stokes[:,:,0]*new_stokes[:,:,1],axis=1))
 
+    # Minimization criteria
+    if method=='jaeggli' or method=='corr':
+        stI=new_stokes[:,:,0]
+        stQ=new_stokes[:,:,1]
+        stU=new_stokes[:,:,2]
+        stV=new_stokes[:,:,3]
+        if method=='jaeggli':
+            kappa1=1
+            kappa2=1
+            kappa3=1
+        elif method=='corr':
+            #Subtract mean over spectral profile
+            stI=stI-np.mean(stI,axis=1,keepdims=True)
+            stQ=stQ-np.mean(stQ,axis=1,keepdims=True)
+            stU=stU-np.mean(stU,axis=1,keepdims=True)
+            stV=stV-np.mean(stV,axis=1,keepdims=True)
+
+            #Compute normalization factors
+            kappa1=np.sqrt(np.sum(stI**2,axis=1)*np.sum(stQ**2,axis=1)) 
+            kappa2=np.sqrt(np.sum(stI**2,axis=1)*np.sum(stU**2,axis=1)) 
+            kappa3=np.sqrt(np.sum(stI**2,axis=1)*np.sum(stV**2,axis=1))
+    
+        #Compute merit function
+        if wvl=='all':      
+            out = np.abs(np.sum(stI*stQ,axis=1)/kappa1)\
+                +np.abs(np.sum(stI*stU,axis=1)/kappa2)\
+                +np.abs(np.sum(stI*stV,axis=1)/kappa3)
+        else:
+            out = np.abs(stQ[:,wvl]*np.sum(stI,axis=1)/kappa1)\
+                +np.abs(stU[:,wvl]*np.sum(stI,axis=1)/kappa2)\
+                +np.abs(stV[:,wvl]*np.sum(stI,axis=1)/kappa3)    
+    elif method=='all_wvls':
+        out1=0
+        out2=0
+        out3=0
+        for i in range(Nwaves):
+            for j in range(Nwaves):
+                out1 += new_stokes[:,i,0]*new_stokes[:,j,3]
+                out2 += new_stokes[:,i,0]*new_stokes[:,j,2] 
+                out3 += new_stokes[:,i,0]*new_stokes[:,j,1]
+        out=np.abs(out1)+np.abs(out2)+np.abs(out3)
     # sum over spatial positions
     out = np.sum(out)
-    
     return(out)
 
 
@@ -132,8 +282,12 @@ def minimize_for_model2(iMM,bs):
     return(out)
 
 def fit_mueller_matrix(data,pthresh=0.02,norm=False,
-                       region=[200,1200,200,1200],
-                       last_wvl=None,plots=False):
+                       region=[0,-1,0,-1],
+                       method='jaeggli',
+                       last_wvl=None,plots=False,
+                       roi = [0,-1,0,-1],
+                       norm_wave = -1,
+                       verbose = False):
     """
     This function fits the best diattenuation Mueller matrix that
     minimizes the correlation between Stokes I to Q, U and V along
@@ -161,76 +315,128 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
     logging.info(f"Starting cross-talk correction")
     log_memory("Before crosstalk")
 
-    #Reorder axis to convert into dimensions: [x,y,wavelength,stokes]
-    data=np.moveaxis(data,0,-1)
-    data=np.moveaxis(data,0,-1)
-
-
     if norm is True:
         #Normalization of data
-        norm_factor=np.median(data[:,:,0,0])
+        norm_factor=np.median(data[roi[0]:roi[1],roi[2]:roi[3],norm_wave,0])
         data=data/norm_factor
 
-    ## Crop data to avoid edge effects arising from alignment/rotation
-    full_data=data.copy()
-    data=data[region[0]:region[1],region[2]:region[3],:,:]
+    if method == 'standard':
+        #loop in wavelengths
+        data_corrected = np.copy(data)
+        iq = np.zeros((data.shape[0]))
+        iu = np.zeros((data.shape[0]))
+        iv = np.zeros((data.shape[0]))
+        sq = np.zeros((data.shape[0]))
+        su = np.zeros((data.shape[0]))
+        sv = np.zeros((data.shape[0]))
+        if last_wvl != 0:
+            input_data = np.reshape(np.einsum('lpij->pijl',data[:last_wvl]),(data.shape[1],data.shape[2],data.shape[3]*(data.shape[0]+last_wvl)))
+            iq,iu,iv,sq,su,sv = evaluate_crosstalk(input_data,verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
+            data_corrected[:,1,:,:] = data_corrected[:,1,:,:]  - sq*data_corrected[:,0,:,:]  - iq
+            data_corrected[:,2,:,:] = data_corrected[:,2,:,:]  - su*data_corrected[:,0,:,:]  - iu
+            data_corrected[:,3,:,:] = data_corrected[:,3,:,:]  - sv*data_corrected[:,0,:,:]  - iv
+            
+        else:
+            for wvli in range(data.shape[0]):
+                iq[wvli],iu[wvli],iv[wvli],sq[wvli],su[wvli],sv[wvli] = evaluate_crosstalk(data[wvli,:,:,:],verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
+                data_corrected[wvli,1,:,:] = data_corrected[wvli,1,:,:]  - sq[wvli]*data_corrected[wvli,0,:,:]  - iq[wvli]
+                data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
+                data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
 
-    #Last wavelength to be considered in the minimization
-    data=data[:,:,:last_wvl,:]
+        return data_corrected, (iq,iu,iv,sq,su,sv)
+    
+    if method == 'jaeggli' or method == 'all_wvls' or method == 'corr':
 
-    # Choose initial guess parameters for the diattenuation minimization
-    D = 0.5
-    theta = 0.
-    chi = 0.
-    initial_guess = (D, theta, chi)
+        #Reorder axis to convert into dimensions: [x,y,wavelength,stokes]
+        data=np.moveaxis(data,0,-1)
+        data=np.moveaxis(data,0,-1)
+        Nwaves=data.shape[2]
 
-    #Apply threshold to V map corrected from offset.
-    V_mean_corr=data[:,:,:,3]-np.mean(data[:,:,0,3],axis=(0,1))
-    pmap = np.max(np.abs(V_mean_corr)/data[:,:,:,0], axis=2)
-    notpolar = np.argwhere(pmap < pthresh)
-    nyidx = notpolar[:,0]
-    nzidx = notpolar[:,1]
 
-    log_memory("Before weak data")
+        ## Crop data to avoid edge effects arising from alignment/rotation
+        full_data=data.copy()
+        data=data[region[0]:region[1],region[2]:region[3],:,:]
 
-    # Use just the region with weak polarization
-    weak_region = data[nyidx,nzidx,:,:] #do selection for only strong polarization signals
+        #Last wavelength to be considered in the minimization
+        data=data[:,:,:last_wvl,:]
 
-    if plots is True:
-        #Plot fractional polarization map
-        fig,ax=plt.subplots(figsize=(8,8))
-        plot=ax.imshow(pmap)
-        ax.set_title('Fractional polarization map')
-        plt.colorbar(plot)
+        # Choose initial guess parameters for the diattenuation minimization
+        D = 0.5
+        theta = 0.
+        chi = 0.
+        initial_guess = (D, theta, chi)
 
-        #Plot original data at wavelength 0 and contour of weak/stron regions
-        fig,axs=plt.subplots(2,2,layout='constrained',figsize=(10,10))
-        axs[0,0].imshow(data[region[0]:region[1],region[2]:region[3],0,0],cmap='gray')
-        axs[0,0].set_title('Stokes I')
-        axs[0,1].imshow(data[region[0]:region[1],region[2]:region[3],0,1],cmap='gray')
-        axs[0,1].set_title('Stokes Q')
-        axs[1,0].imshow(data[region[0]:region[1],region[2]:region[3],0,2],cmap='gray')
-        axs[1,0].set_title('Stokes U')
-        axs[1,1].imshow(data[region[0]:region[1],region[2]:region[3],0,3],cmap='gray')
-        axs[1,1].set_title('Stokes V')
-        for i in range(2):
-            for j in range(2):
-                axs[i,j].contour(pmap, [pthresh], colors='green', 
-                                linewidths=0.75)
-        plt.show()
-        plt.close()        
-    #Minimize merit function
-    result = minimize(fitfunc1, initial_guess, args=weak_region)
+        #Apply threshold to V map corrected from offset.
+        V_mean_corr=data[:,:,:,3]-np.mean(data[:,:,0,3],axis=(0,1))
+        pmap = np.max(np.abs(V_mean_corr)/data[:,:,:,0], axis=2)
+        notpolar = np.argwhere(pmap < pthresh)
+        nyidx = notpolar[:,0]
+        nzidx = notpolar[:,1]
 
-    del weak_region
-    log_memory("After minimize")
+        log_memory("Before weak data")
 
-    # Apply correction for I<->QUV cross-talk
-    MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
-    iMM1a = np.linalg.inv(MM1a)
-    data_corrected =  np.einsum('ij,abcj->abci', iMM1a, full_data)
+        # Use just the region with weak polarization
+        weak_region = data[nyidx,nzidx,:,:] #do selection for only strong polarization signals
 
-    #Move again axis to original positoin
-    data_corrected=np.moveaxis(data_corrected,0,-1)
-    data_corrected=np.moveaxis(data_corrected,0,-1)
-    return data_corrected, MM1a
+        if plots is True:
+            #Plot fractional polarization map
+            fig,ax=plt.subplots(figsize=(8,8))
+            plot=ax.imshow(pmap)
+            ax.set_title('Fractional polarization map')
+            plt.colorbar(plot)
+
+            #Plot original data at wavelength 0 and contour of weak/stron regions
+            fig,axs=plt.subplots(2,2,layout='constrained',figsize=(10,10))
+            axs[0,0].imshow(data[:,:,0,0],cmap='gray')
+            axs[0,0].set_title('Stokes I')
+            axs[0,1].imshow(data[:,:,0,1],cmap='gray')
+            axs[0,1].set_title('Stokes Q')
+            axs[1,0].imshow(data[:,:,0,2],cmap='gray')
+            axs[1,0].set_title('Stokes U')
+            axs[1,1].imshow(data[:,:,0,3],cmap='gray')
+            axs[1,1].set_title('Stokes V')
+            for i in range(2):
+                for j in range(2):
+                    axs[i,j].contour(pmap, [pthresh], colors='green', 
+                                    linewidths=0.75)
+            plt.show(block=False)
+            plt.close()        
+
+
+        if method == 'jaeggli':
+            #Minimize merit function
+            result = minimize(fitfunc1, initial_guess, args=weak_region,
+                options={'maxiter': 1000, 'disp': verbose})
+
+            # Apply correction for I<->QUV cross-talk
+            MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
+            iMM1a = np.linalg.inv(MM1a)
+            data_corrected =  np.einsum('ij,abcj->abci', iMM1a, data)
+
+        elif method == 'all_wvls' or method == 'corr':
+            MM1a=np.zeros((Nwaves,4,4))   
+            data_corrected=data.copy()
+
+            for wvli in range(Nwaves):
+                logging.info(f"wave: {wvli+1}/{Nwaves}")
+
+                fun=lambda x: fitfunc1(x, weak_region, wvl=wvli, method=method)
+                    
+                #Minimize merit function
+                result = minimize(fun, initial_guess,
+                    options={'maxiter': 1000, 'disp': verbose})
+
+
+                # Apply correction for I<->QUV cross-talk
+                MM1a[wvli,:,:] = polmodel1(result.x[0],result.x[1], result.x[2])
+                iMM1a = np.linalg.inv(MM1a[wvli,:,:])
+                data_inverted =  np.einsum('ij,abcj->abci', iMM1a, data)
+                data_corrected[:,:,wvli,:] = data_inverted[:,:,wvli,:]
+
+        #Move again axis to original positoin
+        data_corrected=np.moveaxis(data_corrected,0,-1)
+        data_corrected=np.moveaxis(data_corrected,0,-1)
+
+        # log_memory("Ending cross-talk correction")
+
+        return data_corrected, MM1a

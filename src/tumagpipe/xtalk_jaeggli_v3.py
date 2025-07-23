@@ -280,7 +280,7 @@ def minimize_for_model2(iMM,bs):
     return(out)
 
 def fit_mueller_matrix(data,pthresh=0.02,norm=False,
-                       region=[200,1200,200,1200],
+                       region=[0,-1,0,-1],
                        method='standard',
                        last_wvl=None,plots=False,
                        verbose = False):
@@ -325,11 +325,19 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         sq = np.zeros((data.shape[0]))
         su = np.zeros((data.shape[0]))
         sv = np.zeros((data.shape[0]))
-        for wvli in range(data.shape[0]):
-            iq[wvli],iu[wvli],iv[wvli],sq[wvli],su[wvli],sv[wvli] = evaluate_crosstalk(data[wvli,:,:,:],verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
-            data_corrected[wvli,1,:,:] = data_corrected[wvli,1,:,:]  - sq[wvli]*data_corrected[wvli,0,:,:]  - iq[wvli]
-            data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
-            data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
+        if last_wvl != 0:
+            input_data = np.reshape(np.einsum('lpij->pijl',data[:last_wvl]),(data.shape[1],data.shape[2],data.shape[3]*(data.shape[0]+last_wvl)))
+            iq,iu,iv,sq,su,sv = evaluate_crosstalk(input_data,verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
+            data_corrected[:,1,:,:] = data_corrected[:,1,:,:]  - sq*data_corrected[:,0,:,:]  - iq
+            data_corrected[:,2,:,:] = data_corrected[:,2,:,:]  - su*data_corrected[:,0,:,:]  - iu
+            data_corrected[:,3,:,:] = data_corrected[:,3,:,:]  - sv*data_corrected[:,0,:,:]  - iv
+            
+        else:
+            for wvli in range(data.shape[0]):
+                iq[wvli],iu[wvli],iv[wvli],sq[wvli],su[wvli],sv[wvli] = evaluate_crosstalk(data[wvli,:,:,:],verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
+                data_corrected[wvli,1,:,:] = data_corrected[wvli,1,:,:]  - sq[wvli]*data_corrected[wvli,0,:,:]  - iq[wvli]
+                data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
+                data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
 
         # log_memory("Ending cross-talk correction")
 
