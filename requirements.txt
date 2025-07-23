@@ -12,3 +12,4 @@ scipy==1.15.3
 torch==2.7.0
 torchmfbd==0.9
 tqdm==4.67.1
+scikit-image

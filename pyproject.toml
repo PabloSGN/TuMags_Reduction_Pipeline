@@ -10,20 +10,20 @@ license = "MIT"
 license-files = ["LICENSE"]
 dynamic = ["version", "description"]
 dependencies = [
-    "astropy==7.0.1",
-    "matplotlib==3.10.3",
+    "astropy>=7.0.1",
+    "matplotlib>=3.7.5",
     "mpl_scatter_density==0.8",
-    "numpy==2.2.6",
+    "numpy>1.24.4", 
     "packaging==25.0",
-    "pandas==2.2.3",
-    "photutils==2.2.0",
-    "Pillow==11.2.1",
-    "pyfftw==0.15.0",
-    "scikit_learn==1.6.1",
-    "scipy==1.15.3",
-    "torch==2.7.0",
+    "pandas>=2.2.3",
+    "photutils>=2.2.0",
+    "Pillow>=11.2.1",
+    "pyfftw>=0.15.0",
+    "scikit_learn>=1.6.1",
+    "scipy>=1.10.1",
+    "torch",
     "torchmfbd==0.9",
-    "tqdm==4.67.1"
+    "tqdm>=4.67.1"
 ]
 
 [project.urls]
