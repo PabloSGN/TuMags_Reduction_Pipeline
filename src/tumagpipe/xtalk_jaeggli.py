@@ -19,9 +19,10 @@ def generate_squares(radius,divisions: int = 6):
     X,Y = np.meshgrid(square_centers, square_centers)
     return np.vstack([X.ravel(), Y.ravel()])
 
-def evaluate_crosstalk(dual_beam, verbose=False, size=0, 
-                       pol_limit=[3, 3, 3], center=[0, 0], png=False,
-                       n_sigma=5, method="linfit"):
+def evaluate_crosstalk(data, verbose=False, 
+                       pthresh=0.05, png=False,
+                       n_sigma=5, ctmethod="linfit",
+                       region=[0,-1,0,-1]):
     
     def minimize_rms(x, y):
         norm = np.mean(y)
@@ -39,56 +40,38 @@ def evaluate_crosstalk(dual_beam, verbose=False, size=0,
         mask = np.abs(residuals) < (n_sigma * np.std(residuals))
         return linregress(x[mask], y[mask])
 
-    # Determine cutout region
-    pn, xs, ys = dual_beam.shape
-
-    if size == 0:
-        size = min(xs, ys)
-    if size % 2 != 0:
-        size -= 1  # Ensure even size for symmetric crop
-
-    if center == [0, 0]:
-        center = [xs // 2, ys // 2]
-
-    # Clip to image bounds
-    half_size = size // 2
-    x0 = max(center[0] - half_size, 0)
-    x1 = min(center[0] + half_size, xs)
-    y0 = max(center[1] - half_size, 0)
-    y1 = min(center[1] + half_size, ys)
-
     # Extract subregion and flatten
-    region = dual_beam[:, x0:x1, y0:y1].reshape(pn, -1)
-    y, q, u, v = region[0], region[1], region[2], region[3]
+    area_of_interest = data[:, region[0]:region[1],region[2]:region[3]].reshape(data.shape[0], -1)
+    y, q, u, v = area_of_interest[0], area_of_interest[1], area_of_interest[2], area_of_interest[3]
 
-    # Apply limits
-    idx_q = np.abs(q-np.mean(q)) < pol_limit[0]
-    idx_u = np.abs(u-np.mean(u)) < pol_limit[1]
-    idx_v = np.abs(v-np.mean(v)) < pol_limit[2]
+    #Apply threshold to V map corrected from offset. (as in jaeggli)
+    V_mean_corr = area_of_interest[3]-np.mean(area_of_interest[3])
+    pmap = np.abs(V_mean_corr)/area_of_interest[0]
+    notpolar = pmap < pthresh
 
     # Compute slopes and intercepts
-    if method == "linfit":
-        slope_q, intercept_q, _, _, _ = pfit(y[idx_q], q[idx_q], n_sigma)
-        slope_u, intercept_u, _, _, _ = pfit(y[idx_u], u[idx_u], n_sigma)
-        slope_v, intercept_v, _, _, _ = pfit(y[idx_v], v[idx_v], n_sigma)
-    elif method == 'rms':
-        slope_q = minimize_rms(y[idx_q], q[idx_q])
-        slope_u = minimize_rms(y[idx_u], u[idx_u])
-        slope_v = minimize_rms(y[idx_v], v[idx_v])
-        intercept_q = np.mean(q[idx_q]) - slope_q * np.mean(y[idx_q])
-        intercept_u = np.mean(u[idx_u]) - slope_u * np.mean(y[idx_u])
-        intercept_v = np.mean(v[idx_v]) - slope_v * np.mean(y[idx_v])
+    if ctmethod == "linfit":
+        slope_q, intercept_q, _, _, _ = pfit(y[notpolar], q[notpolar], n_sigma)
+        slope_u, intercept_u, _, _, _ = pfit(y[notpolar], u[notpolar], n_sigma)
+        slope_v, intercept_v, _, _, _ = pfit(y[notpolar], v[notpolar], n_sigma)
+    elif ctmethod == 'rms':
+        slope_q = minimize_rms(y[notpolar], q[notpolar])
+        slope_u = minimize_rms(y[notpolar], u[notpolar])
+        slope_v = minimize_rms(y[notpolar], v[notpolar])
+        intercept_q = np.mean(q[notpolar]) - slope_q * np.mean(y[notpolar])
+        intercept_u = np.mean(u[notpolar]) - slope_u * np.mean(y[notpolar])
+        intercept_v = np.mean(v[notpolar]) - slope_v * np.mean(y[notpolar])
     else:
         raise ValueError("Invalid method. Use 'linfit' or 'rms'.")
 
     if verbose:
         fig, axes = plt.subplots(1, 3, figsize=(16, 6))
         titles = ['Q', 'U', 'V']
-        data = [(q, slope_q, intercept_q, idx_q),
-                (u, slope_u, intercept_u, idx_u),
-                (v, slope_v, intercept_v, idx_v)]
+        datav = [(q, slope_q, intercept_q, notpolar),
+                (u, slope_u, intercept_u, notpolar),
+                (v, slope_v, intercept_v, notpolar)]
 
-        for ax, (comp, slope, intercept, idx), title in zip(axes, data, titles):
+        for ax, (comp, slope, intercept, idx), title in zip(axes, datav, titles):
             fit_line = slope * y[idx] + intercept
             hb = ax.hexbin(y, comp, gridsize=50, cmap='inferno', mincnt=1)
             ax.plot(y[idx], fit_line, color='green', label='Fit')
@@ -287,7 +270,9 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
                        last_wvl=None,plots=False,
                        roi = [0,-1,0,-1],
                        norm_wave = -1,
-                       verbose = False):
+                       verbose = False,
+                       ctmethod='linfit',
+                       MM1a = None):
     """
     This function fits the best diattenuation Mueller matrix that
     minimizes the correlation between Stokes I to Q, U and V along
@@ -331,14 +316,14 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         sv = np.zeros((data.shape[0]))
         if last_wvl != 0:
             input_data = np.reshape(np.einsum('lpij->pijl',data[:last_wvl]),(data.shape[1],data.shape[2],data.shape[3]*(data.shape[0]+last_wvl)))
-            iq,iu,iv,sq,su,sv = evaluate_crosstalk(input_data,verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
+            iq,iu,iv,sq,su,sv = evaluate_crosstalk(input_data,verbose=verbose,pthresh=pthresh,ctmethod=ctmethod,region=region)
             data_corrected[:,1,:,:] = data_corrected[:,1,:,:]  - sq*data_corrected[:,0,:,:]  - iq
             data_corrected[:,2,:,:] = data_corrected[:,2,:,:]  - su*data_corrected[:,0,:,:]  - iu
             data_corrected[:,3,:,:] = data_corrected[:,3,:,:]  - sv*data_corrected[:,0,:,:]  - iv
             
         else:
             for wvli in range(data.shape[0]):
-                iq[wvli],iu[wvli],iv[wvli],sq[wvli],su[wvli],sv[wvli] = evaluate_crosstalk(data[wvli,:,:,:],verbose=verbose,pol_limit=[pthresh,pthresh,pthresh])
+                iq[wvli],iu[wvli],iv[wvli],sq[wvli],su[wvli],sv[wvli] = evaluate_crosstalk(data[wvli,:,:,:],verbose=verbose,pthresh=pthresh,ctmethod=ctmethod,region=region)
                 data_corrected[wvli,1,:,:] = data_corrected[wvli,1,:,:]  - sq[wvli]*data_corrected[wvli,0,:,:]  - iq[wvli]
                 data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
                 data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
@@ -402,20 +387,24 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
             plt.show(block=False)
             plt.close()        
 
-
         if method == 'jaeggli':
-            #Minimize merit function
-            result = minimize(fitfunc1, initial_guess, args=weak_region,
-                options={'maxiter': 1000, 'disp': verbose})
 
-            # Apply correction for I<->QUV cross-talk
-            MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
-            iMM1a = np.linalg.inv(MM1a)
-            data_corrected =  np.einsum('ij,abcj->abci', iMM1a, data)
+            if MM1a is not None:
+                iMM1a = np.linalg.inv(MM1a)
+                data_corrected =  np.einsum('ij,abcj->abci', iMM1a, full_data)
+            else:
+                #Minimize merit function
+                result = minimize(fitfunc1, initial_guess, args=weak_region,
+                    options={'maxiter': 1000, 'disp': verbose})
+                # Apply correction for I<->QUV cross-talk
+                MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
+                iMM1a = np.linalg.inv(MM1a)
+                data_corrected =  np.einsum('ij,abcj->abci', iMM1a, full_data)
 
         elif method == 'all_wvls' or method == 'corr':
+
             MM1a=np.zeros((Nwaves,4,4))   
-            data_corrected=data.copy()
+            data_corrected=full_data.copy()
 
             for wvli in range(Nwaves):
                 logging.info(f"wave: {wvli+1}/{Nwaves}")
@@ -430,7 +419,7 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
                 # Apply correction for I<->QUV cross-talk
                 MM1a[wvli,:,:] = polmodel1(result.x[0],result.x[1], result.x[2])
                 iMM1a = np.linalg.inv(MM1a[wvli,:,:])
-                data_inverted =  np.einsum('ij,abcj->abci', iMM1a, data)
+                data_inverted =  np.einsum('ij,abcj->abci', iMM1a, full_data)
                 data_corrected[:,:,wvli,:] = data_inverted[:,:,wvli,:]
 
         #Move again axis to original positoin
@@ -440,3 +429,61 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         # log_memory("Ending cross-talk correction")
 
         return data_corrected, MM1a
+
+def fit_mueller_matrix_2d(data,pthresh=0.02,norm=False,
+                       divisions=14,region=[0,-1,0,-1],
+                       method='standard',
+                       last_wvl=None,plots=False,
+                       verbose = False):
+
+    logging.info(f"Starting 2D cross-talk correction")
+
+    s = data.shape[-1]
+    cx = s//2
+    cy = s//2
+    size = s//2
+    size2 = size//divisions #half the size of the square
+
+    ndiv = generate_squares(size,divisions = divisions)
+
+    if verbose:
+        fig, ax = plt.subplots(figsize=(8,8))
+        val = data[0,0,cx,cy]
+        im = ax.imshow(data[0,0,:,:],cmap='gray',clim=(val-val*1.5,val+val*1.5))
+        for i in range(divisions**2):
+            square = plt.Rectangle((ndiv[0,i] + cx - size2,ndiv[1,i] + cy - size2), size2 * 2, size2 * 2 , color='r', fill=False)
+            ax.add_patch(square)
+        plt.colorbar(im)
+        plt.show()
+
+    intercept = np.zeros((data.shape[0],3,divisions**2))
+    slope = np.zeros((data.shape[0],3,divisions**2))
+    mmatrix = np.zeros((data.shape[0],4,4,divisions**2))
+    data_ct2D = np.copy(data)
+
+    for i,loop in enumerate(range(divisions**2)):
+        from_x, to_x = np.round(ndiv[0,i] + cx - size2).astype(int) , np.round(ndiv[0,i] + cx + size2).astype(int)
+        from_y, to_y = np.round(ndiv[1,i] + cy - size2).astype(int) , np.round(ndiv[1,i] + cy + size2).astype(int)
+        logging.info(f"loop {i} from {divisions**2}")
+
+        data_ct2D[:,:,from_y:to_y,from_x:to_x], result = fit_mueller_matrix(
+            data[:,:,from_y:to_y,from_x:to_x],
+            pthresh=pthresh,
+            norm=norm,
+            region=region,
+            method=method,
+            last_wvl=last_wvl,
+            plots=plots,
+            verbose = verbose)
+        if method == 'standard':
+            intercept[:, 0, loop], intercept[:, 1, loop], intercept[:, 2, loop] = result[0], result[1], result[2]
+            slope[:, 0, loop], slope[:, 1, loop], slope[:, 2, loop] = result[3], result[4], result[5]
+        if method in ['jaeggli', 'all_wvls', 'corr']:
+            mmatrix[:,:,:,loop] = result
+
+    logging.info(f"finishing 2D cross-talk correction")
+
+    if method == 'standard':
+        return  data_ct2D, intercept, slope
+    if method in ['jaeggli', 'all_wvls', 'corr']:
+        return  data_ct2D, mmatrix, 0

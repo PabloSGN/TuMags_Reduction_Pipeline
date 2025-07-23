@@ -18,7 +18,7 @@ from . import prefilter_removal as pr
 
 def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
                               norm_method = "avg", remove_prefilter = False, pref_model = None, 
-                              volts = None, modify_linearity = ([1539,1540],[1.0,1.0]): 
+                              volts = None, modify_linearity = ([1539,1540],[1.0,1.0])): 
     """
     Function to compute the flat-field observation from the images paths. 
 
