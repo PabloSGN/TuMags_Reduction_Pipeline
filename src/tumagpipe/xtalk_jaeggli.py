@@ -137,7 +137,7 @@ def fitfunc1(param, stokesin,wvl='all',method='jaeggli'):
     return(out)
 
 #Function that computes the merit function for a given Mueller matrix
-def minimize_for_model1(iMM,bs,wvl='all',method='jaeggli'):
+def  minimize_for_model1(iMM,bs,wvl='all',method='jaeggli'):
     """
     Function that computes the merit function that considers
     crosstalk from I to Q, U and V along the spectral profile

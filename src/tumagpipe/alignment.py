@@ -16,8 +16,8 @@ from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from scipy.ndimage import rotate
 
 # Own functions
-from pd_functions_v22 import restore_ima
-from image_filtering import filter_frecuencies
+from .pd_functions_v22 import restore_ima
+from .image_filtering import filter_frecuencies
 
 # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
@@ -100,7 +100,7 @@ def FTpad(IM,Nout):
 
 # ------------------------------  MAIN FUNCTS  --------------------------------- # 
 
-def realign_subpixel(ima, accu=0.01, verbose = True, return_shift = False):
+def realign_subpixel(ima, accu=0.001, verbose = True, return_shift = False):
     """
     This function aligns a series of images with subpixel images using the Sicairos
     method.

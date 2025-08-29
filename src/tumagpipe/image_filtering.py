@@ -228,87 +228,105 @@ def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, 
 
     if band:
 
-        data = mirror_pad_5d(data, pad=pad)
-        shape = data.shape
+        if band == 'fixed':
 
-        # FFT-based peak detection (if peaks not given)
-        if not peaks:
-            def compute_power_spectrum(cam_index):
-                fft = np.fft.fft2(data[cam_index, target_wave, 0])
-                fft_shifted = np.fft.fftshift(fft)
-                power = np.abs(fft_shifted) ** 2
-                return np.mean(np.log10(power), axis=1)
+            for lambd in range(nlambda):
+                if verbose:
+                    print(f"Procesing filtration of wavelength: {lambd + 1} / {nlambda}")
+                for mod in range(nmods):
+                    for cam_index in range(2):
+                        F = np.fft.fft2(data[cam_index, lambd, mod])
+                        F_shifted = np.fft.fftshift(F)
 
-            spec1 = compute_power_spectrum(0)
-            spec2 = compute_power_spectrum(1)
-            peaks_cam1 = find_peaks_in_spectrum(spec1, verbose=verbose, N=N,sigmam=sigmam)
-            peaks_cam2 = find_peaks_in_spectrum(spec2, verbose=verbose, N=N,sigmam=sigmam)
+                        F_shifted[394:F_shifted.shape[-1]//2-394, :] = F_shifted[394-10:F_shifted.shape[-1]//2-394-10, :]
+                        F_shifted[F_shifted.shape[-1]//2+394:-394, :] = F_shifted[F_shifted.shape[-1]//2+394+10:-394+10, :]
 
-            if cam == 0:
-                peaks_cam2 = peaks_cam1
-            elif cam == 1:
-                peaks_cam1 = peaks_cam2
+                        F_inverse = np.fft.ifftshift(F_shifted)
+                        data[cam_index, lambd, mod] = np.fft.ifft2(F_inverse).real.astype(np.float32)
+
         else:
-            peaks_cam1, peaks_cam2 = peaks
+                
+            data = mirror_pad_5d(data, pad=pad)
+            shape = data.shape
 
-        # if peaks:
-        #     print('hey')
-        #     peaks_cam1 = peaks[0]
-        #     peaks_cam2 = peaks[1]
-        # else:
-        #     fft = np.fft.fft2(data[0,target_wave,0,:,:])
-        #     fft_shifted = np.fft.fftshift(fft)
-        #     power_spectrum_cam1 = np.abs(fft_shifted) ** 2
+            # FFT-based peak detection (if peaks not given)
+            if not peaks:
+                def compute_power_spectrum(cam_index):
+                    fft = np.fft.fft2(data[cam_index, target_wave, 0])
+                    fft_shifted = np.fft.fftshift(fft)
+                    power = np.abs(fft_shifted) ** 2
+                    return np.mean(np.log10(power), axis=1)
 
-        #     fft = np.fft.fft2(data[1,target_wave,0,:,:])
-        #     fft_shifted = np.fft.fftshift(fft)
-        #     power_spectrum_cam2 = np.abs(fft_shifted) ** 2
-        #     peaks_cam1 = find_peaks_in_spectrum(np.mean(np.log10(power_spectrum_cam1),axis=1),verbose=verbose,N=N)
-        #     peaks_cam2 = find_peaks_in_spectrum(np.mean(np.log10(power_spectrum_cam2),axis=1),verbose=verbose,N=N)
-        #     if cam == 0:
-        #         peaks_cam2 = peaks_cam1
-        #     elif cam == 1:
-        #         peaks_cam1 = peaks_cam2 
-        #     else:
-        #         pass
-        mask_shape = shape[-2:]
-        mask_cam1 = np.ones(mask_shape, dtype=np.float32)
-        mask_cam2 = np.ones(mask_shape, dtype=np.float32)
-        for nm in peaks_cam1:
-            mask_cam1 *= gaussian_band_mask(shape[-2:], axis='horizontal', center=nm, width=band)
-        for nm in peaks_cam2:
-            mask_cam2 *= gaussian_band_mask(shape[-2:], axis='horizontal', center=nm, width=band)
-        if verbose:
-            for mask in [mask_cam1, mask_cam2]:
-                plt.imshow(mask, cmap='gray')
-                plt.colorbar()
-                plt.show(block=False)
-            plt.close('all')
+                spec1 = compute_power_spectrum(0)
+                spec2 = compute_power_spectrum(1)
+                peaks_cam1 = find_peaks_in_spectrum(spec1, verbose=verbose, N=N,sigmam=sigmam)
+                peaks_cam2 = find_peaks_in_spectrum(spec2, verbose=verbose, N=N,sigmam=sigmam)
 
-        for lambd in range(nlambda):
+                if cam == 0:
+                    peaks_cam2 = peaks_cam1
+                elif cam == 1:
+                    peaks_cam1 = peaks_cam2
+            else:
+                peaks_cam1, peaks_cam2 = peaks
+
+            # if peaks:
+            #     print('hey')
+            #     peaks_cam1 = peaks[0]
+            #     peaks_cam2 = peaks[1]
+            # else:
+            #     fft = np.fft.fft2(data[0,target_wave,0,:,:])
+            #     fft_shifted = np.fft.fftshift(fft)
+            #     power_spectrum_cam1 = np.abs(fft_shifted) ** 2
+
+            #     fft = np.fft.fft2(data[1,target_wave,0,:,:])
+            #     fft_shifted = np.fft.fftshift(fft)
+            #     power_spectrum_cam2 = np.abs(fft_shifted) ** 2
+            #     peaks_cam1 = find_peaks_in_spectrum(np.mean(np.log10(power_spectrum_cam1),axis=1),verbose=verbose,N=N)
+            #     peaks_cam2 = find_peaks_in_spectrum(np.mean(np.log10(power_spectrum_cam2),axis=1),verbose=verbose,N=N)
+            #     if cam == 0:
+            #         peaks_cam2 = peaks_cam1
+            #     elif cam == 1:
+            #         peaks_cam1 = peaks_cam2 
+            #     else:
+            #         pass
+            mask_shape = shape[-2:]
+            mask_cam1 = np.ones(mask_shape, dtype=np.float32)
+            mask_cam2 = np.ones(mask_shape, dtype=np.float32)
+            for nm in peaks_cam1:
+                mask_cam1 *= gaussian_band_mask(shape[-2:], axis='horizontal', center=nm, width=band)
+            for nm in peaks_cam2:
+                mask_cam2 *= gaussian_band_mask(shape[-2:], axis='horizontal', center=nm, width=band)
             if verbose:
-                print(f"Procesing filtration of wavelength: {lambd + 1} / {nlambda}")
-            for mod in range(nmods):
-                for cam_index, mask in enumerate([mask_cam1, mask_cam2]):
-                    F = np.fft.fft2(data[cam_index, lambd, mod])
-                    F_shifted = np.fft.fftshift(F)
-                    F_filtered = F_shifted * mask
-                    F_inverse = np.fft.ifftshift(F_filtered)
-                    data[cam_index, lambd, mod] = np.fft.ifft2(F_inverse).real.astype(np.float32)
+                for mask in [mask_cam1, mask_cam2]:
+                    plt.imshow(mask, cmap='gray')
+                    plt.colorbar()
+                    plt.show(block=False)
+                plt.close('all')
 
-                # # Compute 2D Fourier Transform
-                # F = np.fft.fft2(data[0, lambd, mod])
-                # F_shifted = np.fft.fftshift(F) # Center around 0
-                # F_filtered = F_shifted * mask_cam1 # Mask slected frecuencies
-                # F_inverse_shifted = np.fft.ifftshift(F_filtered) # Return to original position
-                # data[0, lambd, mod] = np.fft.ifft2(F_inverse_shifted).real  # Take real part
-                # F = np.fft.fft2(data[1, lambd, mod])
-                # F_shifted = np.fft.fftshift(F) # Center around 0
-                # F_filtered = F_shifted * mask_cam2 # Mask slected frecuencies
-                # F_inverse_shifted = np.fft.ifftshift(F_filtered) # Return to original position
-                # data[1, lambd, mod] = np.fft.ifft2(F_inverse_shifted).real  # Take real part
+            for lambd in range(nlambda):
+                if verbose:
+                    print(f"Procesing filtration of wavelength: {lambd + 1} / {nlambda}")
+                for mod in range(nmods):
+                    for cam_index, mask in enumerate([mask_cam1, mask_cam2]):
+                        F = np.fft.fft2(data[cam_index, lambd, mod])
+                        F_shifted = np.fft.fftshift(F)
+                        F_filtered = F_shifted * mask
+                        F_inverse = np.fft.ifftshift(F_filtered)
+                        data[cam_index, lambd, mod] = np.fft.ifft2(F_inverse).real.astype(np.float32)
 
-        data = crop_5d(data, pad=pad)
+                    # # Compute 2D Fourier Transform
+                    # F = np.fft.fft2(data[0, lambd, mod])
+                    # F_shifted = np.fft.fftshift(F) # Center around 0
+                    # F_filtered = F_shifted * mask_cam1 # Mask slected frecuencies
+                    # F_inverse_shifted = np.fft.ifftshift(F_filtered) # Return to original position
+                    # data[0, lambd, mod] = np.fft.ifft2(F_inverse_shifted).real  # Take real part
+                    # F = np.fft.fft2(data[1, lambd, mod])
+                    # F_shifted = np.fft.fftshift(F) # Center around 0
+                    # F_filtered = F_shifted * mask_cam2 # Mask slected frecuencies
+                    # F_inverse_shifted = np.fft.ifftshift(F_filtered) # Return to original position
+                    # data[1, lambd, mod] = np.fft.ifft2(F_inverse_shifted).real  # Take real part
+
+            data = crop_5d(data, pad=pad)
 
     else:
             
@@ -329,7 +347,10 @@ def filter_frecuencies(data, fu = fu_readout, du = du_readout, fv = fv_readout, 
     if verbose:
         print(f"Time elapsed: {round(time.time() - tic, 3)} s.\nFiltering completed.")
     
-    del F, F_filtered, F_shifted, F_inverse
+    try:
+        del F, F_filtered, F_shifted, F_inverse
+    except:
+        pass
     gc.collect()
     return data[:, 0] if onelambda else data
 
