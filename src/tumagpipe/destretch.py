@@ -244,9 +244,6 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
         for lambd in range(data.shape[1]):
             print('aligning lambda', lambd)
 
-            # frames =  torch.tensor(np.reshape(data[:,lambd],(2*data.shape[2],data.shape[3],data.shape[4])).astype('float32')
-            # ).unsqueeze(0).unsqueeze(0)  # (1, 1, nmod, x, y)
-
             frames =  torch.tensor(np.reshape(data[:,lambd,:,:,:],(2*data.shape[-3],data.shape[-2],data.shape[-1])).astype('float32')) 
             # add tensor dimensions
             frames = frames.unsqueeze(0).unsqueeze(0)  # (1, 1, nmod, x, y)
@@ -255,32 +252,10 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
                 frames, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
                 border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
             )
-
-            # data[:, lambd] = np.reshape(
-            #     warped_frames[0, 0].detach().cpu().numpy(), (2, data.shape[2], data.shape[3], data.shape[4])
-            # )
             data[:,lambd,:,:,:] = np.reshape(
                 warped_frames[0, 0].detach().cpu().numpy(),(2,data.shape[-3],data.shape[-2],data.shape[-1])
                 )
-
-            # #align modulations
-            # # first thing to do is move data to gpu memory
-            # frames =  torch.tensor(np.reshape(data[:,lambd,:,:,:],(2*data.shape[-3],data.shape[-2],data.shape[-1])).astype('float32')) 
-            # # add tensor dimensions
-            # frames = frames.unsqueeze(0).unsqueeze(0)  # (1, 1, nmod, x, y)
-
-            # # run the destretching
-            # warped_frames, shifts = torchmfbd.destretch(
-            #     frames,
-            #     ngrid=ngrid,
-            #     lr=lr,
-            #     reference_frame=reference_frame,
-            #     border=border,
-            #     n_iterations=n_iterations,
-            #     lambda_tt=lambda_tt,
-            # )
-
-            # data[:,lambd,:,:,:] = np.reshape(warped_frames[0, 0].detach().cpu().numpy(),(2,data.shape[-3],data.shape[-2],data.shape[-1]))
+            
     elif aling_cam == '0s':
         # # first thing to do is move data to gpu memory
         # frames =  torch.tensor(np.reshape(data,(2*data.shape[-3]*data.shape[-4],data.shape[-2],data.shape[-1])).astype('float32')) 
