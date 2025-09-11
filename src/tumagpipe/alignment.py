@@ -134,7 +134,7 @@ def realign_subpixel(ima, accu=0.001, verbose = True, return_shift = False):
             ima_aligned[j] = ima[0]
     
     if return_shift:
-        return ima_aligned, row_shifts, col_shifts
+        return ima_aligned, row_shifts, col_shifts, error
     else:
         return ima_aligned
 
@@ -346,12 +346,12 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
 
     if filterflag:
         filtered = filter_frecuencies(data, verbose=verbose)
-        if rotated != 0:
+        if theta != 0:
             rotated = rotate_camera2(filtered, theta = theta)
         else:
             rotated = np.copy(filtered)
     else:
-        if rotated != 0:
+        if theta != 0:
             rotated = rotate_camera2(data, theta = theta)
         else:
             rotated = np.copy(data)
