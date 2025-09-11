@@ -39,6 +39,10 @@ Changes with respect to pd_functions_v21
 to be adjusted between two images: one with and another one without jitter.
 - Default parameters (N, R, nuc, etc.) are no longer set as default, but
 introduced by the user or computed within a function 
+
+Changes with respect to pd_functions_v22
+- We introduce a stray light term in the reconstructions
+
 """
 #from skimage.morphology import square, erosion
 from matplotlib import pyplot as plt
@@ -1716,12 +1720,41 @@ def prepare_PD(ima,nuc,N,wind=True,kappa=100):
     Ok[:,:,0]=fftshift(Of)
     return Ok, gamma, wind, susf
 
+def OTF_stray(sigma,RHO,stray='moffat'):
+    """
+    OTF corresponding to the straylight term normalized to its peak.
+    Inputs:
+        sigma: parameter defining the width of the straylight term (in arcsec)
+        stray: type of straylight ('gaussian' or 'moffat')
+    """
+    if stray=='gaussian':
+        beta=2*np.pi**2*sigma**2
+        otf_stray=np.exp(-beta*RHO**2)
+    elif stray=='moffat':
+        beta=np.pi*sigma
+        otf_stray=np.exp(-beta*RHO)
+        
+    norma_stray=np.max(otf_stray)
+    otf_stray=otf_stray[:,:,np.newaxis] #Dummy axis to have same dimensions as the OTF    
+    return otf_stray,norma_stray
+
+def OTF_tot(epsilon,OTF_wave,OTF_stray):
+    """
+    Computes the total OTF of the system, taking into
+    account both aberrations and stray light.
+    Input:
+        epsilon: fraction of the stray light (0<epsilon<1)
+        OTF_wave: OTF corresponding to aberrations (OTF)
+        OTF_stray: OTF corresponding to stray light
+    """
+    return (1-epsilon)*OTF_wave+epsilon*OTF_wave*OTF_stray  
 
 def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
-                    noise='default',reg1=0,reg2=1,inst='tumag'):
+                    noise='default',reg1=0,reg2=1,inst='tumag',epsilon=0,sigma=0,
+                    stray='moffat'):
     """
     This function restores an image or an array of images employing a given
-    set of Zernike coefficients.
+    set of Zernike coefficients and a given amount of stray light.
     Inputs:
         ima: 2D array with the image to be restored or 3D array with PD
             images at different focus positions.
@@ -1741,6 +1774,9 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
         noise: 'default' to be computed as filt_scharmer. Otherwise, this variable
             should contain a 2x2 array with the filter.
         inst: instrument for which we compute the parameters
+        epsilon: fraction of stray light (0<epsilon<1). 0 by default
+        sigma: parameter defining the width of the stray light term (in pixels)
+        stray: type of straylight ('gaussian' or 'moffat')
 
     Output:
         object: restored image
@@ -1749,11 +1785,15 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
     """
     #Pupil sampling according to image size
     if inst=='tumag':
+        plate_scale=0.0378 #Plate scale in arcseconds (arcsec/pixel)
         wvl,fnum,Delta_x=tumag_params()
     N=ima.shape[0]
     nuc,R=compute_nuc(N,wvl,fnum,Delta_x)
     ap=aperture(N,R,cobs=cobs)
     RHO,THETA=sampling2(N,R)
+
+    #Convert sigma into arcsec
+    sigma_arcsec=sigma*plate_scale
 
     #Fourier transform images
     Ok, gamma, wind, susf=prepare_PD(ima,nuc,N,wind=wind)
@@ -1765,7 +1805,15 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
                 gamma=[1,0] #To account only for the 1st image
 
     #OTFs
-    Hk,_=OTF(a,a_d,RHO,THETA,ap,norm=True,K=Ok.shape[2],tiptilt=tiptilt)
+    nu_lim=int(N/2) 
+    nu_vec=np.linspace(-nu_lim,nu_lim,int(N)+1) #Odd number of samples to center the stray-light OTF
+    NU,ETA=np.meshgrid(nu_vec,nu_vec)
+    RHO2 = np.sqrt(NU**2+ETA**2)
+    RHO2=RHO2[:-1,:-1]
+
+    Hk_wave,_=OTF(a,a_d,RHO,THETA,ap,norm=True,K=Ok.shape[2],tiptilt=tiptilt)
+    Hk_stray,_=OTF_stray(sigma_arcsec,RHO2,stray=stray)
+    Hk=OTF_tot(epsilon,Hk_wave,Hk_stray)
 
     
     #Restoration
@@ -2092,7 +2140,7 @@ def padding(ima):
     return ima_pad,pw
 
 def restore_ima(ima,zernikes,pd=0,low_f=0.2,noise='default',reg1=0.05,
-                reg2=1,cobs=32.4):
+                reg2=1,cobs=32.4,epsilon=0,sigma=0,stray='moffat'):
     """
     This function restores a 2D or a 3D image using a given set of Zernike 
     coefficients and a modified Wiener filter that includes a 
@@ -2109,6 +2157,9 @@ def restore_ima(ima,zernikes,pd=0,low_f=0.2,noise='default',reg1=0.05,
         reg1: 1st parameter of regularization term
         reg2: 2nd parameter of the regularization term 
         cobs: percentage of the central obscuration
+        epsilon: fraction of the stray light (0<epsilon<1). 0 by default
+        sigma: parameter defining the width of the stray light term (in pixels)
+        stray: type of straylight ('gaussian' or 'moffat')
     Output:
         ima_rest: restored image over the whole FOV of the input image
         noise_filt: noise filter employed for the restoration
@@ -2120,7 +2171,8 @@ def restore_ima(ima,zernikes,pd=0,low_f=0.2,noise='default',reg1=0.05,
     #If we select only one image of the series
     ima_rest,_,noise_filt=object_estimate(ima_pad,zernikes,pd,wind=True,
                                           cobs=cobs,cut=cut,low_f=low_f,
-                                          noise=noise,reg1=reg1,reg2=reg2)
+                                          noise=noise,reg1=reg1,reg2=reg2,
+                                          epsilon=epsilon,sigma=sigma,stray=stray)
     ima_rest=ima_rest[cut:-cut,cut:-cut]
     return ima_rest, noise_filt
 
