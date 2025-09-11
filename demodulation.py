@@ -145,9 +145,11 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
     elif lcvr_mode == "longitudinal":
         # Each wavelength independently
         for wl in range(nlambda):
-            for cam in range(2):
-                demod[cam, wl, 0] = data[cam, wl, 0] + data[cam, wl, 1]
-                demod[cam, wl, 1] = data[cam, wl, 0] - data[cam, wl, 1]
+            # for cam in range(2):
+            demod[0, wl, 0] =  (data[0, wl, 0] + data[0, wl, 1])/2.
+            demod[0, wl, 1] =  (data[0, wl, 0] - data[0, wl, 1])/2.
+            demod[1, wl, 0] =  (data[1, wl, 0] + data[1, wl, 1])/2.
+            demod[1, wl, 1] = -(data[1, wl, 0] - data[1, wl, 1])/2.
             
             dual_beam[wl] = (demod[0, wl] + demod[1, wl]  ) / 2
     else:

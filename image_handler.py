@@ -20,6 +20,7 @@ from datetime import datetime
 
 # Own libs
 from utils import read_Tumag
+from cam_linearity import modified_curve,modify_curve
 import config as cf
 
 # Config
@@ -108,7 +109,7 @@ def read(image_path : str):
 # Class to process the observation mode -> headers and array 
 class nominal_observation:
 
-    def __init__(self, om, images_path, dc):
+    def __init__(self, om, images_path, dc, modify_linearity = (None, None)):
 
         self.info = {"ObservationMode" : om,
                      "Images_headers" : {}}
@@ -125,6 +126,10 @@ class nominal_observation:
 
         _, h1 = read(images_path_reshaped[0, 0, 0]) # read first image to get acc
        
+        # create interp function with new linearity 
+        if modify_linearity:
+            modify_linear =  modified_curve(center= modify_linearity[0], amplitude = modify_linearity[1])
+
         for lambd in range(nlambda):
             print(f"Processing wavelength : {lambd + 1} / {nlambda}")
             self.info["Images_headers"][f"wv_{lambd}"] = {}
@@ -132,6 +137,10 @@ class nominal_observation:
                 # Reading each image
                 im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
                 im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
+                #modify linearity
+                if modify_linearity:
+                    im0 = modify_curve(modify_linear,im0/head0["nAcc"])*head0["nAcc"]
+                    im1 = modify_curve(modify_linear,im1/head0["nAcc"])*head0["nAcc"]
                 # Saving images header except for CameraID entry
                 self.info["Images_headers"][f"wv_{lambd}"][f"M{mod}"] = {}
                 for key in head0:
@@ -167,7 +176,7 @@ class nominal_observation:
 class nominal_flat:
 
     # Process the observations
-    def __init__(self, om, images_path, nreps, dc, lambda_repeat = 4, verbose = False):
+    def __init__(self, om, images_path, nreps, dc, lambda_repeat = 4, verbose = False, modify_linearity = (None, None)):
 
         print(f"Processing images...")
 
@@ -184,7 +193,10 @@ class nominal_flat:
 
         images_path_reshaped = np.array(images_path).reshape(nreps, nlambda, lambda_repeat, nmods, 2)
 
-        
+        # create interp function with new linearity 
+        if modify_linearity:
+            modify_linear =  modified_curve(center= modify_linearity[0], amplitude = modify_linearity[1])
+
         for rep in range(nreps):
             for lambd in range(nlambda):
                 if f"wv_{lambd}" not in self.info["Images_headers"]:
@@ -197,6 +209,10 @@ class nominal_flat:
                         # Reading each image
                         im0, head0 = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 0]) # Cam 1
                         im1, _ = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 1]) # Cam 2
+                        # modify linearity
+                        if modify_linearity:
+                            im0 = modify_curve(modify_linear,im0/head0["nAcc"])*head0["nAcc"]
+                            im1 = modify_curve(modify_linear,im1/head0["nAcc"])*head0["nAcc"]
                         # Saving images header except for CameraID entry
                         for key in head0:
                             if key == "cam":

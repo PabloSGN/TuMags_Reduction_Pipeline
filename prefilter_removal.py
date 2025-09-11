@@ -4,12 +4,9 @@
 
 # Built-in 
 import os
-import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-
-from functools import partial
 
 import scipy
 from packaging.version import parse
@@ -20,11 +17,7 @@ if parse(scipy.__version__) >= parse("1.7"):  # Adjust the version as needed
 else:
     from scipy.integrate import simps
 
-
-
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib as mp
-from astropy.io import fits
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
 
@@ -243,8 +236,8 @@ def fit_prefilter(V, I, filt, save_flag = False, bounds = None, plot_flag = Fals
                   (0.4, 0.6)]
 
     result = minimize(loss_r_n_b_c, initial_guess,
-                      args=(Wvls, I, wavelengths, Spectrum, a, G, config["d"], config["theta"], config), 
-                      method='Powell', bounds=bounds)
+                      args=(Wvls, I, wavelengths, Spectrum, a, G, config["d"], config["theta"], config))#, 
+                      #method='Powell', bounds=bounds)
 
     fitted_r = result.x[0]
     fitted_n = result.x[1]
@@ -266,7 +259,7 @@ def fit_prefilter(V, I, filt, save_flag = False, bounds = None, plot_flag = Fals
         # Store necessary data
         data = {'x': whole_volts_range, 'y': fitted_prefilter / np.max(fitted_prefilter)}
         # Save using pickle
-        with open(f'prefilter_model_{filt}.pkl', 'wb') as file:
+        with open(f'{save_flag}_prefilter_model_{filt}.pkl', 'wb') as file:
             pickle.dump(data, file)
 
     if plot_flag:

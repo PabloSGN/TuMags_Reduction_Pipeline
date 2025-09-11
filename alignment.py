@@ -11,7 +11,6 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 import numpy as np
 import time
 from matplotlib import pyplot as plt
-import matplotlib.patches as patches
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from scipy.ndimage import rotate
 
@@ -33,14 +32,14 @@ def dftreg(F,G,kappa):
 
     """
     nr,nc=np.shape(F)
-    Nr=np.fft.ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
-    Nc=np.fft.ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
-    CC=np.fft.ifft2(FTpad(F*np.conj(G),2*nr))
+    Nr = ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
+    Nc = ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
+    CC=ifft2(FTpad(F*np.conj(G),2*nr))
     CCabs=np.abs(CC)
     ind = np.unravel_index(np.argmax(CCabs, axis=None), CCabs.shape)
     CCmax=CC[ind]*nr*nc
-    Nr2=np.fft.ifftshift(np.arange(-np.fix(nr),np.ceil(nr)))
-    Nc2=np.fft.ifftshift(np.arange(-np.fix(nc),np.ceil(nc)))
+    Nr2 = ifftshift(np.arange(-np.fix(nr),np.ceil(nr)))
+    Nc2 = ifftshift(np.arange(-np.fix(nc),np.ceil(nc)))
     row_shift=Nr2[ind[0]]/2
     col_shift=Nr2[ind[1]]/2
 
@@ -77,10 +76,10 @@ def dftups(M,n_out,kappa,roff,coff):
     """
     nr,nc=M.shape
     kernc=np.exp((-1j*2*np.pi/(nc*kappa))*np.outer(\
-    np.fft.ifftshift(np.arange(0,nc).T-np.floor(nc/2)),np.arange(0,n_out)-coff))
+    ifftshift(np.arange(0,nc).T-np.floor(nc/2)),np.arange(0,n_out)-coff))
 
     kernr=np.exp((-1j*2*np.pi/(nr*kappa))*np.outer(\
-    np.arange(0,n_out)-roff,np.fft.ifftshift(np.arange(0,nr).T-np.floor(nr/2))))
+    np.arange(0,n_out)-roff,ifftshift(np.arange(0,nr).T-np.floor(nr/2))))
     return kernr @ M @ kernc
 
 def FTpad(IM,Nout):
@@ -93,9 +92,9 @@ def FTpad(IM,Nout):
     """
     Nin=IM.shape[0]
     pd=int((Nout-Nin)/2)
-    IM=np.fft.fftshift(IM)
+    IM=fftshift(IM)
     IMout=np.pad(IM,((pd,pd),(pd,pd)),'constant')
-    IMout=np.fft.ifftshift(IMout)*Nout*Nout/(Nin*Nin)
+    IMout=ifftshift(IMout)*Nout*Nout/(Nin*Nin)
     return IMout
 
 # ------------------------------  MAIN FUNCTS  --------------------------------- # 
@@ -134,9 +133,9 @@ def realign_subpixel(ima, accu=0.01, verbose = True, return_shift = False):
             ima_aligned[j] = ima[0]
     
     if return_shift:
-        return ima_aligned, row_shifts, col_shifts
+        return ima_aligned, row_shifts, col_shifts, error
     else:
-        return ima_aligned
+        return ima_aligned, error
 
 def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = 10):
     """
@@ -288,7 +287,35 @@ def filter_and_rotate(data, theta = 0.0655, verbose = False, filterflag = True, 
     
     return filtered_n_rotated
 
-def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = True, onelambda = False, returnshifts = False):
+def shift_subp(im: np.ndarray, shift=None, wrap=True, fill=0):
+    '''define shift operator (subpixel)
+        Input is y and x shifts (defined negative towards (0,0)
+        new center = center + (x,y)
+        Note that image is defined as [sy,sx] so shifts = [sy (rows),sx (columns)]
+    '''
+    import math
+    nr, nc = im.shape
+    Nr = ifftshift(np.arange(-np.fix(nr / 2), np.ceil(nr / 2)))
+    Nc = ifftshift(np.arange(-np.fix(nc / 2), np.ceil(nc / 2)))
+    Nc, Nr = np.meshgrid(Nc, Nr)
+    G = fft2(im)
+    Gshift = G * np.exp(1j * 2 * np.pi * (-shift[0] * Nr / nr - shift[1] * Nc / nc))
+    im_shift = np.real(ifft2(Gshift))
+
+    if wrap is False:
+        dy, dx = shift
+        if dx > 0:
+            im_shift[:, 0:math.ceil(dx)] = fill
+        elif dx < 0:
+            im_shift[:, math.floor(dx):] = fill
+        if dy > 0:
+            im_shift[0:math.ceil(dy), :] = fill
+        elif dy < 0:
+            im_shift[math.floor(dy):, :] = fill
+
+    return im_shift
+
+def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = False, onelambda = False, returnshifts = True,roi = [0,-1,0,-1]):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
@@ -314,37 +341,57 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
     nmods = shape[2]
 
     shifts = np.zeros((nlambda, 2, 2, nmods))
-    aligned = np.zeros(np.shape(data))
+    aligned =  np.copy(data)
 
-    if filterflag:
-        filtered = filter_frecuencies(data, verbose=verbose)
-        rotated = rotate_camera2(filtered, theta = theta)
-    else:
-        rotated = rotate_camera2(data, theta = theta)
+    # if filterflag:
+    #     filtered = filter_frecuencies(data, verbose=verbose)
+    #     if theta != 0:
+    #         rotated = rotate_camera2(filtered, theta = theta)
+    #     else:
+    #         rotated = np.copy(filtered)
+    # else:
+    #     if theta != 0:
+    #         rotated = rotate_camera2(data, theta = theta)
+    #     else:
+    #         rotated = np.copy(data)
+    rotated = np.copy(data)
 
+    err = []
     for lambd in range(nlambda):
         
         if verbose:
             print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
             print(f"Shifts for cam 1 - modulation alignment")
-        mods_aligned, srow, scol = realign_subpixel(rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
+        # mods_aligned, srow, scol = realign_subpixel(rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
+        _, srow, scol, error = realign_subpixel(rotated[0, lambd,:,roi[0]:roi[1],roi[2]:roi[3]], verbose = verbose, accu = acc, return_shift=True)
+        err.append(error)
 
         shifts[lambd, 0, 0] = srow
         shifts[lambd, 0, 1] = scol
 
-        aligned[0, lambd] = mods_aligned
+        # aligned[0, lambd] = mods_aligned
+        for nm in range(nmods-1):
+            aligned[0, lambd,nm + 1] = shift_subp(rotated[0, lambd,nm+1], shift=[srow[nm + 1], scol[nm + 1]], wrap=True, fill=0)
 
         if verbose:
             print("Shifts of camera 2 alignment")
         for mod in range(nmods):
             if verbose:
                 print(f"mod -> {mod}...")
-            cams_aligned, srow, scol = realign_subpixel(np.array([mods_aligned[mod], rotated[1, lambd, mod]]), verbose = verbose, accu = acc, return_shift=True )
+            # cams_aligned, srow, scol = realign_subpixel(np.array([mods_aligned[mod], rotated[1, lambd, mod]]), verbose = verbose, accu = acc, return_shift=True )
+
+            # shifts[lambd, 1, 0, mod] = srow[1]
+            # shifts[lambd, 1, 1, mod] = scol[1]
+
+            # aligned[1, lambd, mod] = cams_aligned[1]
+
+            _, srow, scol,error = realign_subpixel(np.array([aligned[0,lambd,mod,roi[0]:roi[1],roi[2]:roi[3]], rotated[1, lambd, mod,roi[0]:roi[1],roi[2]:roi[3]]]), verbose = verbose, accu = acc, return_shift=True)
+            err.append(error)
 
             shifts[lambd, 1, 0, mod] = srow[1]
             shifts[lambd, 1, 1, mod] = scol[1]
 
-            aligned[1, lambd, mod] = cams_aligned[1]
+            aligned[1, lambd,mod] = shift_subp(rotated[1, lambd,mod], shift=[srow[1], scol[1]], wrap=True, fill=0)
 
     tac = time.time()
 
@@ -355,7 +402,7 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
         if onelambda:
             return aligned[:, 0], shifts[0]
         else:    
-            return aligned, shifts
+            return aligned, shifts, err
     else:
         if onelambda:
             return aligned[:, 0]

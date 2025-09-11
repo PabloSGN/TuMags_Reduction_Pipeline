@@ -2,7 +2,7 @@
 Same as pd_functions_v16, except for the fact that now admits
 a phase diversity different from a defocus. In particular,
 the parameter a_d can be now an array. If so, it must contain
-the Zernike coefficients of the phase diversity in order.
+the Zernike coefficients of the phase diversity in order. 
 
 Changes with respect to pd_functions_v16
 -'pupil' and 'wavefront' now differentiate between a_d being a scalar or an
@@ -1785,7 +1785,7 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
     """
     #Pupil sampling according to image size
     if inst=='tumag':
-        plate_scale=0.0378 #Plate scale in arcseconds (arcsec/pixel)
+        plate_scale=0.0378 #Plate scale in arcseconds (arcsec/pixel)    
         wvl,fnum,Delta_x=tumag_params()
     N=ima.shape[0]
     nuc,R=compute_nuc(N,wvl,fnum,Delta_x)
@@ -1819,10 +1819,10 @@ def object_estimate(ima,a,a_d,wind=True,cobs=0,cut=29,low_f=0.2,tiptilt=False,
     #Restoration
     Q=Qfactor(Hk,gamma,nuc,N,reg1=reg1,reg2=reg2)
     
-    if noise=='default':
-        noise_filt=filter_sch(Q,Ok,Hk,gamma,nuc,N,low_f=low_f)
+    if isinstance(noise, str) and noise == 'default':
+        noise_filt = filter_sch(Q, Ok, Hk, gamma, nuc, N, low_f=low_f)
     else:
-        noise_filt=noise
+        noise_filt = noise
 
     Nima=Ok.shape[2]
     for i in range(0,Nima):

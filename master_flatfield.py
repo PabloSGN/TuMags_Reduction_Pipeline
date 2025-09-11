@@ -19,7 +19,7 @@ import prefilter_removal as pr
 
 def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
                               norm_method = "avg", remove_prefilter = False, pref_model = None, 
-                              volts = None):
+                              volts = None, modify_linearity = ([1539,1540],[1.0,1.0])): 
     """
     Function to compute the flat-field observation from the images paths. 
 
@@ -28,7 +28,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         flat-field observation. 
         - dc (np.array) : Dark current. 
         - lambda_repeat (int, default : 4) : Lambda repeat parameter of the observation.
-        - norm_method (str, default : "avg) : Normalization method. avg or mod.
+        - norm_method (str, default : "avg) : Normalization method. avg or mod. If None, does nothing.
         - remove_prefilter (Boolean, default : False) : Option to remove prefilter from the flats profiles. 
         - pref_model : Prefilter model file rerquired if remove_prefilter = True. 
         - volts (str / None, default = None) : Set to "read" if read voltages are to be used for the pref_removal.
@@ -66,29 +66,33 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         print(f"Nº of Modulations: {N_mods}")
 
     # Read images and correct them from dark current.
-    flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc)
+    flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc, modify_linearity = modify_linearity)
 
     data = flat_obs.get_data()
 
     # Normalize flat-fields
-    norm_ff = np.zeros(np.shape(data))
+    # norm_ff = np.zeros(np.shape(data))
     
     # Normalize flat by average of all modulations.
     if norm_method == "avg":
+        norma = np.mean(data[:, :, :, 300:-300, 300:-300],axis=(2,3,4))
         for lambd in range(N_wls):
             for mod in range(N_mods):
-                norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, :, 300:-300, 300:-300])
-                norm_ff[1, lambd, mod] = data[1, lambd, mod] / np.mean(data[1, lambd, :, 300:-300, 300:-300])
+                data[0, lambd, mod] = data[0, lambd, mod] / norma[0,lambd]
+                data[1, lambd, mod] = data[1, lambd, mod] / norma[1,lambd]
     
     # Normalize flat by each modulation separately.
     elif norm_method == "mod":
+        norma = np.zeros(np.shape(data[:,:,:]))
         for lambd in range(N_wls):
             for mod in range(N_mods):
-                norm_ff[0, lambd, mod] = data[0, lambd, mod] / np.mean(data[0, lambd, mod, 300:-300, 300:-300])
-                norm_ff[1, lambd, mod] = data[1, lambd, mod] / np.mean(data[1, lambd, mod, 300:-300, 300:-300])
+                norma[:,lambd,mod] = np.mean(data[:, lambd, mod, 300:-300, 300:-300],axis=(1,2))
+                data[0, lambd, mod] = data[0, lambd, mod] / norma[0,lambd,mod]
+                data[1, lambd, mod] = data[1, lambd, mod] / norma[1,lambd,mod]
 
     else:
-        raise Exception("Invalid normalization method. Please select 'avg' or 'mod'.")
+        print('No normalization')
+        #raise Exception("Invalid normalization method. Please select 'avg' or 'mod'.")
 
     if remove_prefilter:
         if volts == "read":
@@ -104,13 +108,13 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         if pref_model is None:
             raise Exception("Please provide a prefilter model to remove from flat-fields.")
         else:
-            flats_pref_removed = pr.remove_line_from_flat_fields(norm_ff, om = om, pref_model = pref_model, volts=volts, verbose = verbose)
+            flats_pref_removed = pr.remove_line_from_flat_fields(data, om = om, pref_model = pref_model, volts=volts, verbose = verbose)
 
             print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
             return flats_pref_removed, flat_obs.get_info()
     else:
         print(f"Flat-fields computed in {round(time.time() - tic, 3)} s.")
-        return norm_ff, flat_obs.get_info()
+        return data, flat_obs.get_info()
     
 def correct_observation(data, ff, onelambda = False):
     """

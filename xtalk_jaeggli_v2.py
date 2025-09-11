@@ -114,15 +114,15 @@ def minimize_for_model1(iMM,bs,wvl='all',method='jaeggli'):
             kappa3=np.sqrt(np.sum(stI**2,axis=1)*np.sum(stV**2,axis=1))
     
         #Compute merit function
-        if wvl=='all': #Correlate Q,U,V with I at each wavelength     
+        if wvl=='all':      
             out = np.abs(np.sum(stI*stQ,axis=1)/kappa1)\
                 +np.abs(np.sum(stI*stU,axis=1)/kappa2)\
                 +np.abs(np.sum(stI*stV,axis=1)/kappa3)
-        else: # Correlate Q,U,V at selected wavelength with I at all wavelengths
+        else:
             out = np.abs(stQ[:,wvl]*np.sum(stI,axis=1)/kappa1)\
                 +np.abs(stU[:,wvl]*np.sum(stI,axis=1)/kappa2)\
                 +np.abs(stV[:,wvl]*np.sum(stI,axis=1)/kappa3)    
-    elif method=='all_wvls': #Correlate Q,U,V at all wavelengths with I at all wavelengths
+    elif method=='all_wvls':
         out1=0
         out2=0
         out3=0
@@ -212,13 +212,10 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
           to compute the merit function. Default: None
         plots: True or false. If True, plots the fractional 
             polarization map     
-        method: 'jaeggli' (default), 'all_wvls'
-            -> jaeggli: Jaeggli et al. (2022) modified merit function
-            that minimizes the correlation between Stokes Q, U and V at
-                indepdentently each wavelength with Stokes I at all wavelengths.
-            -> all_wvls: modified merit function that minimizes altogether the
-             correlation of Stokes Q, U and V at all wavelengths with Stokes I
-             at all wavelengths 
+        method: 'jaeggli', 'all_wvls'
+            -> jaeggli: merit function as defined in Jaeggli et al. (2022)
+            -> all_wvls: modified merit function which correlates Stokes I
+                at all wavelengths for each wavelength of Stokes Q, U and V
     Output:
         datarest: 4D array with the corrected Stokes parameters
         MM1a: Diattenuation Mueller matrix that converts the
@@ -232,8 +229,9 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
     #Reorder axis to convert into dimensions: [x,y,wavelength,stokes]
     data=np.moveaxis(data,0,-1)
     data=np.moveaxis(data,0,-1)
+    Nwaves=data.shape[2]
+    
 
-  
     if norm is True:
         #Normalization of data
         norm_factor=np.median(data[:,:,0,0])
@@ -247,7 +245,6 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
 
     #Last wavelength to be considered in the minimization
     data=data[:,:,:last_wvl,:]
-    Nwaves=data.shape[2]
 
     # Choose initial guess parameters for the diattenuation minimization
     D = 0.5
@@ -289,17 +286,19 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         plt.show()
         plt.close() 
 
-    #Fit the Mueller matrix at each wavelength
+    #Wrap function to use it in scipy.minimize with positional and keyword arguments
+   
+
     data_corrected=full_data.copy() 
     MM1a=np.zeros((Nwaves,4,4))   
     for wvli in range(Nwaves):
-        #Wrap function to use it in minimize with positional and keyword arguments
         fun=lambda x: fitfunc1(x, weak_region, wvl=wvli, method=method)
             
         #Minimize merit function
         result = minimize(fun, initial_guess)
 
-        # Apply correction for I<->QUV cross-talk at each wavelength
+
+        # Apply correction for I<->QUV cross-talk
         MM1a[wvli,:,:] = polmodel1(result.x[0],result.x[1], result.x[2])
         iMM1a = np.linalg.inv(MM1a[wvli,:,:])
         data_inverted =  np.einsum('ij,abcj->abci', iMM1a, full_data)
