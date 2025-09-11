@@ -11,7 +11,6 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 import numpy as np
 import time
 from matplotlib import pyplot as plt
-import matplotlib.patches as patches
 from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from scipy.ndimage import rotate
 
@@ -33,14 +32,14 @@ def dftreg(F,G,kappa):
 
     """
     nr,nc=np.shape(F)
-    Nr=np.fft.ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
-    Nc=np.fft.ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
-    CC=np.fft.ifft2(FTpad(F*np.conj(G),2*nr))
+    Nr = ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
+    Nc = ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
+    CC=ifft2(FTpad(F*np.conj(G),2*nr))
     CCabs=np.abs(CC)
     ind = np.unravel_index(np.argmax(CCabs, axis=None), CCabs.shape)
     CCmax=CC[ind]*nr*nc
-    Nr2=np.fft.ifftshift(np.arange(-np.fix(nr),np.ceil(nr)))
-    Nc2=np.fft.ifftshift(np.arange(-np.fix(nc),np.ceil(nc)))
+    Nr2 = ifftshift(np.arange(-np.fix(nr),np.ceil(nr)))
+    Nc2 = ifftshift(np.arange(-np.fix(nc),np.ceil(nc)))
     row_shift=Nr2[ind[0]]/2
     col_shift=Nr2[ind[1]]/2
 
@@ -77,10 +76,10 @@ def dftups(M,n_out,kappa,roff,coff):
     """
     nr,nc=M.shape
     kernc=np.exp((-1j*2*np.pi/(nc*kappa))*np.outer(\
-    np.fft.ifftshift(np.arange(0,nc).T-np.floor(nc/2)),np.arange(0,n_out)-coff))
+    ifftshift(np.arange(0,nc).T-np.floor(nc/2)),np.arange(0,n_out)-coff))
 
     kernr=np.exp((-1j*2*np.pi/(nr*kappa))*np.outer(\
-    np.arange(0,n_out)-roff,np.fft.ifftshift(np.arange(0,nr).T-np.floor(nr/2))))
+    np.arange(0,n_out)-roff,ifftshift(np.arange(0,nr).T-np.floor(nr/2))))
     return kernr @ M @ kernc
 
 def FTpad(IM,Nout):
@@ -93,14 +92,14 @@ def FTpad(IM,Nout):
     """
     Nin=IM.shape[0]
     pd=int((Nout-Nin)/2)
-    IM=np.fft.fftshift(IM)
+    IM=fftshift(IM)
     IMout=np.pad(IM,((pd,pd),(pd,pd)),'constant')
-    IMout=np.fft.ifftshift(IMout)*Nout*Nout/(Nin*Nin)
+    IMout=ifftshift(IMout)*Nout*Nout/(Nin*Nin)
     return IMout
 
 # ------------------------------  MAIN FUNCTS  --------------------------------- # 
 
-def realign_subpixel(ima, accu=0.001, verbose = True, return_shift = False):
+def realign_subpixel(ima, accu=0.01, verbose = True, return_shift = False):
     """
     This function aligns a series of images with subpixel images using the Sicairos
     method.
@@ -136,7 +135,7 @@ def realign_subpixel(ima, accu=0.001, verbose = True, return_shift = False):
     if return_shift:
         return ima_aligned, row_shifts, col_shifts, error
     else:
-        return ima_aligned
+        return ima_aligned, error
 
 def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = 10):
     """
@@ -342,19 +341,20 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
     nmods = shape[2]
 
     shifts = np.zeros((nlambda, 2, 2, nmods))
-    aligned = np.zeros(np.shape(data))
+    aligned =  np.copy(data)
 
-    if filterflag:
-        filtered = filter_frecuencies(data, verbose=verbose)
-        if theta != 0:
-            rotated = rotate_camera2(filtered, theta = theta)
-        else:
-            rotated = np.copy(filtered)
-    else:
-        if theta != 0:
-            rotated = rotate_camera2(data, theta = theta)
-        else:
-            rotated = np.copy(data)
+    # if filterflag:
+    #     filtered = filter_frecuencies(data, verbose=verbose)
+    #     if theta != 0:
+    #         rotated = rotate_camera2(filtered, theta = theta)
+    #     else:
+    #         rotated = np.copy(filtered)
+    # else:
+    #     if theta != 0:
+    #         rotated = rotate_camera2(data, theta = theta)
+    #     else:
+    #         rotated = np.copy(data)
+    rotated = np.copy(data)
 
     err = []
     for lambd in range(nlambda):
@@ -471,17 +471,3 @@ def align_quadrants(data, acc = 0.01, verbose = False):
     return aligned, shifts
         
 
-def apply_transform(image, angle_deg, t, center,
-                    scale_x=1.0, scale_y=1.0, shear_x=0.0, shear_y=0.0):
-    from scipy.ndimage import affine_transform
-    angle_rad = np.radians(angle_deg)
-    cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
-    R = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
-    Distortion = np.array([[scale_x, shear_x], [shear_y, scale_y]])
-    A = Distortion @ R
-    A_inv = np.linalg.inv(A)
-    offset = center - A_inv @ (center + t)
-
-    return affine_transform(
-        image, matrix=A_inv, offset=offset, order=3, mode='nearest', cval=0.0
-    )

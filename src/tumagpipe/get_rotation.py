@@ -105,4 +105,4 @@ def apply_transform(image, angle_deg, t, center,
 
     return affine_transform(
         image, matrix=A_inv, offset=offset, order=3, mode='nearest', cval=0.0
-    )
+    ) 
