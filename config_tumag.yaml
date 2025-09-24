@@ -1,0 +1,50 @@
+index: 3
+process_line: "2.02"
+filter: "Fe2.02"
+
+roi_process: [300, 1100, 400, 1200]
+version: "_b"
+
+roi:
+  from_x: 0
+  to_x: -1
+  from_y: 0
+  to_y: -1
+
+dataid: "timeline_name_Fe1_8_"
+zernike_file: "06_SPOT_Fe2.02_0"
+pipeline_version: "0.1"
+
+force_redo:
+  flat: false
+  dark: false
+  level0_5: false
+  level0_7: false
+  level1_0: true
+  level1_1: true
+
+filtering: true
+paper: false
+
+alignment:
+  method: "calibrated"
+  previous_level: "0.5"
+  new_level: "0.7"
+
+crosstalk:
+  method: "jaeggli"
+  previous_level: "0.7"
+  new_level: "1.0"
+  last_wvl: -2
+
+deconvolution:
+  previous_level: "1.0"
+
+save_plot: true
+norm_factor: 0
+
+cmatrix: null
+mmatrix: null
+
+region: [0, -1, 0, -1]
+pthresh: 0.05
