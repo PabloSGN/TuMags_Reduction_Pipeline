@@ -19,7 +19,8 @@ import prefilter_removal as pr
 
 def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose = False, 
                               norm_method = "avg", remove_prefilter = False, pref_model = None, 
-                              volts = None, modify_linearity = ([1539,1540],[1.0,1.0])): 
+                              volts = None, modify_linearity = ([1539,1540],[1.0,1.0]),
+                              norm_roi = [300,-300,300,-300]): 
     """
     Function to compute the flat-field observation from the images paths. 
 
@@ -75,7 +76,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
     
     # Normalize flat by average of all modulations.
     if norm_method == "avg":
-        norma = np.mean(data[:, :, :, 300:-300, 300:-300],axis=(2,3,4))
+        norma = np.mean(data[:, :, :, norm_roi[0]:norm_roi[1], norm_roi[2]:norm_roi[3]],axis=(2,3,4))
         for lambd in range(N_wls):
             for mod in range(N_mods):
                 data[0, lambd, mod] = data[0, lambd, mod] / norma[0,lambd]
@@ -86,7 +87,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
         norma = np.zeros(np.shape(data[:,:,:]))
         for lambd in range(N_wls):
             for mod in range(N_mods):
-                norma[:,lambd,mod] = np.mean(data[:, lambd, mod, 300:-300, 300:-300],axis=(1,2))
+                norma[:,lambd,mod] = np.mean(data[:, lambd, mod, norm_roi[0]:norm_roi[1], norm_roi[2]:norm_roi[3]],axis=(1,2))
                 data[0, lambd, mod] = data[0, lambd, mod] / norma[0,lambd,mod]
                 data[1, lambd, mod] = data[1, lambd, mod] / norma[1,lambd,mod]
 

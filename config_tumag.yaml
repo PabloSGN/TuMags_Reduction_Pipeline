@@ -1,50 +1,119 @@
-index: 3
-process_line: "2.02"
-filter: "Fe2.02"
+# this file is supposed to be in the running folder or just provided with the full path
+# for instance: python3 ../../TuMags_Reduction_Pipeline/process_data_main.py -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
+# IMPORTANT, PARAMETERS CANNOT HAVE SAME NAMES REGARDLESS THEIR LEVEL and keywords False, True, None are all lowercase, e.g., false, true, none
 
-roi_process: [300, 1100, 400, 1200]
-version: "_b"
+# global parameters
 
-roi:
-  from_x: 0
-  to_x: -1
-  from_y: 0
-  to_y: -1
+# ID of the observation timeline to be process. Timelineas are in process_data_timelines.py
+obs_ID: "comm1"  
+proc_version: '0.x'
 
-dataid: "timeline_name_Fe1_8_"
-zernike_file: "06_SPOT_Fe2.02_0"
-pipeline_version: "0.1"
+# select observation mode to precess. Should be present in the timeline. If not, it will drop an error (see end of file for cases)
+# this parameter is save as "obs_is" in the process_data_timelines dictionary.
+# It should exist in the dictionary and the flat will be process according to this parameter.
+# python3 visor.py /Volumes/TuMag_d1/reduccion/02_EMEF_AR1/02_EMEF_AR1_Fe1_8_10072024T191616_LV_1.1_v0.1.fits 
 
+process_line: "2.02"  
+
+# you may choose one OCs or an interval of OCs although you need some prior knowledge of available OCs
+
+process_ocs: ':' # : -> all, or range, or single ID.  AFFECTS LEVEL 0.5
+# process_ocs: '1:10' # : -> all, or range, or single ID
+process_files: ':' # : -> all, or range, or single ID
+process_files: 1 # : -> all, or range, or single ID
+parallel: true
+max_workers: 4
+
+# select the folder where the the TuMag data is stored. This points to the forder "Organized_files_local" where the D1?.csv files are stored
+tumag_data_location: "./"
+Organized_files_local_folder_name: "Organized_files_local"
+
+# select the folder where the results will be stored. The program creates the directories (obs_ID) if they do not exist.
+output_folder: "/Volumes/TuMag_d1/reduccion/"
+
+# options to reprocess darks, flats of obs
 force_redo:
-  flat: false
-  dark: false
+  redo_flat: false   #re calculate flats
+  redo_dark: false   #re calculate darks
   level0_5: false
-  level0_7: false
+  level0_7: true
   level1_0: true
   level1_1: true
 
-filtering: true
-paper: false
+plots:
+  # flat: false   #re calculate flats
+  plot_darks: false   #re calculate darks
+  plot_flats: false   #re calculate darks
+  plot_level0_5: true
+  plot_level0_7: true
+  plot_level1_0: true
+  plot_level1_1: true
+  roi_plots: [200,-200,200,-200]
 
-alignment:
-  method: "calibrated"
-  previous_level: "0.5"
-  new_level: "0.7"
+# -----------------
+# level 0.5 options
+# -----------------
+level_05:
+  filtering: true # remove high freq stuff from data
+  save_level_05: true # remove high freq stuff from data
 
-crosstalk:
-  method: "jaeggli"
-  previous_level: "0.7"
-  new_level: "1.0"
-  last_wvl: -2
+# cropping data
+size: 2016
+centro: [973, 996]  # [size // 2 - 35, size // 2 - 12]
+corte: 800 
 
-deconvolution:
-  previous_level: "1.0"
+# darks specific parameters. If case there is a problem with the darks here one can chosee the index [dark_from:dark_to], e.g., comm1 needs dark_to: -2
+darks_indexes:
+  dark_from: 
+  dark_to: -2
 
-save_plot: true
-norm_factor: 0
+# flat specific parameters
+flat_norm_roi: [300, 1100, 400, 1200]
 
-cmatrix: null
-mmatrix: null
+# -----------------
+# level 0.7 options
+# -----------------
+level_07:
+  align_mode: 'fourier' # r calibrated: standard or destretch
+  align_roi: [600,-600,600,-600]
+  align_accuracy: 0.001
+  align_rot_data_filter: "pinholes_results.csv" #"pinholes_Fe2.02.csv"
+# -----------------
+# -----------------
+# level 1.0 options
+# -----------------
+level_10:
+  crosst_mode: 'jaeggli' #'jaeggli' or standard # remove high freq stuff from data
+  crosst_roi: [0,-1,0,-1] # for normalization
+  crosst_region: [100,-100,100,-100] # for crosstalk calculation
+  crosst_threshold: 0.01
+  crosst_last_wave: -1
+  mmatrix: 0
+  normalization: 0
+  plot_crosst_method: true
+# -----------------
+# -----------------
+# level 1.1 options
+# -----------------
+zernike_id: "06_SPOT_Fe2.02_0"
 
-region: [0, -1, 0, -1]
-pthresh: 0.05
+
+
+# # processing parameters
+
+# available observation modes:
+# observation_modes = {
+#     0 : "0s",
+#     1 : "0p",
+#     2 : "1",
+#     3 : "2.02",
+#     4 : "2.06",
+#     5 : "3.02",
+#     6 : "3.06", 
+#     7 : "4",
+#     8 : "5.02",
+#     9 : "5.06",
+#     64 : "PD_calibration",
+#     65 : "Spectral_calibration",
+#     66 : "Polarimetric_calibration",
+#     128 : "Test"}

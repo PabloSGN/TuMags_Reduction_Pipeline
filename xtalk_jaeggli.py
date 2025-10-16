@@ -11,7 +11,7 @@ import logging
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.optimize import minimize
-from .logutils import log_memory
+# from .logutils import log_memory
 from scipy.stats import linregress
 
 def generate_squares(radius,divisions: int = 6):
@@ -262,7 +262,7 @@ def minimize_for_model2(iMM,bs):
     # sum over spatial positions
     out = np.sum(out)
     
-    return(out)
+    return(out) 
 
 def fit_mueller_matrix(data,pthresh=0.02,norm=False,
                        region=[0,-1,0,-1],
@@ -298,10 +298,12 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
             "real" Stokes parameters into the "observed" ones.
     """
     logging.info(f"Starting cross-talk correction")
-    log_memory("Before crosstalk")
+    # log_memory("Before crosstalk")
 
     if norm is True:
         #Normalization of data
+        logging.info(f"SNormalizing.....")
+
         norm_factor=np.median(data[roi[0]:roi[1],roi[2]:roi[3],norm_wave,0])
         data=data/norm_factor
 
@@ -337,7 +339,6 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         data=np.moveaxis(data,0,-1)
         Nwaves=data.shape[2]
 
-
         ## Crop data to avoid edge effects arising from alignment/rotation
         full_data=data.copy()
         data=data[region[0]:region[1],region[2]:region[3],:,:]
@@ -358,7 +359,7 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
         nyidx = notpolar[:,0]
         nzidx = notpolar[:,1]
 
-        log_memory("Before weak data")
+        # log_memory("Before weak data")
 
         # Use just the region with weak polarization
         weak_region = data[nyidx,nzidx,:,:] #do selection for only strong polarization signals
@@ -384,7 +385,7 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
                 for j in range(2):
                     axs[i,j].contour(pmap, [pthresh], colors='green', 
                                     linewidths=0.75)
-            plt.show(block=False)
+            plt.show()
             plt.close()        
 
         if method == 'jaeggli':
@@ -395,7 +396,7 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
             else:
                 #Minimize merit function
                 result = minimize(fitfunc1, initial_guess, args=weak_region,
-                    options={'maxiter': 1000, 'disp': verbose})
+                    options={'maxiter': 10, 'disp': verbose})
                 # Apply correction for I<->QUV cross-talk
                 MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
                 iMM1a = np.linalg.inv(MM1a)

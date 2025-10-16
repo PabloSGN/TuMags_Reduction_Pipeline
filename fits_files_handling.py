@@ -29,6 +29,12 @@ spectral_cal = {
         'Ord'      : 5251.371833333332}}
 
 # ------------------------------  CODE  ------------------------------------------ # 
+def update_header(header, keyword, value, after=None, comment=None):
+    if keyword in header:  # Check for existence
+        header[keyword] = value
+    else:
+        header.set(keyword, value, comment, after=after)
+    return header
 
 def volts_2_lambda(volts, config):
     return config['Pend'] * volts + config['Ord']
@@ -315,9 +321,3 @@ def generate_fits(data, fits_folder, extended_filename, level, pipeline_version,
         
     return os.path.join(fits_folder, extended_filename)
 
-def update_header(header, keyword, value, after=None, comment=None):
-    if keyword in header:  # Check for existence
-        header[keyword] = value
-    else:
-        header.set(keyword, value, comment, after=after)
-    return header
