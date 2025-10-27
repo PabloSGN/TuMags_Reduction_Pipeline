@@ -1,119 +1,143 @@
-# this file is supposed to be in the running folder or just provided with the full path
-# for instance: python3 ../../TuMags_Reduction_Pipeline/process_data_main.py -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
-# IMPORTANT, PARAMETERS CANNOT HAVE SAME NAMES REGARDLESS THEIR LEVEL and keywords False, True, None are all lowercase, e.g., false, true, none
+# ==========================================================
+# TuMags Reduction Pipeline Configuration (YAML)
+# ==========================================================
+# Example:
+#   python3 ../../TuMags_Reduction_Pipeline/process_data_main.py \
+#       -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
+#
+# IMPORTANT:
+# - Parameter names must be unique (no duplicates across levels).
+# - Boolean and None keywords are lowercase: false, true, none
+# - results can be checked using python3 visor.py /Volumes/TuMag_d1/reduccion/.../file.fits
+# ==========================================================
 
-# global parameters
 
-# ID of the observation timeline to be process. Timelineas are in process_data_timelines.py
-obs_ID: "comm1"  
-proc_version: '0.x'
+# ----------------------------------------------------------
+# GLOBAL PARAMETERS
+# ----------------------------------------------------------
 
-# select observation mode to precess. Should be present in the timeline. If not, it will drop an error (see end of file for cases)
-# this parameter is save as "obs_is" in the process_data_timelines dictionary.
-# It should exist in the dictionary and the flat will be process according to this parameter.
-# python3 visor.py /Volumes/TuMag_d1/reduccion/02_EMEF_AR1/02_EMEF_AR1_Fe1_8_10072024T191616_LV_1.1_v0.1.fits 
+obs_ID: "comm1"                   # Observation ID
+proc_version: "0.x" # con cross-talk standard
 
-process_line: "2.02"  
+process_line: "2.02"              # Observation mode to process
+process_line: "1"              # Observation mode to process
 
-# you may choose one OCs or an interval of OCs although you need some prior knowledge of available OCs
+process_ocs: ":"                  # ":" -> all, or range, or single ID
+# process_ocs: "2:4"
+process_files: ":"                # ":" -> all, or range, or single ID
+# process_files: 2
 
-process_ocs: ':' # : -> all, or range, or single ID.  AFFECTS LEVEL 0.5
-# process_ocs: '1:10' # : -> all, or range, or single ID
-process_files: ':' # : -> all, or range, or single ID
-process_files: 1 # : -> all, or range, or single ID
-parallel: true
+parallel: false
 max_workers: 4
 
-# select the folder where the the TuMag data is stored. This points to the forder "Organized_files_local" where the D1?.csv files are stored
-tumag_data_location: "./"
+tumag_data_location: "./"         # Path to Organized_files_local folder
 Organized_files_local_folder_name: "Organized_files_local"
 
-# select the folder where the results will be stored. The program creates the directories (obs_ID) if they do not exist.
-output_folder: "/Volumes/TuMag_d1/reduccion/"
+output_folder: "/Volumes/TuMag_d1/reduccion/"   # Output results folder
 
-# options to reprocess darks, flats of obs
+
+# ----------------------------------------------------------
+# REPROCESSING OPTIONS
+# ----------------------------------------------------------
 force_redo:
-  redo_flat: false   #re calculate flats
-  redo_dark: false   #re calculate darks
+  redo_flat: false                # Recalculate flats
+  redo_dark: false                # Recalculate darks
   level0_5: false
-  level0_7: true
-  level1_0: true
+  level0_7: false
+  level1_0: false
   level1_1: true
 
+
+# ----------------------------------------------------------
+# PLOTTING OPTIONS
+# ----------------------------------------------------------
 plots:
-  # flat: false   #re calculate flats
-  plot_darks: false   #re calculate darks
-  plot_flats: false   #re calculate darks
+  plot_darks: false
+  plot_flats: false
   plot_level0_5: true
   plot_level0_7: true
   plot_level1_0: true
   plot_level1_1: true
-  roi_plots: [200,-200,200,-200]
+  roi_plots: [200, -200, 200, -200]
 
-# -----------------
-# level 0.5 options
-# -----------------
-level_05:
-  filtering: true # remove high freq stuff from data
-  save_level_05: true # remove high freq stuff from data
 
-# cropping data
-size: 2016
-centro: [973, 996]  # [size // 2 - 35, size // 2 - 12]
-corte: 800 
-
-# darks specific parameters. If case there is a problem with the darks here one can chosee the index [dark_from:dark_to], e.g., comm1 needs dark_to: -2
+# ----------------------------------------------------------
+# DARK AND FLAT OPTIONS
+# ----------------------------------------------------------
 darks_indexes:
-  dark_from: 
+  dark_from:
   dark_to: -2
 
-# flat specific parameters
 flat_norm_roi: [300, 1100, 400, 1200]
+flat_norm_roi: [250, -250, 250, -250]  # sugerido por Fbailen (toda la imagen, pero sin mascara)
 
-# -----------------
-# level 0.7 options
-# -----------------
+
+# ----------------------------------------------------------
+# LEVEL 0.5 OPTIONS
+# ----------------------------------------------------------
+level_05:
+  filtering: true                 # Remove high-frequency content
+  save_level_05: true             # Save processed level 0.5 data
+
+size: 2016
+centro: [973, 996]               # [size // 2 - 35, size // 2 - 12]
+corte: 800
+
+
+# ----------------------------------------------------------
+# LEVEL 0.7 OPTIONS
+# ----------------------------------------------------------
 level_07:
-  align_mode: 'fourier' # r calibrated: standard or destretch
-  align_roi: [600,-600,600,-600]
+  align_mode: "fourier"           # "fourier" or "destretch"
+  align_roi: [600, -600, 600, -600]
   align_accuracy: 0.001
-  align_rot_data_filter: "pinholes_results.csv" #"pinholes_Fe2.02.csv"
-# -----------------
-# -----------------
-# level 1.0 options
-# -----------------
+  align_rot_data_filter: "pinholes_results.csv"   # e.g. "pinholes_Fe2.02.csv"
+  align_quadrants: 0
+  align_order: 0
+  # 0: Align modulations in cam 0 and then cam 1 w.r.t cam 0
+  # 1: Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI)
+  # 2: Align modulations in both cams, then cam 1 w.r.t cam 0 (quadrants)
+
+
+# ----------------------------------------------------------
+# LEVEL 1.0 OPTIONS
+# ----------------------------------------------------------
 level_10:
-  crosst_mode: 'jaeggli' #'jaeggli' or standard # remove high freq stuff from data
-  crosst_roi: [0,-1,0,-1] # for normalization
-  crosst_region: [100,-100,100,-100] # for crosstalk calculation
+  crosst_mode: "standard"         # "jaeggli" or "standard"
+  crosst_roi: [0, -1, 0, -1]      # Normalization region
+  crosst_region: [0, -1, 0, -1]   # Crosstalk calculation region
   crosst_threshold: 0.01
-  crosst_last_wave: -1
+  crosst_last_wave: -1 #used -1 for standard and -2 for jaeggli
+  crosst_quadrants: 0
+  crosst_interference: 8 #8          # or 'comm1_cal.npz' file
   mmatrix: 0
   normalization: 0
-  plot_crosst_method: true
-# -----------------
-# -----------------
-# level 1.1 options
-# -----------------
-zernike_id: "06_SPOT_Fe2.02_0"
+  plot_crosst_method: false
+  crosst_verbose: false
 
 
+# ----------------------------------------------------------
+# LEVEL 1.1 OPTIONS
+# ----------------------------------------------------------
+zernike_id: "01_QSUN_Mg1" #"06_SPOT_Fe2.02_0"
 
-# # processing parameters
 
-# available observation modes:
+# ----------------------------------------------------------
+# OBSERVATION MODES (REFERENCE)
+# ----------------------------------------------------------
 # observation_modes = {
-#     0 : "0s",
-#     1 : "0p",
-#     2 : "1",
-#     3 : "2.02",
-#     4 : "2.06",
-#     5 : "3.02",
-#     6 : "3.06", 
-#     7 : "4",
-#     8 : "5.02",
-#     9 : "5.06",
-#     64 : "PD_calibration",
-#     65 : "Spectral_calibration",
-#     66 : "Polarimetric_calibration",
-#     128 : "Test"}
+#     0   : "0s",
+#     1   : "0p",
+#     2   : "1",
+#     3   : "2.02",
+#     4   : "2.06",
+#     5   : "3.02",
+#     6   : "3.06",
+#     7   : "4",
+#     8   : "5.02",
+#     9   : "5.06",
+#     64  : "PD_calibration",
+#     65  : "Spectral_calibration",
+#     66  : "Polarimetric_calibration",
+#     128 : "Test"
+# }

@@ -90,7 +90,7 @@ om_config  = {
               "Nmods" : 4,
               "lvcr_mode" : "vectorial",
               "images_per_mode" : 8 * 4 * 2,
-              "name" :'Fe1'},
+              "name" :'Fe2.02'},
 
     "2.06" : {"Nlambda" : 8,
               "line" : "525.06",
@@ -99,7 +99,7 @@ om_config  = {
               "Nmods" : 4,
               "lvcr_mode" : "vectorial",
               "images_per_mode" : 8 * 4 * 2,
-              "name" :'Fe1'},
+              "name" :'Fe2.06'},
 
     "3.02" : {"Nlambda" : 5,
               "line" : "525.02",
@@ -108,7 +108,7 @@ om_config  = {
               "Nmods" : 2,
               "lvcr_mode" : "longitudinal",
               "images_per_mode" : 5 * 2 * 2,
-              "name" :'Fe1'},
+              "name" :'Fe2.02'},
 
     "3.06" : {"Nlambda" : 5,
               "line" : "525.06",
@@ -117,7 +117,7 @@ om_config  = {
               "Nmods" : 2,
               "lvcr_mode" : "longitudinal", 
               "images_per_mode" : 5 * 2 * 2,
-              "name" :'Fe1'},
+              "name" :'Fe2.06'},
 
     "4" : {"Nlambda" : 3,
            "line" : "517",
@@ -135,7 +135,7 @@ om_config  = {
               "Nmods" : 4,
               "lvcr_mode" : "vectorial",
               "images_per_mode" : 3 * 4 * 2,
-              "name" :'Fe1'},
+              "name" :'Fe2.02'},
 
     "5.06" : {"Nlambda" : 3,
               "line" : "525.06",
@@ -144,7 +144,7 @@ om_config  = {
               "Nmods" : 4,
               "lvcr_mode" : "vectorial",
               "images_per_mode" : 3 * 4 * 2,
-              "name" :'Fe1'}
+              "name" :'Fe2.06'}
 }
 
 

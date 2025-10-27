@@ -34,14 +34,17 @@ def dftreg(F,G,kappa):
     nr,nc=np.shape(F)
     Nr = ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
     Nc = ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
-    CC=ifft2(FTpad(F*np.conj(G),2*nr))
+    Nout = 2 * max(nr, nc)
+    CC=ifft2(FTpad(F*np.conj(G), Nout))
     CCabs=np.abs(CC)
     ind = np.unravel_index(np.argmax(CCabs, axis=None), CCabs.shape)
+
     CCmax=CC[ind]*nr*nc
     Nr2 = ifftshift(np.arange(-np.fix(nr),np.ceil(nr)))
     Nc2 = ifftshift(np.arange(-np.fix(nc),np.ceil(nc)))
+
     row_shift=Nr2[ind[0]]/2
-    col_shift=Nr2[ind[1]]/2
+    col_shift=Nc2[ind[1]]/2
 
     #Initial shift estimate in upsampled grid
     row_shift=round(row_shift*kappa)/kappa
@@ -315,7 +318,8 @@ def shift_subp(im: np.ndarray, shift=None, wrap=True, fill=0):
 
     return im_shift
 
-def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = False, onelambda = False, returnshifts = True,roi = [0,-1,0,-1]):
+def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag = False, 
+                  onelambda = False, returnshifts = True,roi = [0,-1,0,-1], quadrants = 0):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
@@ -331,6 +335,37 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
         - Filtered, Rotated  and aligned (np.array) : Same array as data filtrated and with cam2 rotated  
         - shifts (list) : shifts performed to each camera, modulation and wavelength
     """
+
+
+    def _generar_cuadrantes_nx_n(H, W, n):
+        """
+        Divide una imagen en una cuadrícula n×n de cuadrados del mismo tamaño.
+
+        Parámetros:
+            H, W : int
+                Alto (H) y ancho (W) de la imagen.
+            n : int
+                Número de cuadrados por eje (n=2 -> 2x2, n=3 -> 3x3, etc.)
+
+        Retorna:
+            Lista de tuplas (y1, y2, x1, x2) que representan las coordenadas
+            de cada cuadrado en formato (fila_superior, fila_inferior, col_izquierda, col_derecha).
+        """
+        # tamaño ideal de cada cuadrado
+        base_h = H / n
+        base_w = W / n
+
+        rois = []
+        for i in range(n):
+            for j in range(n):
+                y1 = int(round(i * base_h))
+                y2 = int(round((i + 1) * base_h))
+                x1 = int(round(j * base_w))
+                x2 = int(round((j + 1) * base_w))
+                rois.append((y1, y2, x1, x2))
+
+        return rois
+
     tic = time.time() # Get the time to measure execution time.
 
     if onelambda:
@@ -340,58 +375,196 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
     nlambda = shape[1]
     nmods = shape[2]
 
-    shifts = np.zeros((nlambda, 2, 2, nmods))
     aligned =  np.copy(data)
+    # rotated = np.copy(data)
 
-    # if filterflag:
-    #     filtered = filter_frecuencies(data, verbose=verbose)
-    #     if theta != 0:
-    #         rotated = rotate_camera2(filtered, theta = theta)
-    #     else:
-    #         rotated = np.copy(filtered)
-    # else:
-    #     if theta != 0:
-    #         rotated = rotate_camera2(data, theta = theta)
-    #     else:
-    #         rotated = np.copy(data)
-    rotated = np.copy(data)
+    if quadrants != 0:
+        H, W = data.shape[-1], data.shape[-1]   # dimensiones de la imagen
+
+        quadrants_roi = _generar_cuadrantes_nx_n(H, W, quadrants)
+
+        # for idx, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+        #     print(f"ROI {idx}: y={y1}:{y2}, x={x1}:{x2}")
+        
+        shifts = np.zeros((nlambda, quadrants*quadrants, 2, 2, nmods), dtype=float)
+    else:
+        shifts = np.zeros((nlambda, 2, 2, nmods))
 
     err = []
     for lambd in range(nlambda):
-        
-        if verbose:
-            print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
-            print(f"Shifts for cam 1 - modulation alignment")
-        # mods_aligned, srow, scol = realign_subpixel(rotated[0, lambd], verbose = verbose, accu = acc, return_shift=True)
-        _, srow, scol, error = realign_subpixel(rotated[0, lambd,:,roi[0]:roi[1],roi[2]:roi[3]], verbose = verbose, accu = acc, return_shift=True)
-        err.append(error)
-
-        shifts[lambd, 0, 0] = srow
-        shifts[lambd, 0, 1] = scol
-
-        # aligned[0, lambd] = mods_aligned
-        for nm in range(nmods-1):
-            aligned[0, lambd,nm + 1] = shift_subp(rotated[0, lambd,nm+1], shift=[srow[nm + 1], scol[nm + 1]], wrap=True, fill=0)
-
-        if verbose:
-            print("Shifts of camera 2 alignment")
-        for mod in range(nmods):
+        print(f"Aligning wavelength: {lambd + 1}/{nlambda}")
+        if quadrants == 0:
             if verbose:
-                print(f"mod -> {mod}...")
-            # cams_aligned, srow, scol = realign_subpixel(np.array([mods_aligned[mod], rotated[1, lambd, mod]]), verbose = verbose, accu = acc, return_shift=True )
+                print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
+                print(f"Shifts for cam 1 - modulation alignment")
 
-            # shifts[lambd, 1, 0, mod] = srow[1]
-            # shifts[lambd, 1, 1, mod] = scol[1]
-
-            # aligned[1, lambd, mod] = cams_aligned[1]
-
-            _, srow, scol,error = realign_subpixel(np.array([aligned[0,lambd,mod,roi[0]:roi[1],roi[2]:roi[3]], rotated[1, lambd, mod,roi[0]:roi[1],roi[2]:roi[3]]]), verbose = verbose, accu = acc, return_shift=True)
+            _, srow, scol, error = realign_subpixel(data[0, lambd,:,roi[0]:roi[1],roi[2]:roi[3]], verbose = verbose, accu = acc, return_shift=True)
             err.append(error)
 
-            shifts[lambd, 1, 0, mod] = srow[1]
-            shifts[lambd, 1, 1, mod] = scol[1]
+            shifts[lambd, 0, 0] = srow
+            shifts[lambd, 0, 1] = scol
 
-            aligned[1, lambd,mod] = shift_subp(rotated[1, lambd,mod], shift=[srow[1], scol[1]], wrap=True, fill=0)
+            for nm in range(nmods-1):
+                aligned[0, lambd,nm + 1] = shift_subp(data[0, lambd,nm+1], shift=[srow[nm + 1], scol[nm + 1]], wrap=True, fill=0)
+
+            if verbose:
+                print("Shifts of camera 2 alignment")
+            for mod in range(nmods):
+                if verbose:
+                    print(f"mod -> {mod}...")
+
+                _, srow, scol,error = realign_subpixel(np.array([aligned[0,lambd,mod,roi[0]:roi[1],roi[2]:roi[3]], data[1, lambd, mod,roi[0]:roi[1],roi[2]:roi[3]]]), verbose = verbose, accu = acc, return_shift=True)
+                err.append(error)
+
+                shifts[lambd, 1, 0, mod] = srow[1]
+                shifts[lambd, 1, 1, mod] = scol[1]
+
+                aligned[1, lambd,mod] = shift_subp(data[1, lambd,mod], shift=[srow[1], scol[1]], wrap=True, fill=0)
+        else:
+
+            both_cams = 2
+            # compute shifts for quadrants in camera 0. 
+            for q, roises in enumerate(quadrants_roi):
+                y1, y2, x1, x2 = roises
+                patch = data[0, lambd, :, y1:y2, x1:x2]
+                
+                _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+
+                shifts[lambd, q, 0, 0] = np.array(srow)
+                shifts[lambd, q, 0, 1] = np.array(scol)
+
+                for npol in range(1,nmods):
+                        aligned[0, lambd,npol] = shift_subp(data[0, lambd,npol], shift=[shifts[lambd, q, 0, 0, npol], shifts[lambd, q, 0, 1, npol]], wrap=True, fill=0)
+
+            if both_cams == 1 or both_cams == 2:
+                # compute shifts for quadrants in camera 0. 
+                for q, roises in enumerate(quadrants_roi):
+                    y1, y2, x1, x2 = roises
+                    patch = data[1, lambd, :, y1:y2, x1:x2]
+                    
+                    _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+
+                    shifts[lambd, q, 1, 0] = np.array(srow)
+                    shifts[lambd, q, 1, 1] = np.array(scol)
+
+                    for npol in range(1,nmods):
+                            aligned[1, lambd,npol] = shift_subp(data[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0)
+
+            if both_cams == 0 or both_cams == 2:
+
+                # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
+                for npol in range(nmods):
+                    for q, roises in enumerate(quadrants_roi):
+                        y1, y2, x1, x2 = roises
+                        patch_1 = aligned[0, lambd, npol, y1:y2, x1:x2]
+                        patch_2 = aligned[1, lambd, npol, y1:y2, x1:x2] # ojo era rotated
+
+                        _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
+                        shifts[lambd, q, 1, 0, npol] = srow[1]
+                        shifts[lambd, q, 1, 1, npol] = scol[1]
+
+                    # apply shifts for quadrants to camera 1. 
+
+                        aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0) # ojo era rotated
+            elif both_cams == 1:
+                # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
+                for npol in range(nmods):
+                    patch_1 = aligned[0, lambd, npol, roi[0]:roi[1],roi[2]:roi[3]]
+                    patch_2 = aligned[1, lambd, npol, roi[0]:roi[1],roi[2]:roi[3]]
+
+                    _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
+
+                    aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[srow[1], scol[1]], wrap=True, fill=0)
+            else:
+                pass
+
+    # err = []
+    # for lambd in range(nlambda):
+    #     print(f"Aligning wavelength: {lambd + 1}/{nlambda}")
+    #     if quadrants == 0:
+    #         if verbose:
+    #             print(f"Aligning wavelengh: {lambd + 1}/{nlambda}")
+    #             print(f"Shifts for cam 1 - modulation alignment")
+
+    #         _, srow, scol, error = realign_subpixel(rotated[0, lambd,:,roi[0]:roi[1],roi[2]:roi[3]], verbose = verbose, accu = acc, return_shift=True)
+    #         err.append(error)
+
+    #         shifts[lambd, 0, 0] = srow
+    #         shifts[lambd, 0, 1] = scol
+
+    #         for nm in range(nmods-1):
+    #             aligned[0, lambd,nm + 1] = shift_subp(rotated[0, lambd,nm+1], shift=[srow[nm + 1], scol[nm + 1]], wrap=True, fill=0)
+
+    #         if verbose:
+    #             print("Shifts of camera 2 alignment")
+    #         for mod in range(nmods):
+    #             if verbose:
+    #                 print(f"mod -> {mod}...")
+
+    #             _, srow, scol,error = realign_subpixel(np.array([aligned[0,lambd,mod,roi[0]:roi[1],roi[2]:roi[3]], rotated[1, lambd, mod,roi[0]:roi[1],roi[2]:roi[3]]]), verbose = verbose, accu = acc, return_shift=True)
+    #             err.append(error)
+
+    #             shifts[lambd, 1, 0, mod] = srow[1]
+    #             shifts[lambd, 1, 1, mod] = scol[1]
+
+    #             aligned[1, lambd,mod] = shift_subp(rotated[1, lambd,mod], shift=[srow[1], scol[1]], wrap=True, fill=0)
+    #     else:
+
+    #         both_cams = 2
+    #         # compute shifts for quadrants in camera 0. 
+    #         for q, roises in enumerate(quadrants_roi):
+    #             y1, y2, x1, x2 = roises
+    #             patch = rotated[0, lambd, :, y1:y2, x1:x2]
+                
+    #             _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+
+    #             shifts[lambd, q, 0, 0] = np.array(srow)
+    #             shifts[lambd, q, 0, 1] = np.array(scol)
+
+    #             for npol in range(1,nmods):
+    #                     aligned[0, lambd,npol] = shift_subp(rotated[0, lambd,npol], shift=[shifts[lambd, q, 0, 0, npol], shifts[lambd, q, 0, 1, npol]], wrap=True, fill=0)
+
+    #         if both_cams == 1 or both_cams == 2:
+    #             # compute shifts for quadrants in camera 0. 
+    #             for q, roises in enumerate(quadrants_roi):
+    #                 y1, y2, x1, x2 = roises
+    #                 patch = rotated[1, lambd, :, y1:y2, x1:x2]
+                    
+    #                 _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+
+    #                 shifts[lambd, q, 1, 0] = np.array(srow)
+    #                 shifts[lambd, q, 1, 1] = np.array(scol)
+
+    #                 for npol in range(1,nmods):
+    #                         aligned[1, lambd,npol] = shift_subp(rotated[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0)
+
+    #         if both_cams == 0 or both_cams == 2:
+
+    #             # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
+    #             for npol in range(nmods):
+    #                 for q, roises in enumerate(quadrants_roi):
+    #                     y1, y2, x1, x2 = roises
+    #                     patch_1 = aligned[0, lambd, npol, y1:y2, x1:x2]
+    #                     patch_2 = aligned[1, lambd, npol, y1:y2, x1:x2] # ojo era rotated
+
+    #                     _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
+    #                     shifts[lambd, q, 1, 0, npol] = srow[1]
+    #                     shifts[lambd, q, 1, 1, npol] = scol[1]
+
+    #                 # apply shifts for quadrants to camera 1. 
+
+    #                     aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0) # ojo era rotated
+    #         elif both_cams == 1:
+    #             # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
+    #             for npol in range(nmods):
+    #                 patch_1 = aligned[0, lambd, npol, roi[0]:roi[1],roi[2]:roi[3]]
+    #                 patch_2 = aligned[1, lambd, npol, roi[0]:roi[1],roi[2]:roi[3]]
+
+    #                 _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
+
+    #                 aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[srow[1], scol[1]], wrap=True, fill=0)
+    #         else:
+    #             pass
 
     tac = time.time()
 

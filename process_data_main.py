@@ -14,9 +14,10 @@ from functools import partial
 import concurrent.futures
 import multiprocessing
 import matplotlib.pyplot as plt
+import tqdm
 
 #location of the tumag software:
-sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline")
+sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline_check")
 
 #loading of TuMag software needed programs
 import config as cf
@@ -33,7 +34,8 @@ from get_rotation import interpolate_filter, apply_transform
 from alignment import align_obsmode
 from demodulation import demodulate
 from image_alignment_suit import image_alignment_affine
-from xtalk_jaeggli import fit_mueller_matrix
+from xtalk_jaeggli import fit_mueller_matrix, fit_mueller_matrix_2d,fit_mueller_matrix_2d_interference
+import pd_functions_v22 as phased
 
 from process_data_utils import ConfigLoader,parse_range, print_shifts_by_cam, plt_darks, format_dict_two_rows, plt_flats,plt_level
 import os
@@ -47,7 +49,8 @@ except:
 errLogFilename = f'{workspacePath}/errors.log'
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
-# ======================= processing parameters =======================
+# ======================= processing programs =======================
+# =======================  reduce_image_0_5   =======================
 
 def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
 
@@ -95,7 +98,11 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
                plt_level(data, 
                          cfg['plots']['roi_plots'], 
                          cfg['output_folder']+obs_ID, 
-                         f"{filename}_LV_0.5_v{cfg['proc_version']}")
+                         f"{filename}_LV_0.5_v{cfg['proc_version']}",
+                         '0.5','flat_corrected')
+
+     
+# =======================  reduce_image_0_7   =======================
 
 def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
 
@@ -151,9 +158,9 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
           for i in range(wn):
                for j in range(pn):
                     data[1, i, j] = apply_transform(
-                              data[1,i, j], 
+                              data[1, i, j], 
                               result['rotation_angle_deg'], #0.0675  #0.05192....
-                              np.array([-result['translation_y'], -result['translation_x']]),
+                              np.array([result['translation_y'], result['translation_x']]),
                               np.array([result["center_y"],result["center_x"]]),
                               scale_x=result["scale_x"], scale_y=result["scale_y"], 
                               shear_x=result["shear_x"], shear_y=result["shear_y"]
@@ -165,7 +172,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
                                                theta=0,
                                                filterflag=False,
                                                returnshifts=True,
-                                               roi=roi)
+                                               roi=roi,
+                                               quadrants = cfg['level_07']['align_quadrants'])
 
           # data[1,0,3,:,:] = image_alignment_affine(data[0,0,3,:,:],data[1,0,3,:,:], init_params = [0., 0.1, 0.1,
           #                result["center_x"], result["center_y"], 1.0, 1.0, 0.0, 0.0])
@@ -178,30 +186,30 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
           # plt.tight_layout()
           # plt.show()
 
+          if cfg['level_07']['align_quadrants'] == 0:
+               update_header(header, 'REALIGN', 1)
+               update_header(header, 'ALIGMETH', 'sicairos')
+               update_header(header, 'ALIGN_ID', f"roi = {roi[0]}:{roi[1]},{roi[2]}{roi[3]}")
+               for i in range(wn):
+                    for j in range(pn):
+                         key = f'row0_{i}{j}'
+                         val = float(shifts[i, 0, 0, j])
+                         comment = f'cam 0 row shift wn/pn [{i},{j}]'
+                         header[key] = (val, comment)
+                         key = f'col0_{i}{j}'
+                         val = float(shifts[i, 0, 1, j])
+                         comment = f'cam 0 col shift wn/pn [{i},{j}]'
+                         header[key] = (val, comment)
+                         key = f'row1_{i}{j}'
+                         val = float(shifts[i, 1, 0, j])
+                         comment = f'cam 1 row shift wn/pn [{i},{j}]'
+                         header[key] = (val, comment)
+                         key = f'col1_{i}{j}'
+                         val = float(shifts[i, 1, 1, j])
+                         comment = f'cam 1 col shift wn/pn [{i},{j}]'
+                         header[key] = (val, comment)
 
-          update_header(header, 'REALIGN', 1)
-          update_header(header, 'ALIGMETH', 'sicairos')
-          update_header(header, 'ALIGN_ID', f"roi = {roi[0]}:{roi[1]},{roi[2]}{roi[3]}")
-          for i in range(wn):
-               for j in range(pn):
-                    key = f'row0_{i}{j}'
-                    val = float(shifts[i, 0, 0, j])
-                    comment = f'cam 0 row shift wn/pn [{i},{j}]'
-                    header[key] = (val, comment)
-                    key = f'col0_{i}{j}'
-                    val = float(shifts[i, 0, 1, j])
-                    comment = f'cam 0 col shift wn/pn [{i},{j}]'
-                    header[key] = (val, comment)
-                    key = f'row1_{i}{j}'
-                    val = float(shifts[i, 1, 0, j])
-                    comment = f'cam 1 row shift wn/pn [{i},{j}]'
-                    header[key] = (val, comment)
-                    key = f'col1_{i}{j}'
-                    val = float(shifts[i, 1, 1, j])
-                    comment = f'cam 1 col shift wn/pn [{i},{j}]'
-                    header[key] = (val, comment)
-
-          print_shifts_by_cam(shifts)
+               print_shifts_by_cam(shifts)
 
      if cfg['level_07']['align_mode'] == 'destretch':
           # import 
@@ -213,23 +221,36 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
 
      logging.info(f'  demodulation: ')
 
-     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.7", "LV_1.0")))[0]
-     plt_level(data, 
+     # filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
+
+     # plt_level(data, 
+     #                cfg['plots']['roi_plots'], 
+     #                cfg['output_folder']+obs_ID, 
+     #                filename,
+     #                '0.5','before_demod')
+     data = demodulate(data, line['line'], BothCams=False)
+     # data, data_both = demodulate(data, line['line'], BothCams=True)
+
+     # plt_level(data_both, 
+     #                cfg['plots']['roi_plots'], 
+     #                cfg['output_folder']+obs_ID, 
+     #                filename,
+     #                '0.5','after_demod')
+
+     if cfg['plots']['plot_level0_7']:
+          filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
+          plt_level(data, 
                     cfg['plots']['roi_plots'], 
                     cfg['output_folder']+obs_ID, 
-                    filename,
-                    '0.5','flat_corrected')
-     data, data_both = demodulate(data, line['line'], BothCams=True)
-     plt_level(data_both, 
-                    cfg['plots']['roi_plots'], 
-                    cfg['output_folder']+obs_ID, 
-                    filename,
-                    '0.5','flat_corrected_demod')
+                    f"{filename}_LV_0.7_v{cfg['proc_version']}",
+                    '0.7','demodulated')
 
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
           hdu_list[0].header = header
           hdu_list.writeto(input_data_filename.replace("LV_0.5", "LV_0.7"), overwrite=True)
+
+# =======================  reduce_image_1_0   =======================
 
 def reduce_image_1_0(input_data_filename, cfg):
 
@@ -266,45 +287,90 @@ def reduce_image_1_0(input_data_filename, cfg):
           norm_factor = cfg['level_10']['normalization']
      data = data / norm_factor
 
-     if cfg['plots']['plot_level1_0']:
-          plt_level(data, 
-                         cfg['plots']['roi_plots'], 
-                         cfg['output_folder']+obs_ID, 
-                         filename,
-                         '1.0','demod_before')
+     # if cfg['plots']['plot_level1_0']:
+     #      plt_level(data, 
+     #                     cfg['plots']['roi_plots'], 
+     #                     cfg['output_folder']+obs_ID, 
+     #                     filename,
+     #                     '1.0','demod_before')
 
-     data, mmatrix = fit_mueller_matrix(data,  
-                              method = cfg['level_10']['crosst_mode'],
-                              norm=False,
-                              verbose=True,
-                              plots=cfg['level_10']['plot_crosst_method'], 
-                              last_wvl=cfg['level_10']['crosst_last_wave'],
-                              ctmethod='linfit',
-                              pthresh=cfg['level_10']['crosst_threshold'],
-                              region = cfg['level_10']['crosst_region'])
+     if cfg['level_10']['crosst_quadrants'] == 0:
+          data, mmatrix = fit_mueller_matrix(data,  
+                                   method = cfg['level_10']['crosst_mode'],
+                                   norm = False,
+                                   verbose = cfg['level_10']['crosst_verbose'],
+                                   plots=cfg['level_10']['plot_crosst_method'], 
+                                   last_wvl=cfg['level_10']['crosst_last_wave'],
+                                   ctmethod='linfit',
+                                   pthresh=cfg['level_10']['crosst_threshold'],
+                                   region = cfg['level_10']['crosst_region'])
+     else:
+          data, _, _ = fit_mueller_matrix_2d(data,  
+                                   method = cfg['level_10']['crosst_mode'],
+                                   verbose = cfg['level_10']['crosst_verbose'],
+                                   plots=cfg['level_10']['plot_crosst_method'], 
+                                   last_wvl=cfg['level_10']['crosst_last_wave'],
+                                   divisions= cfg['level_10']['crosst_quadrants'],
+                                   pthresh = cfg['level_10']['crosst_threshold'],
+                                   region = cfg['level_10']['crosst_region'])
 
-     # if cfg['level_10']['crosst_mode'] == 'jaeggli':
-     #      logging.info(f'  crosstalk correction: {cfg["level_10"]["crosst_mode"]}')
-     #      if cfg['level_10']['mmatrix'] is not None and np.any(cfg['level_10']['mmatrix'] != 0): 
-     #           data, mmatrix = fit_mueller_matrix(data,norm=False, 
-     #                               plots=cfg['level_10']['plot_crosst_method'], 
-     #                               last_wvl=cfg['level_10']['crosst_last_wave'],
-     #                               roi = roi,
-     #                               pthresh = cfg['level_10']['crosst_threshold'],
-     #                               region = cfg['level_10']['crosst_region'],
-     #                               MM1a = mmatrix)
-     #      else:
-     #           data, mmatrix = fit_mueller_matrix(data,
-     #                               method = cfg['level_10']['crosst_mode'],
-     #                               norm = False,
-     #                               plots=cfg['level_10']['plot_crosst_method'],
-     #                               last_wvl=cfg['level_10']['crosst_last_wave'], 
-     #                               roi = roi,
-     #                               pthresh = cfg['level_10']['crosst_threshold'],
-     #                               region = roi
-     #                               )
+     # Allow crosst_interference to be 0 (disabled), an integer (number of divisions)
+     # or a numpy file path (.npy / .npz) containing precomputed slope/intercept (and optionally corrected data)
+     ci = cfg['level_10']['crosst_interference']
+     slope = None
+     intercept = None
+
+     # If it's a string, try to interpret as a filepath or as an int string
+     if isinstance(ci, str):
+          # try file first
+          if os.path.isfile(ci):
+               arr = np.load(ci, allow_pickle=True)
+               # .npz file (NpzFile) supports keys
+               divisions = arr['divisions']
+               slope = arr['slope']
+               intercept = arr['intercept']
+
+               data = fit_mueller_matrix_2d_interference(
+                    data,
+                    verbose = cfg['level_10']['crosst_verbose'],
+                    divisions= divisions,
+                    slope = slope,
+                    intercept = intercept)
+               
+          else:
+               # try to parse string as integer
+               try:
+                    ci = int(ci)
+               except Exception as e:
+                    raise ValueError(f"crosst_interference is a string but not a file nor an int: {ci}") from e
+
+     # If ci is numeric and non-zero call the computation routine
+     elif isinstance(ci, (int, np.integer)) and ci != 0:
+          data, slope, intercept = fit_mueller_matrix_2d_interference(
+                                   data,
+                                   verbose = cfg['level_10']['crosst_verbose'],
+                                   divisions= int(ci),
+                                   pthresh = cfg['level_10']['crosst_threshold'])
+          
+          update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
+          header['INTERC'] = (cfg['level_10']['crosst_interference'], 'cuadrants for crosstalk interference')
+          for i in range(slope.shape[0]):
+               for j in range(slope.shape[1]):
+                    key = f'IS_{i}{j}'
+                    val = float(slope[i, j])
+                    comment = f'Slope interference element wave, q [{i},{j}]'
+                    header[key] = (val, comment)
+          for i in range(intercept.shape[0]):
+               for j in range(intercept.shape[1]):
+                    key = f'II_{i}{j}'
+                    val = float(intercept[i, j])
+                    comment = f'intercept interference element wave, q [{i},{j}]'
+                    header[key] = (val, comment)
+
+     else:
+          pass
+
      if cfg['level_10']['crosst_mode'] == 'jaeggli':
-          print(mmatrix)
           update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
           for i in range(4):
                for j in range(4):
@@ -313,6 +379,37 @@ def reduce_image_1_0(input_data_filename, cfg):
                     comment = f'Mueller matrix element [{i},{j}]'
                     header[key] = (val, comment)
 
+     if cfg['level_10']['crosst_mode'] == 'standard' and cfg['level_10']['crosst_quadrants'] == 0:
+
+          update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
+          key = f'SQ'
+          val = float(mmatrix[3])
+          comment = f'slope Q'
+          header[key] = (val, comment)
+          key = f'SU'
+          val = float(mmatrix[4])
+          comment = f'slope U'
+          header[key] = (val, comment)
+          key = f'SV'
+          val = float(mmatrix[5])
+          comment = f'slope V'
+          header[key] = (val, comment)
+          key = f'IQ'
+          val = float(mmatrix[0])
+          comment = f'offset Q'
+          header[key] = (val, comment)
+          key = f'IU'
+          val = float(mmatrix[1])
+          comment = f'offset U'
+          header[key] = (val, comment)
+          key = f'IV'
+          val = float(mmatrix[2])
+          comment = f'offset V'
+          header[key] = (val, comment)
+
+     if cfg['level_10']['crosst_mode'] == 'standard' and cfg['level_10']['crosst_quadrants'] != 0:
+          pass 
+
      if cfg['plots']['plot_level1_0']:
           plt_level(data, 
                          cfg['plots']['roi_plots'], 
@@ -320,14 +417,14 @@ def reduce_image_1_0(input_data_filename, cfg):
                          filename,
                          '1.0','demod')
 
-     sys.exit()
-
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
           hdu_list[0].header = header
-          hdu_list.writeto(input_data_filename.replace("LV_0.7", "LV_1.1"), overwrite=True)
+          hdu_list.writeto(input_data_filename.replace("LV_0.7", "LV_1.0"), overwrite=True)
 
-def reduce_image_1_1(input_data_filename, cfg):
+# =======================  reduce_image_1_1   =======================
+
+def reduce_image_1_1(input_data_filename, cfg, zk = None):
 
      process_name = multiprocessing.current_process().name
      logging.basicConfig(
@@ -345,35 +442,37 @@ def reduce_image_1_1(input_data_filename, cfg):
 
      wn, pn, xs, ys = data.shape
 
-     # with tqdm.tqdm(total=wn*pn) as pbar:
-     #      for wl in range(wn):
-     #           for pl in range(pn):
-     #                # test,_ = pd.restore_ima(data[wl,pl],
-     #                #     zk,pd=0,low_f=0.2,noise='default',reg1=0.05,reg2=1,cobs=32.4)
-     #                if pl == 0:
-     #                     data[wl,pl],noise_filter = phased.restore_ima(data[wl,pl],
-     #                          zk,pd=0,low_f=0.2,reg1=0.05,reg2=1,cobs=32.4, epsilon=0.02, sigma= 5000, stray='moffat')
-     #                else:
-     #                     data[wl,pl],_ = phased.restore_ima(data[wl,pl],
-     #                          zk,pd=0,low_f=0.2,noise=noise_filter,reg1=0.05,reg2=1,cobs=32.4, epsilon=0.02, sigma= 5000, stray='moffat')
+     with tqdm.tqdm(total=wn*pn) as pbar:
+          for wl in range(wn):
+               for pl in range(pn):
+                    # test,_ = pd.restore_ima(data[wl,pl],
+                    #     zk,pd=0,low_f=0.2,noise='default',reg1=0.05,reg2=1,cobs=32.4)
+                    if pl == 0:
+                         data[wl,pl],noise_filter = phased.restore_ima(data[wl,pl],
+                              zk,pd=0,low_f=0.2,reg1=0.05,reg2=1,cobs=32.4, epsilon=0.02, sigma= 5000, stray='moffat')
+                    else:
+                         data[wl,pl],_ = phased.restore_ima(data[wl,pl],
+                              zk,pd=0,low_f=0.2,noise=noise_filter,reg1=0.05,reg2=1,cobs=32.4, epsilon=0.02, sigma= 5000, stray='moffat')
 
-     #           pbar.update(1)
+               pbar.update(1)
 
+     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_1.0", "LV_1.1")))[0]
 
-     if cfg['plots']['plot_level1_0']:
+     if cfg['plots']['plot_level1_1']:
           plt_level(data, 
-                    cfg['plots']['roi_plots'], 
-                    cfg['output_folder']+obs_ID, 
-                    f"{input_data_filename.replace("LV_0.7", "LV_1.1")}",
-                    '1.0','demod')
-
-     sys.exit()
+                         cfg['plots']['roi_plots'], 
+                         cfg['output_folder']+obs_ID, 
+                         filename,
+                         '1.0','pd')
 
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
           hdu_list[0].header = header
-          hdu_list.writeto(input_data_filename.replace("LV_0.7", "LV_1.1"), overwrite=True)
+          hdu_list.writeto(input_data_filename.replace("LV_1.0", "LV_1.1"), overwrite=True)
 
+# ===================================================================
+# =======================     MAIN PROGRAM    =======================
+# ===================================================================
 
 if __name__ == "__main__":
 
@@ -403,7 +502,7 @@ if __name__ == "__main__":
           # obs
           obs_paths = obs_dict[obs_ID]['obsdata'][0] # usually one ID for obs but may be a problem
 
-          logging.info(f"  >> Ddarks: {dc_paths}, flats: {ff_paths}, obs: {obs_paths} ")
+          logging.info(f"  >> Darks: {dc_paths}, flats: {ff_paths}, obs: {obs_paths} ")
           logging.info('-----------------------------------')
           logging.info(f'  >> checking if {cfg.Organized_files_local_folder_name} exist and continuing')
           if not os.path.exists(cfg.tumag_data_location + cfg.Organized_files_local_folder_name):
@@ -514,6 +613,9 @@ if __name__ == "__main__":
 
                process_ocs = list(OCs.keys())
                logging.info(f'  >> available ocs {len(process_ocs)}')
+               if len(process_ocs) == 0:
+                    logging.error(f'  >> Error. No ocs found for obs_ID: {obs_ID}')
+                    sys.exit()
                # process_ocs = process_ocs[parse_range(cfg.process_ocs)]
                logging.info(f'  >> process ocs {process_ocs}')
 
@@ -546,8 +648,6 @@ if __name__ == "__main__":
                else:
                     reduce_partial(process_ocs[0])
 
-     # END IFFFFFFFF
-
      # IF WE ARRIVED HERE, WE HAVE 0.5 and all info is in the header. The OCs are same as the fits sorted by date
      logging.info('-----------------------------------')
      if cfg.force_redo['level0_7']:
@@ -558,13 +658,18 @@ if __name__ == "__main__":
           ext_ = f"_LV_0.5_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
-          files = os.listdir(directory)
-          files = [f for f in files if f.endswith('.fits') and not f.startswith('._')]
-          files = [f for f in files if dataid in f ]
-          files = [f for f in files if ext_ in f ]
-          files = [os.path.join(directory, f) for f in files]
-          files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files))]
+          files_list = sorted(os.listdir(directory))
+          files_list = [f for f in files_list if f.endswith('.fits') and not f.startswith('._')]
+          files_list = [f for f in files_list if dataid in f ]
+          files_list = [f for f in files_list if ext_ in f ]
+          files_list = [os.path.join(directory, f) for f in files_list]
+          # logging.info(f'  >> available files {files_list}-{len(files_list)}-{parse_range(cfg.process_files,max_value = len(files_list))}')
+          files = [files_list[i] for i in parse_range(cfg.process_files,max_value = len(files_list)-1)]
+          # logging.info(f'  >> available files {files_list}')
           logging.info(f'  >> available files {len(files)}')
+          if len(files) == 0:
+               logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+               sys.exit()
 
           df = pd.read_csv(cfg.level_07['align_rot_data_filter'])  # <-- make sure the file path is correct
           # Convert day, hour, min to a single timestamp value (minutes since start)
@@ -600,15 +705,18 @@ if __name__ == "__main__":
           ext_ = f"_LV_0.7_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
-          files = os.listdir(directory)
+          files = sorted(os.listdir(directory))
           files = [f for f in files if f.endswith('.fits') and not f.startswith('._')]
           files = [f for f in files if dataid in f ]
           files = [f for f in files if ext_ in f ]
           files = [os.path.join(directory, f) for f in files]
           print(files)
           if len(files) > 1:
-               files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files))]
+               files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files)-1)]
           logging.info(f'  >> available files {len(files)}')
+          if len(files) == 0:
+               logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+               sys.exit()
 
           # Ensure process_ocs is always a list
           if not isinstance(files, list):
@@ -628,128 +736,49 @@ if __name__ == "__main__":
           else:
                reduce_partial(files[0])
 
-          sys.exit()
+     logging.info('-----------------------------------')
+     if cfg.force_redo['level1_1']:
 
-     # for ocs in process_ocs: 
-     #      om_value = OCs[ocs]['OM']
-     #      if cfg.process_line == om_value and cfg.force_redo['level0_5']:
-     #           logging.info(f' processing ocs: {ocs} which corresponds to {om_value} with {len(OCs[ocs]["ims"])} total images')
-     #           if len(OCs[ocs]['ims']) != obs_dict[obs_ID]['obs_size'][process_line_index]:
-     #                logging.error(f"  >> Error. The ocs: {ocs} number of images {len(OCs[ocs]['ims'])} does not coincide with the timeline info: {obs_dict[obs_ID]['obs_size'][process_line_index]}")
-     #                sys.exit()
+          logging.info(f'  >> processing level 1.1')
+          # cmatrix = cfg.mmatrix 
 
-     #           obs_data = ih.nominal_observation(cfg.process_line, OCs[ocs]["ims"], dc_real,modify_linearity=([1539,1540],[1.0,1.0]))
-     #           data = obs_data.get_data()
-     #           om_info = obs_data.get_info()  # Get observation mode info
-     #           cn, wn, pn, xs, ys = data.shape
+          dataid = obs_ID+"_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
+          ext_ = f"_LV_1.0_v{cfg.proc_version}.fits"
 
-     #           date_str = om_info["Images_headers"]["wv_0"]["M0"]["Date"].strftime("%d%m%YT%H%M%S")
-     #           dataid = obs_ID+"_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
-     #           filename = dataid + date_str
-     #           extended_filename = f"{filename}_LV_{cfg.processing_level}_v{cfg.pipeline_version}.fits"
-     #           logging.info(f' Output filename: {extended_filename}')
+          directory = cfg.output_folder+obs_ID+'/'
+          files = sorted(os.listdir(directory))
+          files = [f for f in files if f.endswith('.fits') and not f.startswith('._')]
+          files = [f for f in files if dataid in f ]
+          files = [f for f in files if ext_ in f ]
+          files = [os.path.join(directory, f) for f in files]
+          print(files)
+          if len(files) > 1:
+               files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files)-1)]
+          logging.info(f'  >> available files {len(files)}')
+          if len(files) == 0:
+               logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+               sys.exit()
 
-     #           logging.info(f'  >> FF correction..........')
-     #           data = np.where(np.isfinite(ff_data), data/ff_data, 0) 
+          # Ensure process_ocs is always a list
+          if not isinstance(files, list):
+               files = [files]
 
-     #           logging.info(f'  >> data cropping..........')
-     #           data = data[:, :, :, cfg.centro[0] - cfg.corte:cfg.centro[0] + cfg.corte, cfg.centro[1] - cfg.corte:cfg.centro[1] + cfg.corte]
+          zk = phased.import_zernikes(cfg.zernike_id) #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
 
-     #           if cfg.level_05['filtering']:
-     #                data = filter_frecuencies(data,band='fixed',verbose=True,pad=500,N=350,cam=1)
+          reduce_partial = partial(
+               reduce_image_1_1,
+               cfg=cfg_dict,
+               zk = zk
+               )
 
-     #           # fits_handling.generate_fits(data.astype(np.float32), 
-     #           #      obs_ID, extended_filename, cfg.level, cfg.pipeline_version, om_info = om_info, 
-     #           #      zkes = cfg.zernike_id,  shifts = None, fitted_muller = None, datatype='SCIENCE',
-     #           #      DARK_ID = dc_paths, FLAT_ID = ff_paths[process_line_index])
-
-     #           logging.info(f' Saving filename: {cfg.output_folder+obs_ID+'/'+extended_filename}')
-
-     #           fits_handling.generate_fits(data.astype(np.float32), 
-     #                cfg.output_folder+obs_ID+'/', extended_filename, cfg.processing_level, cfg.pipeline_version, om_info = om_info, 
-     #                zkes = None,  shifts = None, fitted_muller = None, datatype='SCIENCE',
-     #                DARK_ID = dc_paths, FLAT_ID = ff_paths[process_line_index])
-
-     #           if cfg.plots['plot_level0_5']:
-     #                plt_level(data, 
-     #                          cfg.plots['roi_plots'], 
-     #                          cfg.output_folder+obs_ID, 
-     #                          f"{filename}_LV_{cfg.processing_level}_v{cfg.pipeline_version}")
-     #           # with open(output_data_file_om, 'wb') as f:
-     #           #      np.savez_compressed(f, om_info=om_info)
-     #           #      f.flush()
-
-     #           del data, obs_data
-     #           gc.collect()
-
-
-# zk = phased.import_zernikes("06_SPOT_Fe2.02_0") #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
+          if len(files) > 1 and cfg.parallel:
+               with concurrent.futures.ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+                    executor.map(reduce_partial, files)
+          elif len(files) > 1 and not cfg.parallel:
+               for i in files:
+                    reduce_partial(i)
+          else:
+               reduce_partial(files[0])
 
 
 
-
-
-
-
-#     except Exception as e:
-#         logging.error("Error in function darkfieldSubtract to '{}': {}".format(errLogFilename, e))
-#         return None
-
-
-#      with concurrent.futures.ProcessPoolExecutor(max_workers=12) as
-# executor:
-#          futures = executor.map(reduce_image, occs202)
-#          for result in futures:
-#              print(f"Finalizado: {result}")
-# fin=time.time()
-# print("Tiempo empleado (s):")
-# print(fin-inicio)
-
-
-
-
-# ### PARALELO ###
-# import concurrent.futures
-# def reduce_image(i):
-#      dc = np.load('dc_01_QSUN_mode_1.npy')
-#      ff_data = np.load('ff_01_QSUN_mode_202.npy')
-#      om = ih.nominal_observation("2.02", Ocs[int(i)]["ims"], dc)
-#      om_data = om.get_data()
-#      om_info = om.get_info()
-
-#      ff_cropped = ff_data[:, :, :, 300:-300, 300:-300]
-#      om_data_cropped = om_data[:, :, :, 300:-300, 300:-300]
-
-#      del ff_data, om_data
-
-#      om_corr = np.zeros(np.shape(om_data_cropped))
-#      for mod in range(om_info["Nmods"]):
-#          for lamb in range(om_info["Nlambda"]):
-#              om_corr[0, lamb, mod] = om_data_cropped[0, lamb, mod] /
-# ff_cropped[0, lamb, mod]
-#              om_corr[1, lamb, mod] = om_data_cropped[1, lamb, mod] /
-# ff_cropped[1, lamb, mod]
-
-#      quadrants = al.reshape_into_16_quadrants(om_corr,
-# om_info["Nlambda"], om_info["Nmods"])
-#      aligned, shifts = al.align_quadrants(quadrants)
-#      dual, demodulated = demodulate_quadrants(aligned,
-# om_info["Nlambda"], om_info["Nmods"], "517")
-
-#      # Guardar resultados (ajusta la ruta)
-
-# np.save(f'/scratch/sunriseIII/level1/20240710_speed_test/01_QSUN_Mode202_{int(i)}',
-# dual)
-
-#      return int(i)
-
-# # Ejecutar en paralelo
-# if __name__ == "__main__":
-#      with concurrent.futures.ProcessPoolExecutor(max_workers=12) as
-# executor:
-#          futures = executor.map(reduce_image, occs202)
-#          for result in futures:
-#              print(f"Finalizado: {result}")
-# fin=time.time()
-# print("Tiempo empleado (s):")
-# print(fin-inicio)

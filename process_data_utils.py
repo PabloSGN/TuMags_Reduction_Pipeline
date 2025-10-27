@@ -138,16 +138,35 @@ def plt_level(data,roi,png_folder,name,level,label=''):
         fig, ax = plt.subplots(wn, pn, figsize=(16, 32))
         fig.tight_layout()
         for i in range(wn):
+            plr0 = np.median(data[i, 0, roi[0]:roi[1], roi[2]:roi[3]])
             for j in range(pn):
                 plr = np.median(data[i, j, roi[0]:roi[1], roi[2]:roi[3]])
-                if j == 0:
-                    levels = (0.2,1.2)
-                else:
-                    levels = (0.01,0.01)
-
+                limit = (plr*0.7,plr*1.3)
+                if j != 0:
+                    limit = (-0.005,0.005)
                 im = ax[i, j].imshow(
                     data[i, j, roi[0]:roi[1], roi[2]:roi[3]], cmap="Greys_r"
-                    ,clim=levels)
+                    ,clim=limit)
+                im.set_interpolation("none")
+                plt.colorbar(im, ax=ax[i, j])
+        plt.savefig(f"{png_folder}/pngs/{name}_{label}.png", dpi=150)
+        plt.close()  # Close the figure to avoid showing it
+
+    if level=='0.7':
+        wn, pn, _, _ = data.shape
+
+        fig, ax = plt.subplots(wn, pn, figsize=(16, 32))
+        fig.tight_layout()
+        for i in range(wn):
+            plr0 = np.median(data[i, 0, roi[0]:roi[1], roi[2]:roi[3]])
+            for j in range(pn):
+                plr = np.median(data[i, j, roi[0]:roi[1], roi[2]:roi[3]])
+                limit = (plr*0.7,plr*1.3)
+                if j != 0:
+                    limit = (-plr0*0.02+plr,plr0*0.02+plr)
+                im = ax[i, j].imshow(
+                    data[i, j, roi[0]:roi[1], roi[2]:roi[3]], cmap="Greys_r"
+                    ,clim=limit)
                 im.set_interpolation("none")
                 plt.colorbar(im, ax=ax[i, j])
         plt.savefig(f"{png_folder}/pngs/{name}_{label}.png", dpi=150)

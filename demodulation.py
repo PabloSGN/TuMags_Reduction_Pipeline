@@ -93,7 +93,7 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, filt, dmod_matrices = mod_matrices_david, onelambda = False, BothCams = False, verbose = False):
+def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False, verbose = False):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 

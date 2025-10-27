@@ -396,7 +396,7 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
             else:
                 #Minimize merit function
                 result = minimize(fitfunc1, initial_guess, args=weak_region,
-                    options={'maxiter': 10, 'disp': verbose})
+                    options={'maxiter': 1000, 'disp': verbose})
                 # Apply correction for I<->QUV cross-talk
                 MM1a = polmodel1(result.x[0],result.x[1], result.x[2])
                 iMM1a = np.linalg.inv(MM1a)
@@ -465,7 +465,7 @@ def fit_mueller_matrix_2d(data,pthresh=0.02,norm=False,
     for i,loop in enumerate(range(divisions**2)):
         from_x, to_x = np.round(ndiv[0,i] + cx - size2).astype(int) , np.round(ndiv[0,i] + cx + size2).astype(int)
         from_y, to_y = np.round(ndiv[1,i] + cy - size2).astype(int) , np.round(ndiv[1,i] + cy + size2).astype(int)
-        logging.info(f"loop {i} from {divisions**2}")
+        # logging.info(f"loop {i} from {divisions**2}")
 
         data_ct2D[:,:,from_y:to_y,from_x:to_x], result = fit_mueller_matrix(
             data[:,:,from_y:to_y,from_x:to_x],
@@ -488,3 +488,83 @@ def fit_mueller_matrix_2d(data,pthresh=0.02,norm=False,
         return  data_ct2D, intercept, slope
     if method in ['jaeggli', 'all_wvls', 'corr']:
         return  data_ct2D, mmatrix, 0
+
+def fit_mueller_matrix_2d_interference(data,
+                        pthresh=0.02,
+                        divisions=14,
+                        verbose = False,
+                        slope = None, intercept = None):
+
+    s = data.shape[-1]
+    cx = s//2
+    cy = s//2
+    size = s//2
+    size2 = size//divisions #half the size of the square
+
+    ndiv = generate_squares(size,divisions = divisions)
+
+    if slope is not None and intercept is not None:
+        # ensure arrays
+        slope = np.asarray(slope)
+        intercept = np.asarray(intercept)
+
+        for i,loop in enumerate(range(divisions**2)):
+            from_x, to_x = np.round(ndiv[0,i] + cx - size2).astype(int) , np.round(ndiv[0,i] + cx + size2).astype(int)
+            from_y, to_y = np.round(ndiv[1,i] + cy - size2).astype(int) , np.round(ndiv[1,i] + cy + size2).astype(int)
+
+            for wvli in range(data.shape[0]):
+                data[wvli,1,from_y:to_y,from_x:to_x] = data[wvli,1,from_y:to_y,from_x:to_x]  - slope[wvli, loop ] * data[wvli,0,from_y:to_y,from_x:to_x]  - intercept[wvli, loop ] 
+                # data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
+                # data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
+
+        return  data
+
+    if verbose:
+        fig, ax = plt.subplots(figsize=(8,8))
+        val = data[0,0,cx,cy]
+        im = ax.imshow(data[0,0,:,:],cmap='gray',clim=(val-val*1.5,val+val*1.5))
+        for i in range(divisions**2):
+            square = plt.Rectangle((ndiv[0,i] + cx - size2,ndiv[1,i] + cy - size2), size2 * 2, size2 * 2 , color='r', fill=False)
+            ax.add_patch(square)
+        plt.colorbar(im)
+        plt.show()
+
+    intercept = np.zeros((data.shape[0],divisions**2))
+    slope = np.zeros((data.shape[0],divisions**2))
+
+    data_mod = np.copy(data)
+    data_mod[:,0,:,:] = data[-1,0,:,:][np.newaxis,:,:]
+    for i,loop in enumerate(range(divisions**2)):
+        from_x, to_x = np.round(ndiv[0,i] + cx - size2).astype(int) , np.round(ndiv[0,i] + cx + size2).astype(int)
+        from_y, to_y = np.round(ndiv[1,i] + cy - size2).astype(int) , np.round(ndiv[1,i] + cy + size2).astype(int)
+        # logging.info(f"loop {i} from {divisions**2} and {data_mod.shape}")
+
+        for wvli in range(data.shape[0]):
+            iq,_,_,sq,_,_ = evaluate_crosstalk(data_mod[wvli,:,from_y:to_y,from_x:to_x],verbose=verbose,pthresh=pthresh,ctmethod='linfit')
+            # data[wvli,1,from_y:to_y,from_x:to_x] = data[wvli,1,from_y:to_y,from_x:to_x]  - sq *data_mod[wvli,0,from_y:to_y,from_x:to_x]  - iq 
+            # data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
+            # data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
+            intercept[wvli, loop ] = iq
+            slope[wvli, loop ] = sq
+
+    # slope = slope.reshape((data.shape[0], divisions,divisions))
+    # intercept = intercept.reshape((data.shape[0], divisions,divisions))
+    # from scipy.ndimage import median_filter
+    # for wvli in range(data.shape[0]):
+    #     slope[wvli, : ,:  ] = median_filter(slope[wvli, : ,:  ],size=2)
+    #     intercept[wvli, : ,:  ] = median_filter(intercept[wvli, : ,:  ],size=2)
+    # slope = slope.reshape((data.shape[0], divisions*divisions))
+    # intercept = intercept.reshape((data.shape[0], divisions*divisions))
+
+    for i,loop in enumerate(range(divisions**2)):
+        from_x, to_x = np.round(ndiv[0,i] + cx - size2).astype(int) , np.round(ndiv[0,i] + cx + size2).astype(int)
+        from_y, to_y = np.round(ndiv[1,i] + cy - size2).astype(int) , np.round(ndiv[1,i] + cy + size2).astype(int)
+
+        for wvli in range(data.shape[0]):
+            data[wvli,1,from_y:to_y,from_x:to_x] = data[wvli,1,from_y:to_y,from_x:to_x]  - slope[wvli, loop ] * data_mod[wvli,0,from_y:to_y,from_x:to_x]  - intercept[wvli, loop ] 
+            # data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
+            # data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
+
+    return  data, slope, intercept
+
+
