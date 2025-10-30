@@ -106,14 +106,16 @@ level_10:
   crosst_mode: "standard"         # "jaeggli" or "standard"
   crosst_roi: [0, -1, 0, -1]      # Normalization region
   crosst_region: [0, -1, 0, -1]   # Crosstalk calculation region
-  crosst_threshold: 0.01
+  crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
+  crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: -1 #used -1 for standard and -2 for jaeggli
   crosst_quadrants: 0
-  crosst_interference: 8 #8          # or 'comm1_cal.npz' file
+  crosst_interference: 0 #8          # or 'comm1_cal.npz' file
   mmatrix: 0
   normalization: 0
   plot_crosst_method: false
   crosst_verbose: false
+  add_level_10_label: '' # '_inter8'
 
 
 # ----------------------------------------------------------

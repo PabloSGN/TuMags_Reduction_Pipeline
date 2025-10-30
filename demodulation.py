@@ -93,7 +93,7 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False, verbose = False):
+def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 
@@ -121,14 +121,13 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
         lcvr_mode = "longitudinal"
     else:
         raise Exception(f"Expected 2 or 4 modulations but got: {nmods}.")
-    if verbose:
-        print(f"Using {lcvr_mode} demodulation scheme")
+    #  if verbose:
+    print(f"Using {lcvr_mode} demodulation scheme")
 
     # All wavelengths
     size = np.shape(data)[-1]
     demod = np.zeros(np.shape(data))
     dual_beam = np.zeros((nlambda, nmods, size, size))
-
 
     # print(dmod_matrices[filt][0])
     # print(dmod_matrices[filt][1])
@@ -156,6 +155,7 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
     else:
         raise Exception("Please provide a valid lcvr mode: vectorial (default) or longitudinal")
     
+
     if BothCams:
         if onelambda:
             return dual_beam[0], demod[:, 0]

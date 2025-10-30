@@ -21,8 +21,9 @@ def generate_squares(radius,divisions: int = 6):
 
 def evaluate_crosstalk(data, verbose=False, 
                        pthresh=0.05, png=False,
-                       n_sigma=5, ctmethod="linfit",
-                       region=[0,-1,0,-1]):
+                       n_sigma=1, ctmethod="linfit",
+                       region=[0,-1,0,-1],
+                       pthresh_intensity = 0):
     
     def minimize_rms(x, y):
         norm = np.mean(y)
@@ -44,10 +45,37 @@ def evaluate_crosstalk(data, verbose=False,
     area_of_interest = data[:, region[0]:region[1],region[2]:region[3]].reshape(data.shape[0], -1)
     y, q, u, v = area_of_interest[0], area_of_interest[1], area_of_interest[2], area_of_interest[3]
 
-    #Apply threshold to V map corrected from offset. (as in jaeggli)
-    V_mean_corr = area_of_interest[3]-np.mean(area_of_interest[3])
-    pmap = np.abs(V_mean_corr)/area_of_interest[0]
-    notpolar = pmap < pthresh
+    # threshold can be a number (then all calculations are based on Stokes V),
+    # or a list/array of three numbers to apply separate thresholds to Q, U, V.
+    eps = 1e-12
+    if np.isscalar(pthresh):
+        # scalar: use V-based fractional polarization (Jaeggli default)
+        V_mean_corr = v - np.mean(v)
+        pmap = np.abs(V_mean_corr) / (y + eps)
+        notpolar = pmap < pthresh
+    else:
+        thr = np.asarray(pthresh)
+        if thr.size != 3:
+            raise ValueError("pthresh must be a scalar or an iterable of three numbers (Q,U,V).")
+        # mean-correct each polarization component and compute fractional maps
+        q_mc = q - np.mean(q)
+        u_mc = u - np.mean(u)
+        v_mc = v - np.mean(v)
+        pmap_q = np.abs(q_mc) / (y + eps)
+        pmap_u = np.abs(u_mc) / (y + eps)
+        pmap_v = np.abs(v_mc) / (y + eps)
+        # start with all True and apply component thresholds only when non-zero
+        notpolar = np.ones_like(y, dtype=bool)
+        if thr[0] != 0:
+            notpolar &= (pmap_q < thr[0])
+        if thr[1] != 0:
+            notpolar &= (pmap_u < thr[1])
+        if thr[2] != 0:
+            notpolar &= (pmap_v < thr[2])
+
+    # apply intensity threshold if requested (keep same semantics as original)
+    if pthresh_intensity != 0:
+        notpolar &= (y > pthresh_intensity)
 
     # Compute slopes and intercepts
     if ctmethod == "linfit":
@@ -493,7 +521,8 @@ def fit_mueller_matrix_2d_interference(data,
                         pthresh=0.02,
                         divisions=14,
                         verbose = False,
-                        slope = None, intercept = None):
+                        slope = None, intercept = None,
+                        pthresh_intensity = 0):
 
     s = data.shape[-1]
     cx = s//2
@@ -540,7 +569,7 @@ def fit_mueller_matrix_2d_interference(data,
         # logging.info(f"loop {i} from {divisions**2} and {data_mod.shape}")
 
         for wvli in range(data.shape[0]):
-            iq,_,_,sq,_,_ = evaluate_crosstalk(data_mod[wvli,:,from_y:to_y,from_x:to_x],verbose=verbose,pthresh=pthresh,ctmethod='linfit')
+            iq,_,_,sq,_,_ = evaluate_crosstalk(data_mod[wvli,:,from_y:to_y,from_x:to_x],verbose=verbose,pthresh=pthresh,ctmethod='linfit',pthresh_intensity=pthresh_intensity)
             # data[wvli,1,from_y:to_y,from_x:to_x] = data[wvli,1,from_y:to_y,from_x:to_x]  - sq *data_mod[wvli,0,from_y:to_y,from_x:to_x]  - iq 
             # data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
             # data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]

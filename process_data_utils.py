@@ -132,6 +132,8 @@ def plt_flats(ff_data):
         
 def plt_level(data,roi,png_folder,name,level,label=''):
 
+    logging.info(f'  saving png {level} in {png_folder}/pngs/{name}_{label}.png')
+
     if level=='1.0':
         wn, pn, _, _ = data.shape
 

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import tqdm
 
 #location of the tumag software:
-sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline_check")
+sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline")
 
 #loading of TuMag software needed programs
 import config as cf
@@ -114,6 +114,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      )
 
      logging.info(f' processing file: {input_data_filename} ')
+     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
+     obs_ID = cfg['obs_ID']
 
      #read data
      with fits.open(input_data_filename) as hdul:
@@ -228,7 +230,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      #                cfg['output_folder']+obs_ID, 
      #                filename,
      #                '0.5','before_demod')
-     data = demodulate(data, line['line'], BothCams=False)
+     data = demodulate(data, line['line'])
      # data, data_both = demodulate(data, line['line'], BothCams=True)
 
      # plt_level(data_both, 
@@ -237,18 +239,21 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      #                filename,
      #                '0.5','after_demod')
 
+     # print(cfg['plots']['roi_plots'],cfg['output_folder']+obs_ID,filename)
      if cfg['plots']['plot_level0_7']:
-          filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
           plt_level(data, 
                     cfg['plots']['roi_plots'], 
                     cfg['output_folder']+obs_ID, 
-                    f"{filename}_LV_0.7_v{cfg['proc_version']}",
-                    '0.7','demodulated')
+                    filename,
+                    '0.7',
+                    label = 'demodulated')
 
+     out_file = input_data_filename.replace("LV_0.5", "LV_0.7")
+     logging.info(f' Saving filename: {out_file}')
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
           hdu_list[0].header = header
-          hdu_list.writeto(input_data_filename.replace("LV_0.5", "LV_0.7"), overwrite=True)
+          hdu_list.writeto(out_file, overwrite=True)
 
 # =======================  reduce_image_1_0   =======================
 
@@ -263,6 +268,7 @@ def reduce_image_1_0(input_data_filename, cfg):
 
      logging.info(f'  >> processing file: {input_data_filename} ')
      filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.7", "LV_1.0")))[0]
+     obs_ID = cfg['obs_ID']
 
 
      with fits.open(input_data_filename) as hdul:
@@ -350,7 +356,8 @@ def reduce_image_1_0(input_data_filename, cfg):
                                    data,
                                    verbose = cfg['level_10']['crosst_verbose'],
                                    divisions= int(ci),
-                                   pthresh = cfg['level_10']['crosst_threshold'])
+                                   pthresh = cfg['level_10']['crosst_threshold'],
+                                   pthresh_intensity = cfg['level_10']['crosst_intensity_threshold'])
           
           update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
           header['INTERC'] = (cfg['level_10']['crosst_interference'], 'cuadrants for crosstalk interference')
@@ -417,10 +424,13 @@ def reduce_image_1_0(input_data_filename, cfg):
                          filename,
                          '1.0','demod')
 
+     out_file = input_data_filename.replace("LV_0.7", "LV_1.0"+cfg['level_10']['add_level_10_label'])
+     logging.info(f' Saving filename: {out_file}')
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
           hdu_list[0].header = header
-          hdu_list.writeto(input_data_filename.replace("LV_0.7", "LV_1.0"), overwrite=True)
+          hdu_list.writeto(out_file, overwrite=True)
+
 
 # =======================  reduce_image_1_1   =======================
 
@@ -434,6 +444,8 @@ def reduce_image_1_1(input_data_filename, cfg, zk = None):
      )
 
      logging.info(f'  >> processing file: {input_data_filename} ')
+     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_1.0", "LV_1.1")))[0]
+     obs_ID = cfg['obs_ID']
 
      #read data
      with fits.open(input_data_filename) as hdul:
@@ -456,7 +468,6 @@ def reduce_image_1_1(input_data_filename, cfg, zk = None):
 
                pbar.update(1)
 
-     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_1.0", "LV_1.1")))[0]
 
      if cfg['plots']['plot_level1_1']:
           plt_level(data, 
@@ -663,12 +674,15 @@ if __name__ == "__main__":
           files_list = [f for f in files_list if dataid in f ]
           files_list = [f for f in files_list if ext_ in f ]
           files_list = [os.path.join(directory, f) for f in files_list]
-          # logging.info(f'  >> available files {files_list}-{len(files_list)}-{parse_range(cfg.process_files,max_value = len(files_list))}')
-          files = [files_list[i] for i in parse_range(cfg.process_files,max_value = len(files_list)-1)]
-          # logging.info(f'  >> available files {files_list}')
-          logging.info(f'  >> available files {len(files)}')
-          if len(files) == 0:
+          indices = parse_range(cfg.process_files,max_value = len(files_list)-1)
+          if len(files_list) >= 1 and len(indices) <= len(files_list):
+               files = [files_list[i] for i in indices]
+               logging.info(f'  >> available files {len(files)}')
+          if len(files_list) == 0:
                logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+               sys.exit()
+          if len(indices) > len(files_list):
+               logging.error(f'  >> More indices than files {indices} len of file list {len(files_list)}')
                sys.exit()
 
           df = pd.read_csv(cfg.level_07['align_rot_data_filter'])  # <-- make sure the file path is correct
@@ -710,7 +724,6 @@ if __name__ == "__main__":
           files = [f for f in files if dataid in f ]
           files = [f for f in files if ext_ in f ]
           files = [os.path.join(directory, f) for f in files]
-          print(files)
           if len(files) > 1:
                files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files)-1)]
           logging.info(f'  >> available files {len(files)}')
