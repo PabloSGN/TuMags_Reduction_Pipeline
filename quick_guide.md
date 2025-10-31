@@ -1,80 +1,88 @@
-# TuMags Reduction Pipeline — Quick Start Guide
 
-Este documento describe los pasos necesarios para ejecutar el **TuMags Reduction Pipeline**, configurar su archivo YAML y preparar el entorno Python.
+
+
+# **TuMags Data Reduction Pipeline — Quick Start Guide**
+
+This document describes the basic steps required to run the **TuMags Data Reduction Pipeline**, configure its YAML file, and prepare the Python environment.
 
 ---
 
-## 1. Descripción general
+## **1. Overview**
 
-El *TuMags Reduction Pipeline* procesa observaciones solares identificadas mediante un `obs_ID` definido en el archivo `config_tumag.yaml`.  
-Cada ejecución produce varios niveles de reducción, desde calibraciones básicas hasta restauración por *phase diversity*.
+The **TuMags Data Reduction Pipeline** processes solar observations (timelines) identified by an `obs_ID` as defined in the `config_tumag.yaml` file.  
+In the reduction process several reduction levels can be run, from basic calibrations to **phase diversity** restoration.
 
-| Nivel | Descripción | Función |
-|:------|:-------------|:--------|
-| **0.5** | Corrección de *flat*, recorte y guardado FITS | `reduce_image_0_5` |
-| **0.7** | Alineación y demodulación | `reduce_image_0_7` |
-| **1.0** | Corrección de *cross-talk* y normalización | `reduce_image_1_0` |
-| **1.1** | Restauración por *phase diversity* | `reduce_image_1_1` |
+| Level | Description | Function |
+|-------|-------------|----------|
+| **0.5** | Flat correction, cropping, and FITS saving | `reduce_image_0_5` |
+| **0.7** | Alignment and demodulation | `reduce_image_0_7` |
+| **1.0** | Cross-talk correction and normalization | `reduce_image_1_0` |
+| **1.1** | Phase diversity restoration | `reduce_image_1_1` |
 
-Los archivos de salida tienen este formato: 
+Output files follow this format:  
 `<obsID>*<om_name>*<Nlambda>_<date>*LV*<level>_v<proc_version>.fits`
 
+Level **0.5** requires access to the raw data and a special folder configuration while the rest of the levels can be run provided the previous level is accessible. All levels, except raw, will be accessible at the TuMag database.
+
 ---
 
-## 2. Instalación y configuración inicial
+## **2. Installation and Initial Setup**
 
-### 2.1. Requisitos
+### **2.1. Requirements**
+
 - Python ≥ 3.8  
-- Paquetes indicados en `requirements.txt`  
-- Datos organizados en las rutas (ver más abajo como configurar TuMag en un archivo Yalm):
-  - `cfg.tumag_data_location`
-  - `cfg.Organized_files_local_folder_name`
-- El `obs_ID` debe existir en `process_data_timelines.obs_dict`
+- Packages listed in `requirements.txt`  
+- Data organized in the following paths (see below how to configure TuMag in a YAML file):  
+  - `tumag_data_location` is the path where the Organized_files_local folder is present (the name of the folder is provided in the `Organized_files_local_folder_name` field). This folder contains the `csv` files with the information of the raw data location. This is not necessary if **0.5** data level is accessible.
+- The `obs_ID` must exist in `process_data_timelines.obs_dict` parameter which is defined in `process_data_timelines.py`. This file contains only few timelines. The information required in this file can be found in the [TuMag LOGBOOK web](https://docs.google.com/spreadsheets/d/1RJ5KIgxMN6B-1xDe9gRfoTh1L_uTDMbZw0ajLK6S0so/edit?), although it will be fully upgraded eventually.
 
-### 2.2. Crear entorno con Conda
+### **2.2. Create Conda Environment**
+
 ```bash
 conda create --name TuMag python=3.10
 conda activate TuMag
 pip install -r requirements.txt
-````
+```
 
 ---
 
-## 3. Configuración del directorio del código
+## **3. Code Directory Configuration**
 
-Antes de ejecutar el pipeline, **es necesario modificar** el archivo `process_data_main.py` para incluir el directorio local donde se encuentra el código del pipeline.
-
-Busca la sección de importación (al principio del archivo) y añade la siguiente línea **ajustando la ruta a tu sistema**:
+Before running the pipeline, **you must modify** the `process_data_main.py` file to include the local directory where the pipeline code is located.  
+Look for the import section (at the beginning of the file) and add the following line **adjusting the path to your system**:
 
 ```python
 # Location of the TuMag software:
 import sys
-sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline")
+sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline")
 ```
 
-⚠️ Esta línea permite que Python encuentre los módulos internos del pipeline, incluso si se ejecuta desde un directorio distinto al del código fuente.
+⚠️ This line allows Python to find the pipeline’s internal modules, even if executed from a different directory. This behaviour will be change soon.
 
 ---
 
-## 4. Archivos principales del pipeline
+## **4. Main Pipeline Files**
 
-| Archivo                                 | Descripción                                                   |
-| :-------------------------------------- | :------------------------------------------------------------ |
-| `process_data_main.py`                  | Script principal; ejecuta todas las etapas del pipeline.      |
-| `config_tumag.yaml`                     | Archivo de configuración con parámetros de ejecución.         |
-| `process_data_utils.py`                 | Cargador de configuración y utilidades.                       |
-| `process_data_timelines.py`             | Define `obs_dict` y *timelines*.                              |
-| `fits_files_handling.py`                | Lectura/escritura de FITS (`generate_fits`, `update_header`). |
-| `master_dark.py`, `master_flatfield.py` | Generación de calibraciones.                                  |
-| `alignment.py`, `demodulation.py`       | Procesamiento de alineación y demodulación.                   |
-| `xtalk_jaeggli.py`                      | Rutinas de corrección de *cross-talk*.                        |
-| `pd_functions_v22.py`                   | Funciones de *phase diversity*.                               |
+| File | Description |
+|------|-------------|
+| `process_data_main.py` | Main script; runs all pipeline stages. |
+| `config_tumag.yaml` | Configuration file with execution parameters. **copy anywhere to use it**. |
+| `process_data_utils.py` | Configuration loader and utilities. |
+| `process_data_timelines.py` | Defines `obs_dict` and *timelines*. |
+| `fits_files_handling.py` | FITS read/write (`generate_fits`, `update_header`). |
+| `master_dark.py`, `master_flatfield.py` | Calibration generation. |
+| `alignment.py`, `demodulation.py` | Alignment and demodulation processing. |
+| `xtalk_jaeggli.py` | Cross-talk correction routines. |
+| `pd_functions_v22.py` | Phase diversity functions. |
 
 ---
 
-## 5. Configuración YAML (`config_tumag.yaml`)
+## **5. YAML Configuration (`config_tumag.yaml`)**
 
-A continuación se muestra el contenido de ejemplo del archivo `config_tumag.yaml`, que define todos los parámetros usados por el pipeline.
+Below is an example of the `config_tumag.yaml` file, which defines all parameters used by the pipeline:
+
+<details>
+  <summary>📂 Check YAML config</summary>
 
 ```yaml
 # ==========================================================
@@ -202,23 +210,33 @@ zernike_id: "06_SPOT_Fe2.02_0"
 #     128 : "Test"
 # }
 ```
+</details>
+
+The file includes:
+
+- **Global parameters**: `obs_ID`, `proc_version`, `process_line`, paths, parallel settings.
+- **Reprocessing options**: Flags to force recalculation of specific levels.
+- **Plotting options**: Enable/disable plots for each level.
+- **Dark and flat options**: Indexes and normalization regions.
+- **Level-specific options**: Parameters for levels 0.5, 0.7, 1.0, and 1.1.
+- **Observation modes**: Reference list of available modes.
 
 ---
 
-## 6. Ejecución del pipeline
+## **6. Running the Pipeline**
 
-Ejemplo de ejecución básica:
+Basic execution example:
 
 ```bash
 python3 process_data_main.py -f config_tumag.yaml
 ```
 
-> Si el parámetro `-f` no se especifica, el script usa `config_tumag.yaml` por defecto.
-> hay que incluir la ruta del program aprincipal
+> If the `-f` parameter is not specified, the script defaults to `config_tumag.yaml`.  
+> You must include the path to the main script.
 
-### Ejecución paralela
+### **Parallel Execution**
 
-Configura en el YAML:
+Set in the YAML:
 
 ```yaml
 parallel: true
@@ -227,37 +245,35 @@ max_workers: 4
 
 ---
 
-## 7. Flujo de trabajo recomendado
+## **7. Recommended Workflow**
 
-1. **Editar `config_tumag.yaml`**
+1. **Edit `config_tumag.yaml`**  
+   - Adjust `obs_ID`, paths, and level options.  
+   - Review `force_redo` flags for levels to recalculate.
 
-   * Ajustar `obs_ID`, rutas y opciones de niveles.
-   * Revisar flags de `force_redo` según el nivel que se quiera recalcular.
+2. **Verify Data Structure**  
+   - Data must be organized under `tumag_data_location/Organized_files_local_folder_name`.
 
-2. **Verificar estructura de datos**
-   Los datos deben estar organizados bajo `tumag_data_location/Organized_files_local_folder_name`.
-
-3. **Ejecutar el pipeline**
+3. **Run the Pipeline**
 
    ```bash
    python3 process_data_main.py -f config_tumag.yaml
    ```
 
-4. **Comprobar resultados**
-   Visualizar archivos FITS con:
+4. **Check Results**  
+   - Visualize FITS files with:
 
-   ```bash
-   python3 visor.py /Volumes/TuMag_d1/reduccion/.../file.fits
-   ```
+     ```bash
+     python3 visor.py /Volumes/TuMag_d1/reduccion/.../file.fits
+     ```
 
 ---
 
-## 8. Solución de problemas comunes
+## **8. Common Troubleshooting**
 
-| Problema                          | Causa probable / Solución                                                                              |
-| :-------------------------------- | :----------------------------------------------------------------------------------------------------- |
-| **“No files found” o OCs vacíos** | Revisar `obs_ID` y `process_line` en `process_data_timelines.obs_dict`.                                |
-| **Recalcular flats/darks**        | Activar `force_redo.redo_flat` o `force_redo.redo_dark`.                                               |
-| **Fallo de alineación**           | Asegurarse de que el CSV de rotación (`pinholes_results.csv`) coincide con las fechas de los archivos. |
-| **ImportError al ejecutar**       | Confirmar que la ruta añadida en `sys.path.append()` apunta correctamente al directorio del código.    |
-
+| Problem | Likely Cause / Solution |
+|---------|--------------------------|
+| **“No files found” or empty OCs** | Check `obs_ID` and `process_line` in `process_data_timelines.obs_dict`. |
+| **Need to recalculate flats/darks** | Set `force_redo.redo_flat` or `force_redo.redo_dark` to `true`. |
+| **Alignment failure** | Ensure `pinholes_results.csv` matches file dates. |
+| **ImportError on execution** | Confirm the `sys.path.append()` path correctly points to the code directory. |
