@@ -87,7 +87,7 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
           if cfg['level_05']['filtering']:
                data = filter_frecuencies(data,band='fixed',verbose=True,pad=500,N=350,cam=1)
 
-          logging.info(f' Saving filename: {cfg['output_folder']+obs_ID+'/'+extended_filename}')
+          # logging.info(f' Saving filename: {cfg['output_folder']+obs_ID}'/'{extended_filename}')
 
           generate_fits(data.astype(np.float32), 
                cfg['output_folder']+obs_ID+'/', extended_filename, '0.5', cfg['proc_version'], om_info = om_info, 
@@ -422,7 +422,7 @@ def reduce_image_1_0(input_data_filename, cfg):
                          cfg['plots']['roi_plots'], 
                          cfg['output_folder']+obs_ID, 
                          filename,
-                         '1.0','demod')
+                         '1.0','demod'+cfg['level_10']['add_level_10_label'])
 
      out_file = input_data_filename.replace("LV_0.7", "LV_1.0"+cfg['level_10']['add_level_10_label'])
      logging.info(f' Saving filename: {out_file}')
@@ -559,6 +559,7 @@ if __name__ == "__main__":
 
           logging.info('  >> Running FLAT calculation ')
 
+
           # Check if cfg.process_line exists in obs_dict[obs_ID]['obs_is'] and get its position
           try:
                obs_is_list = obs_dict[obs_ID]['obs_is']
@@ -571,39 +572,48 @@ if __name__ == "__main__":
           except Exception as e:
                logging.error(f"  >> Error checking process_line in obs_is list: {e}")
                sys.exit()
+          # Check if cfg.process_line exists in obs_dict[obs_ID]['obs_is'] and get its position
+          if cfg.flat_file:
+               logging.info(f'  >> reading flat: {cfg.flat_file}')
+               flat = np.load(cfg.flat_file, allow_pickle=True)
+               ff_data = flat['ff_data']
+               ff_info = flat['ff_info']
 
-          flat_output_file = cfg.output_folder+obs_ID+'/'+ff_paths[process_line_index]+'.npz'
-          logging.info(f'  >> flat output file will be: {flat_output_file}')
+          else:
 
-          if os.path.exists(flat_output_file):
-               logging.info(f'  >> flat output file exist.')
-               if not cfg.force_redo["redo_flat"]:
-                    logging.info(f'  >> loading flat')
-                    flat = np.load(flat_output_file, allow_pickle=True)
-                    ff_data = flat['ff_data']
-                    ff_info = flat['ff_info']
+               flat_output_file = cfg.output_folder+obs_ID+'/'+ff_paths[process_line_index]+'.npz'
+               logging.info(f'  >> flat output file will be: {flat_output_file}')
+
+               if os.path.exists(flat_output_file):
+                    logging.info(f'  >> flat output file exist.')
+                    if not cfg.force_redo["redo_flat"]:
+                         logging.info(f'  >> loading flat')
+                         flat = np.load(flat_output_file, allow_pickle=True)
+                         ff_data = flat['ff_data']
+                         ff_info = flat['ff_info']
+                    else:
+                         logging.info(f'  >> but force_redo is True.')
+                         flat_paths = ih.get_images_paths(ff_paths[process_line_index])
+                         ff_data, ff_info = compute_master_flat_field(flat_paths, dc = dc_real, verbose = True,
+                                                            modify_linearity=([1539,1540],[1.0,1.0]),
+                                                            norm_roi = cfg.flat_norm_roi)#,
+                                                            # remove_prefilter=True,
+                                                            # pref_model="prefilter_model_517.pkl")
+                         np.savez(flat_output_file,ff_data=ff_data.astype(np.float32),ff_info=ff_info)
                else:
-                    logging.info(f'  >> but force_redo is True.')
+                    logging.info(f' >> flat output file does not exist.')
                     flat_paths = ih.get_images_paths(ff_paths[process_line_index])
                     ff_data, ff_info = compute_master_flat_field(flat_paths, dc = dc_real, verbose = True,
-                                                       modify_linearity=([1539,1540],[1.0,1.0]),
-                                                       norm_roi = cfg.flat_norm_roi)#,
-                                                       # remove_prefilter=True,
-                                                       # pref_model="prefilter_model_517.pkl")
+                                                            modify_linearity=([1539,1540],[1.0,1.0]),
+                                                            norm_roi = cfg.flat_norm_roi)#,
+                                                            # remove_prefilter=True,
+                                                            # pref_model="prefilter_model_517.pkl")
                     np.savez(flat_output_file,ff_data=ff_data.astype(np.float32),ff_info=ff_info)
-          else:
-               logging.info(f' >> flat output file does not exist.')
-               flat_paths = ih.get_images_paths(ff_paths[process_line_index])
-               ff_data, ff_info = compute_master_flat_field(flat_paths, dc = dc_real, verbose = True,
-                                                       modify_linearity=([1539,1540],[1.0,1.0]),
-                                                       norm_roi = cfg.flat_norm_roi)#,
-                                                       # remove_prefilter=True,
-                                                       # pref_model="prefilter_model_517.pkl")
-               np.savez(flat_output_file,ff_data=ff_data.astype(np.float32),ff_info=ff_info)
 
-          if cfg.plots["plot_flats"]:
-               plt_flats(ff_data)
+               if cfg.plots["plot_flats"]:
+                    plt_flats(ff_data)
 
+          
           logging.info('-----------------------------------')
 
           # DATA PROCESSING 1) First is needed to check the OCs.
