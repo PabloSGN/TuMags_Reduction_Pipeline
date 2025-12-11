@@ -45,7 +45,87 @@ mod_matrices = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024
  }
 
 
+demod_matrices_acampos = {# articulo de A. Campos 
+    "517": {
+        0: np.array([
+            [0.29,  0.27,  0.23,  0.22],
+            [-0.57, -0.34, 0.28,  0.55],
+            [0.41, -0.66,  0.43, -0.22],
+            [0.39, -0.33, -0.55,  0.51]
+        ]),
+        1: np.array([
+            [ 0.21,  0.19,  0.33,  0.28],
+            [ 0.52,  0.32, -0.30, -0.61],
+            [-0.44,  0.68, -0.46,  0.21],
+            [-0.39,  0.34,  0.56, -0.50]
+        ])
+    },
+    "525.02": {
+        0: np.array([
+            [0.28,  0.22,  0.26,  0.24],
+            [-0.57, -0.29, 0.28,  0.53],
+            [0.44, -0.69, 0.44, -0.20],
+            [0.38, -0.33, -0.57,  0.52]
+        ]),
+        1: np.array([
+            [ 0.20,  0.26,  0.28,  0.28],
+            [ 0.56,  0.26, -0.32, -0.57],
+            [-0.45,  0.70, -0.46,  0.21],
+            [-0.37,  0.35,  0.58, -0.54]
+        ])
+    },
+    "525.06": {
+        0: np.array([
+            [0.28,  0.23,  0.25,  0.24],
+            [-0.57, -0.29, 0.25,  0.54],
+            [0.44, -0.70, 0.43, -0.19],
+            [0.38, -0.32, -0.57,  0.52]
+        ]),
+        1: np.array([
+            [ 0.20,  0.23,  0.30,  0.28],
+            [ 0.54,  0.26, -0.29, -0.59],
+            [-0.46,  0.73, -0.45,  0.19],
+            [-0.38,  0.33,  0.59, -0.52]
+        ])
+    }
+}
+
+
+
 mod_matrices_david = { 
+    "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
+                          [0.9476, -0.5615, -0.6319, -0.3653],
+                          [1.0471,  0.5569,  0.4372, -0.7102],
+                          [1.0398,  0.6294, -0.4595, 0.6237]]),
+
+            1 : np.array([[1.0505, 0.5992 , -0.6032 ,-0.5262],
+                          [1.0372, 0.6798 , 0.6194  ,0.3431],
+                          [0.9663, -0.4213, -0.4031 , 0.7268],
+                          [0.9459, -0.5206, 0.4653  ,-0.5974]])},
+
+    "525.02" : {0 : np.array([[0.9603, -0.5244,  0.6005, 0.4470],
+                              [0.9525, -0.5592, -0.6413, -0.3498],
+                              [1.0435, 0.5823 ,  0.3865, -0.7071],
+                              [1.0437, 0.6645 , -0.4272, 0.6306 ]]),
+                                
+                1 : np.array([[1.0598, 0.6811 , -0.6278, -0.4302],
+                              [1.0408, 0.6922 , 0.5852 ,  0.3614],
+                              [0.9610, -0.4278, -0.4182,  0.6859],
+                              [0.9384, -0.4984, 0.3609 , -0.6310]])},  
+
+    "525.06" : {0 : np.array([[0.9557, -0.5389,  0.5895, 0.4505],
+                              [0.9486, -0.5501, -0.6593, -0.3247],
+                              [1.0485, 0.5693 , 0.3855 , -0.7246],
+                              [1.0473, 0.6737 , -0.4148, 0.6236]]), 
+
+                1 : np.array([[1.0635, 0.6843 , -0.5910 ,-0.4638],
+                              [1.0466, 0.7028 , 0.6070  ,0.3110],
+                              [0.9570, -0.3960, -0.3864 ,0.7157],
+                              [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
+ }
+
+
+mod_matrices_david_ct = { # TBD - Jaegli
     "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
                           [0.9476, -0.5615, -0.6319, -0.3653],
                           [1.0471,  0.5569,  0.4372, -0.7102],
@@ -93,7 +173,8 @@ for filt in mod_matrices_david:
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False):
+# def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False):
+def demodulate(data, filt, dmod_matrices = "demod_matrices_david", onelambda = False, BothCams = False):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 
@@ -106,6 +187,12 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
         - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
         - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
     """
+    if dmod_matrices == 'demod_matrices':
+        dmod_matrix = demod_matrices
+    if dmod_matrices == 'demod_matrices_acampos':
+        dmod_matrix = demod_matrices_acampos
+    if dmod_matrices == 'demod_matrices_david':
+        dmod_matrix = demod_matrices_david
 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
@@ -134,8 +221,8 @@ def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = Fal
     if lcvr_mode == "vectorial":
         # Each wavelength independently
         for wl in range(nlambda):
-            dm_cam1 = np.matmul(dmod_matrices[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
-            dm_cam2 = np.matmul(dmod_matrices[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
+            dm_cam1 = np.matmul(dmod_matrix[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
+            dm_cam2 = np.matmul(dmod_matrix[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
 
             demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
             demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))

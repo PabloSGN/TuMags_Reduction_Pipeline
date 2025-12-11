@@ -94,6 +94,13 @@ level_07:
   align_rot_data_filter: "pinholes_results.csv"   # e.g. "pinholes_Fe2.02.csv"
   align_quadrants: 0
   align_order: 0
+  destretch_n_iterations: 10
+  destretch_aling_cam: 'all'
+  destretch_ngrid: 36
+  destretch_lr: 0.1
+  destretch_lambda_tt: 0.02
+  add_level_07_label: '' 
+
   # 0: Align modulations in cam 0 and then cam 1 w.r.t cam 0
   # 1: Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI)
   # 2: Align modulations in both cams, then cam 1 w.r.t cam 0 (quadrants)

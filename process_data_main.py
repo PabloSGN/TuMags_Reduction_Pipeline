@@ -36,6 +36,7 @@ from demodulation import demodulate
 from image_alignment_suit import image_alignment_affine
 from xtalk_jaeggli import fit_mueller_matrix, fit_mueller_matrix_2d,fit_mueller_matrix_2d_interference
 import pd_functions_v22 as phased
+from destretch import destretch
 
 from process_data_utils import ConfigLoader,parse_range, print_shifts_by_cam, plt_darks, format_dict_two_rows, plt_flats,plt_level
 import os
@@ -64,16 +65,18 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
      om_value = OCs[ocs]['OM']
      if cfg['process_line'] == om_value:
           logging.info(f' processing ocs: {ocs} which corresponds to {om_value} with {len(OCs[ocs]["ims"])} total images')
+          # print(OCs[ocs]['ims'])
           if len(OCs[ocs]['ims']) != obs_dict[obs_ID]['obs_size'][process_line_index]:
                logging.error(f"  >> Error. The ocs: {ocs} number of images {len(OCs[ocs]['ims'])} does not coincide with the timeline info: {obs_dict[obs_ID]['obs_size'][process_line_index]}")
-               sys.exit()
+               return
+               # sys.exit()
 
           obs_data = ih.nominal_observation(cfg['process_line'], OCs[ocs]["ims"], dc_real,modify_linearity=([1539,1540],[1.0,1.0]))
           data = obs_data.get_data()
           om_info = obs_data.get_info()  # Get observation mode info
 
           date_str = om_info["Images_headers"]["wv_0"]["M0"]["Date"].strftime("%d%m%YT%H%M%S")
-          dataid = obs_ID+"_"+cf.om_config[cfg['process_line']]["name"]+'_'+str(cf.om_config[cfg['process_line']]["Nlambda"])+"_"
+          dataid = obs_ID+"_TM_"+cf.om_config[cfg['process_line']]["name"]+'_'+str(cf.om_config[cfg['process_line']]["Nlambda"])+"_"
           filename = dataid + date_str
           extended_filename = f"{filename}_LV_0.5_v{cfg['proc_version']}.fits"
           logging.info(f' Output filename: {extended_filename}')
@@ -155,18 +158,18 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      result["center_x"] = data.shape[-1]//2
      result["center_y"] = data.shape[-2]//2
 
-     if cfg['level_07']['align_mode'] == 'fourier':
+     for i in range(wn):
+          for j in range(pn):
+               data[1, i, j] = apply_transform(
+                         data[1, i, j], 
+                         result['rotation_angle_deg'], #0.0675  #0.05192....
+                         np.array([result['translation_y'], result['translation_x']]),
+                         np.array([result["center_y"],result["center_x"]]),
+                         scale_x=result["scale_x"], scale_y=result["scale_y"], 
+                         shear_x=result["shear_x"], shear_y=result["shear_y"]
+                         )
 
-          for i in range(wn):
-               for j in range(pn):
-                    data[1, i, j] = apply_transform(
-                              data[1, i, j], 
-                              result['rotation_angle_deg'], #0.0675  #0.05192....
-                              np.array([result['translation_y'], result['translation_x']]),
-                              np.array([result["center_y"],result["center_x"]]),
-                              scale_x=result["scale_x"], scale_y=result["scale_y"], 
-                              shear_x=result["shear_x"], shear_y=result["shear_y"]
-                              )
+     if cfg['level_07']['align_mode'] == 'fourier':
 
           # dd = data.copy()
           data,shifts,_ = align_obsmode(data, acc=cfg['level_07']['align_accuracy'],
@@ -217,9 +220,12 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
           # import 
           ## destrecching to be implementes
           # We will get the shift and rot from the destrieching components and use them in 
-          # data, destretm = destretch(data,n_iterations=100,aling_cam='all',ngrid=2,lr=0.1,lambda_tt=0.02)#aling_cam='partial')
-
-          pass
+          data, _ = destretch(data,
+                              n_iterations = cfg['level_07']['destretch_n_iterations'],
+                              aling_cam=cfg['level_07']['destretch_aling_cam'],
+                              ngrid=cfg['level_07']['destretch_ngrid'],
+                              lr=cfg['level_07']['destretch_lr'],
+                              lambda_tt=cfg['level_07']['destretch_lambda_tt'])#aling_cam='partial')
 
      logging.info(f'  demodulation: ')
 
@@ -230,7 +236,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      #                cfg['output_folder']+obs_ID, 
      #                filename,
      #                '0.5','before_demod')
-     data = demodulate(data, line['line'])
+     data = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'])
      # data, data_both = demodulate(data, line['line'], BothCams=True)
 
      # plt_level(data_both, 
@@ -246,9 +252,9 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
                     cfg['output_folder']+obs_ID, 
                     filename,
                     '0.7',
-                    label = 'demodulated')
+                    label = '_'+cfg['level_07']['align_mode']+'demodulated')
 
-     out_file = input_data_filename.replace("LV_0.5", "LV_0.7")
+     out_file = input_data_filename.replace("LV_0.5", "LV_0.7"+cfg['level_07']['add_level_07_label'])
      logging.info(f' Saving filename: {out_file}')
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
@@ -675,7 +681,7 @@ if __name__ == "__main__":
 
           logging.info(f'  >> processing level 0.7 (alignment and demodulation)')
 
-          dataid = obs_ID+"_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
+          dataid = obs_ID+"_TM_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
           ext_ = f"_LV_0.5_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
@@ -725,8 +731,8 @@ if __name__ == "__main__":
           logging.info(f'  >> processing level 1.0')
           # cmatrix = cfg.mmatrix 
 
-          dataid = obs_ID+"_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
-          ext_ = f"_LV_0.7_v{cfg.proc_version}.fits"
+          dataid = obs_ID+"_TM_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
+          ext_ = f"_LV_0.7{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
           files = sorted(os.listdir(directory))
@@ -765,8 +771,8 @@ if __name__ == "__main__":
           logging.info(f'  >> processing level 1.1')
           # cmatrix = cfg.mmatrix 
 
-          dataid = obs_ID+"_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
-          ext_ = f"_LV_1.0_v{cfg.proc_version}.fits"
+          dataid = obs_ID+"_TM_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
+          ext_ = f"_LV_1.0{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
           files = sorted(os.listdir(directory))
