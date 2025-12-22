@@ -602,7 +602,11 @@ if __name__ == "__main__":
                          flat_paths = ih.get_images_paths(ff_paths[process_line_index])
                          ff_data, ff_info = compute_master_flat_field(flat_paths, dc = dc_real, verbose = True,
                                                             modify_linearity=([1539,1540],[1.0,1.0]),
-                                                            norm_roi = cfg.flat_norm_roi)#,
+                                                            norm_roi = cfg.flat_norm_roi,
+                                                            norm_method = cfg.norm_method, 
+                                                            remove_prefilter = cfg.remove_prefilter,
+                                                            pref_model = cfg.pref_model, 
+                                                            import_blueshift_guess=cfg.import_blueshift_guess)
                                                             # remove_prefilter=True,
                                                             # pref_model="prefilter_model_517.pkl")
                          np.savez(flat_output_file,ff_data=ff_data.astype(np.float32),ff_info=ff_info)
@@ -611,7 +615,11 @@ if __name__ == "__main__":
                     flat_paths = ih.get_images_paths(ff_paths[process_line_index])
                     ff_data, ff_info = compute_master_flat_field(flat_paths, dc = dc_real, verbose = True,
                                                             modify_linearity=([1539,1540],[1.0,1.0]),
-                                                            norm_roi = cfg.flat_norm_roi)#,
+                                                            norm_roi = cfg.flat_norm_roi,
+                                                            norm_method = cfg.norm_method, 
+                                                            remove_prefilter = cfg.remove_prefilter,
+                                                            pref_model = cfg.pref_model, 
+                                                            import_blueshift_guess=cfg.import_blueshift_guess)#,
                                                             # remove_prefilter=True,
                                                             # pref_model="prefilter_model_517.pkl")
                     np.savez(flat_output_file,ff_data=ff_data.astype(np.float32),ff_info=ff_info)
