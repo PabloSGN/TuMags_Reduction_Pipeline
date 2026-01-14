@@ -124,3 +124,7 @@ obs_dict = {
         "obsdata": ["D16-26560-36406"],
     },
     }
+
+
+# SUNSPOT_2 (SP8) dataset from July 14 (around 21:40–23:40 UTC) r
+

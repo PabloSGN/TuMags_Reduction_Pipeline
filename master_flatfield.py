@@ -8,12 +8,13 @@ Modified by FJBM on 2025-10-28.
 """
 
 # ------------------------------ IMPORTS ----------------------------------------- #
-from statistics import mode
+# from statistics import mode
 import numpy as np
 import time
 from tqdm import tqdm
 from scipy.interpolate import interp1d
 from scipy.optimize import minimize
+from pathlib import Path
 
 # Own modules
 import config as cf
@@ -124,9 +125,12 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
                 fname_guess='ff_om2.02_D10-4340-5619_nonorm'
             elif om=='1':  
                 fname_guess='ff_om1_D10-2740-4339_nonorm'  
-            path_guess='./'+fname_guess #Path of the npy files
-            blueshift_guess=np.load(path_guess+'_wvl_shifts_cam1.npy')
-            scale_guess=np.load(path_guess+'_scales_cam1.npy')
+
+            BASE_DIR = Path(__file__).resolve().parent
+            file_path_blueshift = BASE_DIR / f"{fname_guess}_wvl_shifts_cam1.npy"
+            blueshift_guess = np.load(file_path_blueshift)
+            file_path_scale = BASE_DIR / f"{fname_guess}_scales_cam1.npy"
+            scale_guess=np.load(file_path_scale)
 
         #Fit all pixels for the selected camera
         Nx=xf-x0
@@ -204,7 +208,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat = 4, verbose 
                     cam_shifted_average=0
                     for k in range(4):
                         #Function with interpolation information
-                        if mode=='2.02': #Add point equal to continuum
+                        if om=='2.02': #Add point equal to continuum
                             cam_data_interp=np.append(data[cam,:,k,x0+i,y0+j],data[cam,-1,k,x0+i,y0+j]) 
                         else:
                             cam_data_interp=data[cam,:,k,x0+i,y0+j]  
