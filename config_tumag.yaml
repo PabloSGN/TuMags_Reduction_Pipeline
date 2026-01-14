@@ -16,36 +16,38 @@
 # GLOBAL PARAMETERS
 # ----------------------------------------------------------
 
-obs_ID: "comm1"                   # Observation ID
-proc_version: "0.x" # con cross-talk standard
+obs_ID: "comm1"                   # Observation ID. In process_data_timelines.py (add new one if it does not exist)
+proc_version: "0.3" # con cross-talk standard
 
 process_line: "2.02"              # Observation mode to process
-process_line: "1"              # Observation mode to process
+# process_line: "1"              # Observation mode to process
 
-process_ocs: ":"                  # ":" -> all, or range, or single ID
-# process_ocs: "2:4"
-process_files: ":"                # ":" -> all, or range, or single ID
+process_ocs: "0:20"                  # ":" -> all, or range, or single ID
+process_files: "0:10"                # ":" -> all, or range, or single ID
 # process_files: 2
+process_ocs: "0:2"                  # ":" -> all, or range, or single ID
+process_files: "0"                # ":" -> all, or range, or single ID
 
-parallel: false
-max_workers: 4
+parallel: false 
+max_workers: 3
 
 tumag_data_location: "./"         # Path to Organized_files_local folder
+# Organized_files_local_folder_name: "Organized_files_TuMag_d2"
 Organized_files_local_folder_name: "Organized_files_local"
 
-output_folder: "/Volumes/TuMag_d1/reduccion/"   # Output results folder
+output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 
 
 # ----------------------------------------------------------
 # REPROCESSING OPTIONS
 # ----------------------------------------------------------
 force_redo:
-  redo_flat: false                # Recalculate flats
-  redo_dark: false                # Recalculate darks
-  level0_5: false
+  redo_flat: true                # Recalculate flats
+  redo_dark: true                # Recalculate darks
+  level0_5: true
   level0_7: false
   level1_0: false
-  level1_1: true
+  level1_1: false
 
 
 # ----------------------------------------------------------
@@ -68,9 +70,14 @@ darks_indexes:
   dark_from:
   dark_to: -2
 
-flat_norm_roi: [300, 1100, 400, 1200]
-flat_norm_roi: [250, -250, 250, -250]  # sugerido por Fbailen (toda la imagen, pero sin mascara)
+dark_file: false # npy with the dark (optinonal) 
 
+flat_file: '' #"/Volumes/TuMag_d5/reduccion/04_QSUN_QS8/D11-44410-46201_processed.npz"
+flat_norm_roi: [250, -250, 250, -250]  # sugerido por Fbailen (toda la imagen, pero sin mascara)
+import_blueshift_guess: True
+norm_method: "blueshift" # avg, mod 
+remove_prefilter: True
+pref_model: True
 
 # ----------------------------------------------------------
 # LEVEL 0.5 OPTIONS
@@ -89,30 +96,29 @@ corte: 800
 # ----------------------------------------------------------
 level_07:
   align_mode: "fourier"           # "fourier" or "destretch"
-  align_roi: [600, -600, 600, -600]
+  align_roi: [0,-1,0,-1]
   align_accuracy: 0.001
   align_rot_data_filter: "pinholes_results.csv"   # e.g. "pinholes_Fe2.02.csv"
   align_quadrants: 0
   align_order: 0
-  destretch_n_iterations: 10
-  destretch_aling_cam: 'all'
-  destretch_ngrid: 36
-  destretch_lr: 0.1
-  destretch_lambda_tt: 0.02
-  add_level_07_label: '' 
-
   # 0: Align modulations in cam 0 and then cam 1 w.r.t cam 0
   # 1: Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI)
   # 2: Align modulations in both cams, then cam 1 w.r.t cam 0 (quadrants)
-
+  destretch_n_iterations: 200
+  destretch_aling_cam: 'all'
+  destretch_ngrid: 8
+  destretch_lr: 0.1
+  destretch_lambda_tt: 0.02
+  add_level_07_label: '' #'dt' 
+  demod_matrix: 'demod_matrices_david'
 
 # ----------------------------------------------------------
 # LEVEL 1.0 OPTIONS
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "standard"         # "jaeggli" or "standard"
-  crosst_roi: [0, -1, 0, -1]      # Normalization region
-  crosst_region: [0, -1, 0, -1]   # Crosstalk calculation region
+  crosst_mode: "jaeggli"         # "jaeggli" or "standard"
+  crosst_roi: [200,-200,200,-200]      # Normalization region
+  crosst_region: [200,-200,200,-200]   # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: -1 #used -1 for standard and -2 for jaeggli
@@ -128,7 +134,7 @@ level_10:
 # ----------------------------------------------------------
 # LEVEL 1.1 OPTIONS
 # ----------------------------------------------------------
-zernike_id: "01_QSUN_Mg1" #"06_SPOT_Fe2.02_0"
+zernike_id: "01_QSUN_Fe2.02" #"06_SPOT_Fe2.02_0"
 
 
 # ----------------------------------------------------------
