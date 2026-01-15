@@ -1,4 +1,4 @@
-name: TuMag_test1
+name: TuMag
 channels:
   - conda-forge
   - https://repo.anaconda.com/pkgs/main
