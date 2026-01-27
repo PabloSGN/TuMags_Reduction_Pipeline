@@ -799,8 +799,9 @@ if __name__ == "__main__":
           # Ensure process_ocs is always a list
           if not isinstance(files, list):
                files = [files]
-
-          zk = phased.import_zernikes(cfg.zernike_id) #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
+          ######## 
+          print('Importing zernikes: ', cfg.zernike_id)
+          zk = phased.import_zernikes(cfg.zernike_id,csv_path='TuMag_PD_results_All_filters_clean.csv') #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
 
           reduce_partial = partial(
                reduce_image_1_1,

@@ -75,7 +75,7 @@ obs_dict = {
         "flats": ["D13-69245-71164","D13-72765-74044"],
         "obsdata": ["D13-66105-68456"],
     },    
-    "11_FLAR_FS1": {  
+    "11_FLAR_FS1": {  # DONE BUT gradient in Q and last wave in Mg
         "lines": ['517','525.06'],
         "obs_is": ['1','2.06'],
         "obs_size": [10*4*2,8*4*2],

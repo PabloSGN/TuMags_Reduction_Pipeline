@@ -45,8 +45,8 @@ force_redo:
   redo_flat: true                # Recalculate flats
   redo_dark: true                # Recalculate darks
   level0_5: true
-  level0_7: false
-  level1_0: false
+  level0_7: true
+  level1_0: true
   level1_1: false
 
 
