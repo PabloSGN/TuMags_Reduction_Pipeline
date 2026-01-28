@@ -156,7 +156,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      result["shear_x"] = 0.
      result["shear_y"] = 0.
      result["center_x"] = data.shape[-1]//2
-     result["center_y"] = data.shape[-2]//2
+     result["center_y"] = data.shape[-2]//2 
 
      for i in range(wn):
           for j in range(pn):
@@ -172,8 +172,13 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      if cfg['level_07']['align_mode'] == 'fourier':
 
           # dd = data.copy()
+          try:
+               verb = cfg['level_07']['align_verbose']
+          except:
+               verb = False
+
           data,shifts,_ = align_obsmode(data, acc=cfg['level_07']['align_accuracy'],
-                                               verbose=False,
+                                               verbose=verb,
                                                theta=0,
                                                filterflag=False,
                                                returnshifts=True,

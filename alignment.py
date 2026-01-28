@@ -390,6 +390,9 @@ def align_obsmode(data, acc = 0.01, verbose = False, theta = 0.0655, filterflag 
     else:
         shifts = np.zeros((nlambda, 2, 2, nmods))
 
+    if verbose:
+        plt.imshow(data[0,0,0,roi[0]:roi[1],roi[2]:roi[3]])
+        plt.show()
     err = []
     for lambd in range(nlambda):
         print(f"Aligning wavelength: {lambd + 1}/{nlambda}")
