@@ -1,144 +1,140 @@
 # ==========================================================
 # TuMags Reduction Pipeline Configuration (YAML)
 # ==========================================================
-# Example:
+# Ejecutar ejemplo:
 #   python3 ../../TuMags_Reduction_Pipeline/process_data_main.py \
 #       -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
 #
-# IMPORTANT:
-# - Parameter names must be unique (no duplicates across levels).
-# - Boolean and None keywords are lowercase: false, true, none
-# - results can be checked using python3 visor.py /Volumes/TuMag_d1/reduccion/.../file.fits
+# Notas:
+# - Nombres de parámetros únicos.
+# - booleanos y none en minúscula: true, false, none
 # ==========================================================
-
 
 # ----------------------------------------------------------
 # GLOBAL PARAMETERS
 # ----------------------------------------------------------
+obs_ID: "comm1"                    # ID de la observación (clave en process_data_timelines.py)
+proc_version: "0.3"                # Versión del procesamiento para nombres de archivo
 
-obs_ID: "comm1"                   # Observation ID. In process_data_timelines.py (add new one if it does not exist)
-proc_version: "0.3" # con cross-talk standard
+process_line: "2.02"               # Modo de observación a procesar (ver om_config en config.py)
+process_ocs: ":"                   # ":" -> todas las OCs, o rango "1:4", o índice único "3"
+process_files: ":"                 # ":" -> todos los archivos, o rango "1:6", o índice único "2"
 
-process_line: "2.02"              # Observation mode to process
-# process_line: "1"              # Observation mode to process
+parallel: false                    # true: usar procesamiento paralelo (ProcessPoolExecutor)
+max_workers: 3                     # nº de procesos si parallel = true
 
-process_ocs: "0:20"                  # ":" -> all, or range, or single ID
-process_files: "0:10"                # ":" -> all, or range, or single ID
-# process_files: 2
-process_ocs: "0:2"                  # ":" -> all, or range, or single ID
-process_files: "0"                # ":" -> all, or range, or single ID
+tumag_data_location: "./"          # Ruta base donde están los datos organizados
+Organized_files_local_folder_name: "Organized_files_local"  # Nombre de carpeta con datos organizados
 
-parallel: false 
-max_workers: 3
-
-tumag_data_location: "./"         # Path to Organized_files_local folder
-# Organized_files_local_folder_name: "Organized_files_TuMag_d2"
-Organized_files_local_folder_name: "Organized_files_local"
-
-output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
-
+output_folder: "/Volumes/TuMag_d5/reduccion/"  # Carpeta donde se escriben resultados
 
 # ----------------------------------------------------------
 # REPROCESSING OPTIONS
 # ----------------------------------------------------------
 force_redo:
-  redo_flat: true                # Recalculate flats
-  redo_dark: true                # Recalculate darks
-  level0_5: true
-  level0_7: true
-  level1_0: true
-  level1_1: false
-
+  redo_flat: true                  # true: recalcular flats aunque exista cache .npz
+  redo_dark: true                  # true: recalcular darks aunque exista cache .npz
+  level0_5: true                   # true: volver a ejecutar reducción LV_0.5
+  level0_7: true                   # true: volver a ejecutar reducción LV_0.7
+  level1_0: true                   # true: volver a ejecutar reducción LV_1.0
+  level1_1: false                  # true: volver a ejecutar reducción LV_1.1 (PD)
 
 # ----------------------------------------------------------
 # PLOTTING OPTIONS
 # ----------------------------------------------------------
 plots:
-  plot_darks: false
-  plot_flats: false
-  plot_level0_5: true
-  plot_level0_7: true
-  plot_level1_0: true
-  plot_level1_1: true
-  roi_plots: [200, -200, 200, -200]
-
+  plot_darks: false                # Generar gráficos para darks
+  plot_flats: false                # Generar gráficos para flats
+  plot_level0_5: true              # Graficar resultados LV_0.5
+  plot_level0_7: true              # Graficar resultados LV_0.7
+  plot_level1_0: true              # Graficar resultados LV_1.0
+  plot_level1_1: true              # Graficar resultados LV_1.1
+  roi_plots: [200, -200, 200, -200] # Región de interés para generación de plots [xmin,xmax,ymin,ymax]
 
 # ----------------------------------------------------------
 # DARK AND FLAT OPTIONS
 # ----------------------------------------------------------
 darks_indexes:
-  dark_from:
-  dark_to: -2
+  dark_from:                        # Índice inicial para selección de darks (None/ vacío usa heurística)
+  dark_to: -2                       # Índice final (ej. -2 = penúltimo). Define rango de darks a usar
 
-dark_file: false # npy with the dark (optinonal) 
+dark_file: false                    # Ruta a .npy con dark predefinido (false = no usar) 
 
-flat_file: '' #"/Volumes/TuMag_d5/reduccion/04_QSUN_QS8/D11-44410-46201_processed.npz"
-flat_norm_roi: [250, -250, 250, -250]  # sugerido por Fbailen (toda la imagen, pero sin mascara)
-import_blueshift_guess: True
-norm_method: "blueshift" # avg, mod 
-remove_prefilter: True
-pref_model: True
+flat_file: ''                       # Ruta a .npz con flat preprocesado (vacío = calcular)
+flat_norm_roi: [250, -250, 250, -250] # Región para normalizar el flat (xmin,xmax,ymin,ymax)
+
+import_blueshift_guess: True       # Importar estimación de blueshift (si hay) desde metadatos
+norm_method: "blueshift"           # Método de normalización: "blueshift", "avg", "mod"
+remove_prefilter: True             # Quitar respuesta del prefiltro si aplica
+pref_model: True                   # Usar modelo de prefiltro conocido (True/False)
 
 # ----------------------------------------------------------
-# LEVEL 0.5 OPTIONS
+# LEVEL 0.5 OPTIONS (preprocesado: dark/flat/crop/filter)
 # ----------------------------------------------------------
 level_05:
-  filtering: true                 # Remove high-frequency content
-  save_level_05: true             # Save processed level 0.5 data
+  filtering: true                   # Eliminar contenido de alta frecuencia (filtro espacial)
+  save_level_05: true               # Guardar archivos LV_0.5
 
-size: 2016
-centro: [973, 996]               # [size // 2 - 35, size // 2 - 12]
-corte: 800
-
+size: 2016                          # Tamaño nominal de la imagen original (pix)
+centro: [973, 996]                  # Centro (x,y) de recorte / referencia
+corte: 800                          # Tamaño del recorte final (square half-size o tamaño dependiendo del código)
 
 # ----------------------------------------------------------
-# LEVEL 0.7 OPTIONS
+# LEVEL 0.7 OPTIONS (alineamiento y demodulación)
 # ----------------------------------------------------------
 level_07:
-  align_mode: "fourier"           # "fourier" or "destretch"
-  align_roi: [0,-1,0,-1]
-  align_accuracy: 0.001
-  align_rot_data_filter: "pinholes_results.csv"   # e.g. "pinholes_Fe2.02.csv"
-  align_quadrants: 0
-  align_order: 0
-  # 0: Align modulations in cam 0 and then cam 1 w.r.t cam 0
-  # 1: Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI)
-  # 2: Align modulations in both cams, then cam 1 w.r.t cam 0 (quadrants)
-  destretch_n_iterations: 200
-  destretch_aling_cam: 'all'
-  destretch_ngrid: 8
-  destretch_lr: 0.1
-  destretch_lambda_tt: 0.02
-  add_level_07_label: '' #'dt' 
-  demod_matrix: 'demod_matrices_david'
+  align_mode: "fourier"             # "fourier" (corr. subpixel por fase) o "destretch" (mapeo local)
+  align_sequence: 1                 # Secuencia de alineado: 0 o 1 (ver doc en header original)
+    # 0: alinear modulación en ambas cámaras, luego cam1 respecto cam0
+    # 1: alinear cam1 respecto cam0 primero, luego modulación
+  align_roi: [0, -1, 0, -1]         # ROI usada para alineamiento [xmin,xmax,ymin,ymax]; -1 indica borde
+  align_accuracy: 0.001             # Exactitud objetivo del alineamiento (umbral de convergencia)
+  align_rot_data_filter: "pinholes_results.csv" # CSV con rotaciones/filtrado para interpolación (pinholes)
+  align_quadrants: 0                # Si >0, alinear por cuadrantes (división de imagen)
+  align_verbose: false              # Mostrar información de alineamiento
+
+  destretch_aling_cam: 'same'       # 'all'/'full'/'same' modo para destretch entre cámaras
+  destretch_n_iterations: 100       # Iteraciones para algoritmo destretch
+  destretch_ngrid: 4                # Resolución de la malla del destretch
+  destretch_lr: 0.1                 # Learning rate del destretch
+  destretch_lambda_tt: 0.02         # Parámetro regularizador para destretch
+
+  demod_matrix: 'demod_matrices_david_ct' # Etiqueta de matrices de demodulación
+  demod_mode: 'join'                # 'join' (demodular conjunto) o 'separate' (por cámara/serie)
+
+  add_level_07_label: 'caso19'      # Etiqueta adicional que se añade a archivos LV_0.7 (opcional)
 
 # ----------------------------------------------------------
-# LEVEL 1.0 OPTIONS
+# LEVEL 1.0 OPTIONS (normalización y corrección de crosstalk)
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "jaeggli"         # "jaeggli" or "standard"
-  crosst_roi: [200,-200,200,-200]      # Normalization region
-  crosst_region: [200,-200,200,-200]   # Crosstalk calculation region
-  crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
-  crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
-  crosst_last_wave: -1 #used -1 for standard and -2 for jaeggli
-  crosst_quadrants: 0
-  crosst_interference: 0 #8          # or 'comm1_cal.npz' file
-  mmatrix: 0
-  normalization: 0
-  plot_crosst_method: false
-  crosst_verbose: false
-  add_level_10_label: '' # '_inter8'
-
-
-# ----------------------------------------------------------
-# LEVEL 1.1 OPTIONS
-# ----------------------------------------------------------
-zernike_id: "01_QSUN_Fe2.02" #"06_SPOT_Fe2.02_0"
-
+  crosst_mode: "jaeggli"            # Método de crosstalk: "jaeggli" (ajuste avanzado) o "standard"
+  crosst_roi: [200, -200, 200, -200] # Región para normalización (intensidad)
+  crosst_region: [1, -1, 1, -1]     # Región usada para calcular crosstalk (xmin,xmax,ymin,ymax)
+  crosst_threshold: 0.01            # Umbral para detección (puede ser valor único o lista para Q,U,V)
+  crosst_intensity_threshold: 0.8   # Umbral de intensidad para evitar zonas de umbra (0 desactiva)
+  crosst_last_wave: -1              # Índice de última onda usada en cálculo (-1 o -2 según método)
+  crosst_quadrants: 0               # Si >0, calcular crosstalk por cuadrantes
+  crosst_interference: 0            # 0: no interferencia, o int (nº) o ruta a .npz con slope/intercept
+  mmatrix: 0                        # Flag/valor para forzar/usar matriz de Mueller predefinida (según implementación)
+  normalization: 0                  # Tipo de normalización aplicada (0 = default)
+  plot_crosst_method: false         # Pintar resultados intermedios del ajuste de crosstalk
+  crosst_verbose: false             # Modo detallado para crosstalk
+  add_level_10_label: ''            # Etiqueta que se añade a archivos LV_1.0 (opcional)
 
 # ----------------------------------------------------------
-# OBSERVATION MODES (REFERENCE)
+# LEVEL 1.1 OPTIONS (restauración por diversidad de fase)
+# ----------------------------------------------------------
+zernike_id: "01_QSUN_Fe2.02"        # Identificador de modo Zernike / set de calibración PD
+
+# ----- DEBUGGING OPTIONS
+debug:
+  activate: False                   # Activar modo debug (salidas adicionales / recortes)
+  zoom_center: [800, 800]           # Centro del zoom de debug (x,y)
+  zoom_size: 400                    # Tamaño del recorte de debug
+
+# ----------------------------------------------------------
+# OBSERVATION MODES (REFERENCIA)
 # ----------------------------------------------------------
 # observation_modes = {
 #     0   : "0s",
