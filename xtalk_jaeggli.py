@@ -19,7 +19,181 @@ def generate_squares(radius,divisions: int = 6):
     X,Y = np.meshgrid(square_centers, square_centers)
     return np.vstack([X.ravel(), Y.ravel()])
 
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+from scipy.stats import linregress
+
 def evaluate_crosstalk(data, verbose=False, 
+                       pthresh=0.05, png=False,
+                       n_sigma=1, ctmethod="linfit",
+                       region=[0,-1,0,-1],
+                       pthresh_intensity=0,
+                       xcomp='I'):
+    """
+    Evalúa crosstalk mediante ajuste lineal o minimización RMS.
+
+    Parámetros
+    ----------
+    data : array (4, H, W)
+        Stokes en orden [I, Q, U, V].
+    verbose : bool
+        Si True, dibuja los gráficos de dispersión y ajuste.
+    pthresh : float o iterable de 3 floats
+        - Si xcomp='I' y es escalar: selecciona píxeles con |V|/I < pthresh (Jaeggli).
+        - Si xcomp='V' y es escalar: selecciona píxeles con |V|/I >= pthresh (V fuerte).
+        - Si iterable [thr_Q, thr_U, thr_V]:
+            * xcomp='I'  -> |Q|/I < thr_Q, |U|/I < thr_U, |V|/I < thr_V (cuando thr_* != 0).
+            * xcomp='V'  -> |Q|/I < thr_Q, |U|/I < thr_U, |V|/I >= thr_V (cuando thr_* != 0).
+    png : str o bool
+        Si string, guarda las figuras con ese prefijo; si False, muestra las figuras.
+    n_sigma : float
+        Umbral de recorte sigma-clipping en el ajuste lineal.
+    ctmethod : {'linfit', 'rms'}
+        Método de ajuste: regresión lineal robusta o minimización de RMS.
+    region : [y1, y2, x1, x2]
+        Sub-región a analizar; valores negativos se interpretan como slicing Python.
+    pthresh_intensity : float
+        Umbral mínimo de intensidad I para considerar el pixel (0 = ignora).
+    xcomp : {'I', 'V'}
+        Variable independiente del ajuste:
+        - 'I': estima I->Q,U,V (comportamiento original).
+        - 'V': estima V->Q,U (nuevo modo).
+
+    Retorna
+    -------
+    intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
+        En modo xcomp='V', los términos de V se devuelven como np.nan.
+    """
+
+    # --- Utils ---
+    def minimize_rms(source, target):
+        """Encuentra 'a' que minimiza std((target - a*source)/norm), norm = mean(|target|)."""
+        norm = np.mean(np.abs(target)) + 1e-12
+        def objective(a):
+            return np.std((target - a * source) / norm)
+        result = minimize(objective, 0.0, method='BFGS',
+                          options={'maxiter': 100, 'gtol': 1e-8, 'disp': verbose})
+        return result.x[0]
+
+    def pfit(x, y, n_sigma=5):
+        slope, intercept, _, _, _ = linregress(x, y)
+        residuals = y - (slope * x + intercept)
+        mask = np.abs(residuals) < (n_sigma * np.std(residuals) + 1e-12)
+        return linregress(x[mask], y[mask])
+
+    # --- Extrae subregión y aplana ---
+    y1, y2, x1, x2 = region
+    area_of_interest = data[:, y1:y2, x1:x2].reshape(data.shape[0], -1)
+    I, Q, U, V = area_of_interest[0], area_of_interest[1], area_of_interest[2], area_of_interest[3]
+
+    # --- Máscaras de selección ---
+    eps = 1e-12
+    Q_mc = Q - np.mean(Q)
+    U_mc = U - np.mean(U)
+    V_mc = V - np.mean(V)
+
+    if np.isscalar(pthresh):
+        if xcomp == 'I':
+            # Original: regiones "no polarizadas" (V/I pequeño)
+            pmap = np.abs(V_mc) / (I + eps)
+            sel = pmap < float(pthresh)
+        elif xcomp == 'V':
+            # Nuevo: regiones con V fuerte (V/I grande)
+            pmapV = np.abs(V_mc) / (I + eps)
+            sel = pmapV >= float(pthresh)
+        else:
+            raise ValueError("xcomp debe ser 'I' o 'V'.")
+    else:
+        thr = np.asarray(pthresh, dtype=float)
+        if thr.size != 3:
+            raise ValueError("pthresh debe ser escalar o iterable de tres números (Q,U,V).")
+        pmap_q = np.abs(Q_mc) / (I + eps)
+        pmap_u = np.abs(U_mc) / (I + eps)
+        pmap_v = np.abs(V_mc) / (I + eps)
+        sel = np.ones_like(I, dtype=bool)
+        if xcomp == 'I':
+            if thr[0] != 0: sel &= (pmap_q < thr[0])
+            if thr[1] != 0: sel &= (pmap_u < thr[1])
+            if thr[2] != 0: sel &= (pmap_v < thr[2])
+        elif xcomp == 'V':
+            if thr[0] != 0: sel &= (pmap_q >= thr[0])   # Q pequeño
+            if thr[1] != 0: sel &= (pmap_u >= thr[1])   # U pequeño
+            if thr[2] != 0: sel &= (pmap_v >= thr[2])  # V grande
+        else:
+            raise ValueError("xcomp debe ser 'I' o 'V'.")
+
+    if pthresh_intensity != 0:
+        sel &= (I > pthresh_intensity)
+
+    # --- Ajustes ---
+    if xcomp == 'I':
+        X = I
+        comps = {'Q': Q, 'U': U, 'V': V}
+    else:  # xcomp == 'V' -> estimar V->Q y V->U
+        X = V
+        comps = {'Q': Q, 'U': U}
+
+    if ctmethod == "linfit":
+        # Ajuste robusto con sigma-clipping
+        results = {}
+        for name, Y in comps.items():
+            fit = pfit(X[sel], Y[sel], n_sigma)
+            results[name] = (fit.slope, fit.intercept)
+        if xcomp == 'I':
+            slope_q, intercept_q = results['Q']
+            slope_u, intercept_u = results['U']
+            slope_v, intercept_v = results['V']
+        else:
+            slope_q, intercept_q = results['Q']
+            slope_u, intercept_u = results['U']
+            slope_v, intercept_v = np.nan, np.nan
+
+    elif ctmethod == 'rms':
+        # Minimiza std((Y - a*X)/norm)
+        if xcomp == 'I':
+            slope_q = minimize_rms(X[sel], Q[sel]); intercept_q = np.mean(Q[sel]) - slope_q * np.mean(X[sel])
+            slope_u = minimize_rms(X[sel], U[sel]); intercept_u = np.mean(U[sel]) - slope_u * np.mean(X[sel])
+            slope_v = minimize_rms(X[sel], V[sel]); intercept_v = np.mean(V[sel]) - slope_v * np.mean(X[sel])
+        else:
+            slope_q = minimize_rms(X[sel], Q[sel]); intercept_q = np.mean(Q[sel]) - slope_q * np.mean(X[sel])
+            slope_u = minimize_rms(X[sel], U[sel]); intercept_u = np.mean(U[sel]) - slope_u * np.mean(X[sel])
+            slope_v, intercept_v = np.nan, np.nan
+    else:
+        raise ValueError("Invalid method. Use 'linfit' or 'rms'.")
+
+    # --- Gráficas ---
+    if verbose:
+        if xcomp == 'I':
+            fig, axes = plt.subplots(1, 3, figsize=(16, 6))
+            titles = ['Q', 'U', 'V']
+            params = [(Q, slope_q, intercept_q),
+                      (U, slope_u, intercept_u),
+                      (V, slope_v, intercept_v)]
+        else:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+            titles = ['Q', 'U']
+            params = [(Q, slope_q, intercept_q),
+                      (U, slope_u, intercept_u)]
+
+        for ax, (title, (Y, slope, intercept)) in zip(axes, zip(titles, params)):
+            ax.hexbin(X, Y, gridsize=50, cmap='inferno', mincnt=1)
+            ax.plot(X[sel], slope * X[sel] + intercept, 'g.', ms=2, alpha=0.6, label='Fit (puntos sel)')
+            ax.set_title(f'{title} vs {xcomp}')
+            ax.set_xlabel(xcomp)
+            ax.set_ylabel(title)
+            ax.legend()
+
+        plt.tight_layout()
+        if png:
+            plt.savefig(f"{png}_fit_{xcomp}.png", dpi=150)
+            plt.close()
+        else:
+            plt.show()
+
+    return intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
+
+def evaluate_crosstalk_old(data, verbose=False, 
                        pthresh=0.05, png=False,
                        n_sigma=1, ctmethod="linfit",
                        region=[0,-1,0,-1],
@@ -350,13 +524,33 @@ def fit_mueller_matrix(data,pthresh=0.02,norm=False,
             data_corrected[:,1,:,:] = data_corrected[:,1,:,:]  - sq*data_corrected[:,0,:,:]  - iq
             data_corrected[:,2,:,:] = data_corrected[:,2,:,:]  - su*data_corrected[:,0,:,:]  - iu
             data_corrected[:,3,:,:] = data_corrected[:,3,:,:]  - sv*data_corrected[:,0,:,:]  - iv
-            
+
+            print("Crosstalk I→Q: slope =", sq, ", intercept =", iq)
+            print("Crosstalk I→U: slope =", su, ", intercept =", iu)
+            print("Crosstalk I→V: slope =", sv, ", intercept =", iv)
+
+            # # V to QU
+            # input_data = np.reshape(np.einsum('lpij->pijl',data[:last_wvl]),(data.shape[1],data.shape[2],data.shape[3]*(data.shape[0]+last_wvl)))
+            # iqrv_ct = evaluate_crosstalk(input_data,verbose=True,xcomp='V',ctmethod='rms',region=region,pthresh=[0.005, 0.005, 0.02])
+
+            # (intercept_qv, intercept_uv, _,
+            # slope_qv, slope_uv, _) = iqrv_ct
+            # print("Crosstalk V→Q: slope =", slope_qv, ", intercept =", intercept_qv)
+            # print("Crosstalk V→U: slope =", slope_uv, ", intercept =", intercept_uv)
+
+            # data_corrected[:,1,:,:] = data_corrected[:,1,:,:]  - slope_qv*data_corrected[:,3,:,:]  #- intercept_qv
+            # data_corrected[:,2,:,:] = data_corrected[:,2,:,:]  - slope_uv*data_corrected[:,3,:,:]  #- intercept_uv
+                        
         else:
+            print('multiple waves in crosstalk')
             for wvli in range(data.shape[0]):
                 iq[wvli],iu[wvli],iv[wvli],sq[wvli],su[wvli],sv[wvli] = evaluate_crosstalk(data[wvli,:,:,:],verbose=verbose,pthresh=pthresh,ctmethod=ctmethod,region=region)
                 data_corrected[wvli,1,:,:] = data_corrected[wvli,1,:,:]  - sq[wvli]*data_corrected[wvli,0,:,:]  - iq[wvli]
                 data_corrected[wvli,2,:,:] = data_corrected[wvli,2,:,:]  - su[wvli]*data_corrected[wvli,0,:,:]  - iu[wvli]
                 data_corrected[wvli,3,:,:] = data_corrected[wvli,3,:,:]  - sv[wvli]*data_corrected[wvli,0,:,:]  - iv[wvli]
+
+
+
 
         return data_corrected, (iq,iu,iv,sq,su,sv)
     

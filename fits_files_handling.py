@@ -215,6 +215,7 @@ def header_generator(data, ominfo,datatype="SCIENCE"):
     for wl in ominfo["Images_headers"]:
         for pn in ominfo["Images_headers"][wl]:
             file_id = ominfo["Images_headers"][wl][pn]['image_name']
+            # print(file_id)
             dt_str = file_id.split('_0_')[0]  # '2024_07_12_09_27_29_344'
             dt = datetime.strptime(dt_str, '%Y_%m_%d_%H_%M_%S_%f')            
             h[f"{wl}_{pn}"] = dt.strftime("%d%m%YT%H%M%S.%f")

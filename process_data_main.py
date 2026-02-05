@@ -8,16 +8,25 @@
 # conda activate TuMag
 #
 # ============================= IMPORTS ===================================== #
-import sys, os, argparse, logging
-import numpy as np
-from functools import partial
-import concurrent.futures
-import multiprocessing
-import matplotlib.pyplot as plt
-import tqdm
+# import sys, os, argparse, logging
+from sys import exit
+from sys import path as syspath
+from os import path, makedirs, listdir
+from argparse import ArgumentParser
+from pathlib import Path
 
 #location of the tumag software:
-sys.path.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline")
+syspath.append("/Users/orozco/IdAdA Dropbox/David orozco suárez/Python/TuMAG_codes/TuMags_Reduction_Pipeline")
+
+import logging
+import numpy as np
+from tqdm import tqdm
+
+from functools import partial
+# import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor #, as_completed
+import multiprocessing
+# import matplotlib.pyplot as plt
 
 #loading of TuMag software needed programs
 import config as cf
@@ -27,24 +36,26 @@ from master_flatfield import compute_master_flat_field
 from image_filtering import filter_frecuencies
 from fits_files_handling import generate_fits, update_header
 from astropy.io import fits
-import pandas as pd
+from pandas import read_csv
 import re
 from datetime import datetime
 from get_rotation import interpolate_filter, apply_transform
 from alignment import align_obsmode
 from demodulation import demodulate
-from image_alignment_suit import image_alignment_affine
+# from image_alignment_suit import image_alignment_affine
 from xtalk_jaeggli import fit_mueller_matrix, fit_mueller_matrix_2d,fit_mueller_matrix_2d_interference
 import pd_functions_v22 as phased
 from destretch import destretch
 
-from process_data_utils import ConfigLoader,parse_range, print_shifts_by_cam, plt_darks, format_dict_two_rows, plt_flats,plt_level
-import os
+from process_data_utils import (ConfigLoader,parse_range, 
+                              print_shifts_by_cam, plt_darks, 
+                              plt_flats,plt_level,
+                              balance) #, format_dict_two_rows
 from process_data_timelines import obs_dict # this brings into memory timeline_names and obs_dict
 
 # Global variables
 try:
-    workspacePath = os.path.dirname(os.path.abspath(__file__))
+    workspacePath = path.dirname(path.abspath(__file__))
 except:
     workspacePath = './'
 errLogFilename = f'{workspacePath}/errors.log'
@@ -62,6 +73,7 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
           force=True  # resets logging config for each subprocess
      )
 
+     logging.info(f' processing ocs: {ocs} ........... ')
      om_value = OCs[ocs]['OM']
      if cfg['process_line'] == om_value:
           logging.info(f' processing ocs: {ocs} which corresponds to {om_value} with {len(OCs[ocs]["ims"])} total images')
@@ -109,6 +121,11 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
 
 def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
 
+     try:
+          align_sequence = cfg['level_07']['align_sequence']
+     except:
+          align_sequence = 0
+
      process_name = multiprocessing.current_process().name
      logging.basicConfig(
           level=logging.INFO,
@@ -117,7 +134,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      )
 
      logging.info(f' processing file: {input_data_filename} ')
-     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
+     filename = path.splitext(path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
      obs_ID = cfg['obs_ID']
 
      #read data
@@ -127,10 +144,10 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
 
      cn, wn, pn, xs, ys = data.shape
      roi = cfg['level_07']['align_roi']
-
-     camera_balance = np.median(data[0,0,:,roi[0]:roi[1],roi[2]:roi[3]]) / np.median(data[1,0,:,roi[0]:roi[1],roi[2]:roi[3]])
-     logging.info(f' camera balance: {camera_balance} ')
-     data[1,:,:,:,:] = data[1,:,:,:,:] * camera_balance
+ 
+     scale, gamma = balance(data[0, 0], data[1, 0], roi=roi)
+     data[1] = data[1] * scale
+     logging.info(f"Balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
 
      # Extract date and time pattern like 10072024T191616
      match = re.search(r'(\d{8}T\d{6})', input_data_filename)
@@ -177,13 +194,21 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
           except:
                verb = False
 
+          try:
+               print(cfg['debug'])
+               debug = cfg['debug']
+          except:
+               debug = False
+
+
           data,shifts,_ = align_obsmode(data, acc=cfg['level_07']['align_accuracy'],
                                                verbose=verb,
-                                               theta=0,
-                                               filterflag=False,
+                                               filter=line['line'],
                                                returnshifts=True,
                                                roi=roi,
-                                               quadrants = cfg['level_07']['align_quadrants'])
+                                               quadrants = cfg['level_07']['align_quadrants'],
+                                               align_sequence = align_sequence,
+                                               debug = debug)
 
           # data[1,0,3,:,:] = image_alignment_affine(data[0,0,3,:,:],data[1,0,3,:,:], init_params = [0., 0.1, 0.1,
           #                result["center_x"], result["center_y"], 1.0, 1.0, 0.0, 0.0])
@@ -230,25 +255,21 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
                               aling_cam=cfg['level_07']['destretch_aling_cam'],
                               ngrid=cfg['level_07']['destretch_ngrid'],
                               lr=cfg['level_07']['destretch_lr'],
-                              lambda_tt=cfg['level_07']['destretch_lambda_tt'])#aling_cam='partial')
+                              lambda_tt=cfg['level_07']['destretch_lambda_tt'],
+                              filter = line['line'])#aling_cam='partial')
 
      logging.info(f'  demodulation: ')
 
-     # filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
+     _, data_both = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'], BothCams=True)
 
-     # plt_level(data, 
-     #                cfg['plots']['roi_plots'], 
-     #                cfg['output_folder']+obs_ID, 
-     #                filename,
-     #                '0.5','before_demod')
-     data = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'])
-     # data, data_both = demodulate(data, line['line'], BothCams=True)
+     data = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'],mode=cfg['level_07']['demod_mode'])
 
-     # plt_level(data_both, 
-     #                cfg['plots']['roi_plots'], 
-     #                cfg['output_folder']+obs_ID, 
-     #                filename,
-     #                '0.5','after_demod')
+
+     plt_level(data_both, 
+                    cfg['plots']['roi_plots'], 
+                    cfg['output_folder']+obs_ID, 
+                    filename,
+                    '0.5','after_demod')
 
      # print(cfg['plots']['roi_plots'],cfg['output_folder']+obs_ID,filename)
      if cfg['plots']['plot_level0_7']:
@@ -278,7 +299,7 @@ def reduce_image_1_0(input_data_filename, cfg):
      )
 
      logging.info(f'  >> processing file: {input_data_filename} ')
-     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_0.7", "LV_1.0")))[0]
+     filename = path.splitext(path.basename(input_data_filename.replace("LV_0.7", "LV_1.0")))[0]
      obs_ID = cfg['obs_ID']
 
 
@@ -340,7 +361,7 @@ def reduce_image_1_0(input_data_filename, cfg):
      # If it's a string, try to interpret as a filepath or as an int string
      if isinstance(ci, str):
           # try file first
-          if os.path.isfile(ci):
+          if path.isfile(ci):
                arr = np.load(ci, allow_pickle=True)
                # .npz file (NpzFile) supports keys
                divisions = arr['divisions']
@@ -388,7 +409,7 @@ def reduce_image_1_0(input_data_filename, cfg):
      else:
           pass
 
-     if cfg['level_10']['crosst_mode'] == 'jaeggli':
+     if cfg['level_10']['crosst_mode'] == 'jaeggli' and cfg['level_10']['crosst_quadrants'] == 0:
           update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
           for i in range(4):
                for j in range(4):
@@ -455,7 +476,7 @@ def reduce_image_1_1(input_data_filename, cfg, zk = None):
      )
 
      logging.info(f'  >> processing file: {input_data_filename} ')
-     filename = os.path.splitext(os.path.basename(input_data_filename.replace("LV_1.0", "LV_1.1")))[0]
+     filename = path.splitext(path.basename(input_data_filename.replace("LV_1.0", "LV_1.1")))[0]
      obs_ID = cfg['obs_ID']
 
      #read data
@@ -465,7 +486,7 @@ def reduce_image_1_1(input_data_filename, cfg, zk = None):
 
      wn, pn, xs, ys = data.shape
 
-     with tqdm.tqdm(total=wn*pn) as pbar:
+     with tqdm(total=wn*pn) as pbar:
           for wl in range(wn):
                for pl in range(pn):
                     # test,_ = pd.restore_ima(data[wl,pl],
@@ -501,7 +522,7 @@ if __name__ == "__main__":
      logging.info('-----------------------------------')
      logging.info('  >> Running process_data_main ')
 
-     parser = argparse.ArgumentParser(description="Process TuMags data.")
+     parser = ArgumentParser(description="Process TuMags data.")
      parser.add_argument("-f", "--config", type=str, default="config_tumag.yaml", help="Path to config file")
      args = parser.parse_args()
 
@@ -513,6 +534,7 @@ if __name__ == "__main__":
      logging.info(f"  >> Input obs_ID: {obs_ID}")
      logging.info(f"  >> Folder data location: {cfg.tumag_data_location}")
      logging.info(f"  >> Output folder location: {cfg.output_folder}")
+     
 
      if cfg.force_redo['level0_5'] or cfg.force_redo['redo_flat'] or cfg.force_redo['redo_dark']:
 
@@ -527,16 +549,16 @@ if __name__ == "__main__":
           logging.info(f"  >> Darks: {dc_paths}, flats: {ff_paths}, obs: {obs_paths} ")
           logging.info('-----------------------------------')
           logging.info(f'  >> checking if {cfg.Organized_files_local_folder_name} exist and continuing')
-          if not os.path.exists(cfg.tumag_data_location + cfg.Organized_files_local_folder_name):
+          if not path.exists(cfg.tumag_data_location + cfg.Organized_files_local_folder_name):
                logging.error(f' >> the Organized_files_local_folder_name: {cfg.Organized_files_local_folder_name} not found')
-               sys.exit()
+               exit()
 
-          ih.Organization_folder_files = os.path.join(cfg.tumag_data_location, cfg.Organized_files_local_folder_name) 
+          ih.Organization_folder_files = path.join(cfg.tumag_data_location, cfg.Organized_files_local_folder_name) 
 
           logging.info(f'  >> checking if out folder {cfg.output_folder+obs_ID} exist and creating it if it does not')
-          if not os.path.exists(cfg.output_folder+obs_ID):
-               os.makedirs(cfg.output_folder+obs_ID)
-               os.makedirs(cfg.output_folder+obs_ID+'/pngs')
+          if not path.exists(cfg.output_folder+obs_ID):
+               makedirs(cfg.output_folder+obs_ID)
+               makedirs(cfg.output_folder+obs_ID+'/pngs')
           logging.info('-----------------------------------')
 
           # DARKS PROCESSING
@@ -545,7 +567,7 @@ if __name__ == "__main__":
           dark_output_file = cfg.output_folder+obs_ID+'/'+dc_paths+'.npz'
           logging.info(f'  >> dark output file will be: {dark_output_file}')
 
-          if os.path.exists(dark_output_file):
+          if path.exists(dark_output_file):
                logging.info(f'  >> dark output file exist.')
                if not cfg.force_redo["redo_dark"]:
                     logging.info(f'  >> loading dark')
@@ -579,10 +601,10 @@ if __name__ == "__main__":
                     logging.info(f"  >> process_line '{cfg.process_line}' found at position {process_line_index} in obs_is list.")
                else:
                     logging.error(f"  >> process_line '{cfg.process_line}' not found in obs_is list: {obs_is_list}")
-                    sys.exit()
+                    exit()
           except Exception as e:
                logging.error(f"  >> Error checking process_line in obs_is list: {e}")
-               sys.exit()
+               exit()
           # Check if cfg.process_line exists in obs_dict[obs_ID]['obs_is'] and get its position
           if cfg.flat_file:
                logging.info(f'  >> reading flat: {cfg.flat_file}')
@@ -595,7 +617,7 @@ if __name__ == "__main__":
                flat_output_file = cfg.output_folder+obs_ID+'/'+ff_paths[process_line_index]+'.npz'
                logging.info(f'  >> flat output file will be: {flat_output_file}')
 
-               if os.path.exists(flat_output_file):
+               if path.exists(flat_output_file):
                     logging.info(f'  >> flat output file exist.')
                     if not cfg.force_redo["redo_flat"]:
                          logging.info(f'  >> loading flat')
@@ -640,7 +662,7 @@ if __name__ == "__main__":
                ocs_output_file = cfg.output_folder+obs_ID+'/'+obs_ID+'_ocs.npz'
                logging.info(f'  >> ocs output file will be: {ocs_output_file}')
 
-               if os.path.exists(ocs_output_file):
+               if path.exists(ocs_output_file):
                     logging.info(f'  >> ocs output file exist.')
                     OCs = np.load(ocs_output_file,allow_pickle=True)['OCs'][()]
                else:
@@ -655,13 +677,21 @@ if __name__ == "__main__":
                logging.info(f'  >> available ocs {len(process_ocs)}')
                if len(process_ocs) == 0:
                     logging.error(f'  >> Error. No ocs found for obs_ID: {obs_ID}')
-                    sys.exit()
+                    exit()
                # process_ocs = process_ocs[parse_range(cfg.process_ocs)]
                logging.info(f'  >> process ocs {process_ocs}')
 
                process_ocs = [process_ocs[i] for i in parse_range(cfg.process_ocs,max_value = len(process_ocs)-1)]
 
                logging.info(f'  >> process ocs {process_ocs}')
+
+               # def _entry(oc, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
+               # # delega al original:
+               #      return reduce_image_0_5(
+               #           oc, OCs=OCs, cfg=cfg, dc_real=dc_real, ff_data=ff_data,
+               #           obs_ID=obs_ID, ff_paths=ff_paths, dc_paths=dc_paths,
+               #           process_line_index=process_line_index
+               #      )
 
                # Ensure process_ocs is always a list
                if not isinstance(process_ocs, list):
@@ -680,13 +710,40 @@ if __name__ == "__main__":
                     )
 
                if len(process_ocs) > 1 and cfg.parallel:
-                    with concurrent.futures.ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+
+                    # with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+                    #      futures = {
+                    #           executor.submit(
+                    #                _entry, oc, OCs, cfg_dict, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index
+                    #           ): oc
+                    #           for oc in process_ocs
+                    #      }
+                    #      for fut in as_completed(futures):
+                    #           oc = futures[fut]
+                    #           try:
+                    #                fut.result()
+                    #           except Exception:
+                    #                logging.exception(f"Falló OC={oc}")
+
+                    with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
                          executor.map(reduce_partial, process_ocs)
+
                elif len(process_ocs) > 1 and not cfg.parallel:
                     for i in process_ocs:
                          reduce_partial(i)
+                    # for oc in process_ocs:
+                    #      reduce_image_0_5(
+                    #           oc, OCs=OCs, cfg=cfg_dict, dc_real=dc_real, ff_data=ff_data,
+                    #           obs_ID=obs_ID, ff_paths=ff_paths, dc_paths=dc_paths,
+                    #           process_line_index=process_line_index
+                    #      )
                else:
                     reduce_partial(process_ocs[0])
+                    # reduce_image_0_5(
+                    #      process_ocs[0], OCs=OCs, cfg=cfg_dict, dc_real=dc_real, ff_data=ff_data,
+                    #      obs_ID=obs_ID, ff_paths=ff_paths, dc_paths=dc_paths,
+                    #      process_line_index=process_line_index
+                    # )
 
      # IF WE ARRIVED HERE, WE HAVE 0.5 and all info is in the header. The OCs are same as the fits sorted by date
      logging.info('-----------------------------------')
@@ -698,23 +755,25 @@ if __name__ == "__main__":
           ext_ = f"_LV_0.5_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
-          files_list = sorted(os.listdir(directory))
+          files_list = sorted(listdir(directory))
           files_list = [f for f in files_list if f.endswith('.fits') and not f.startswith('._')]
           files_list = [f for f in files_list if dataid in f ]
           files_list = [f for f in files_list if ext_ in f ]
-          files_list = [os.path.join(directory, f) for f in files_list]
+          files_list = [path.join(directory, f) for f in files_list]
           indices = parse_range(cfg.process_files,max_value = len(files_list)-1)
           if len(files_list) >= 1 and len(indices) <= len(files_list):
                files = [files_list[i] for i in indices]
                logging.info(f'  >> available files {len(files)}')
           if len(files_list) == 0:
                logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
-               sys.exit()
+               exit()
           if len(indices) > len(files_list):
                logging.error(f'  >> More indices than files {indices} len of file list {len(files_list)}')
-               sys.exit()
+               exit()
 
-          df = pd.read_csv(cfg.level_07['align_rot_data_filter'])  # <-- make sure the file path is correct
+          BASE_DIR = Path(__file__).resolve().parent
+          file_path_csv = BASE_DIR / f"{cfg.level_07['align_rot_data_filter']}"          
+          df = read_csv(file_path_csv)  # <-- make sure the file path is correct
           # Convert day, hour, min to a single timestamp value (minutes since start)
           df['timestamp'] = df['day'] * 1440 + df['hour'] * 60 + df['min']
 
@@ -730,7 +789,7 @@ if __name__ == "__main__":
                )
 
           if len(files) > 1 and cfg.parallel:
-               with concurrent.futures.ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+               with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
                     executor.map(reduce_partial, files)
           elif len(files) > 1 and not cfg.parallel:
                for i in files:
@@ -748,17 +807,17 @@ if __name__ == "__main__":
           ext_ = f"_LV_0.7{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
-          files = sorted(os.listdir(directory))
+          files = sorted(listdir(directory))
           files = [f for f in files if f.endswith('.fits') and not f.startswith('._')]
           files = [f for f in files if dataid in f ]
           files = [f for f in files if ext_ in f ]
-          files = [os.path.join(directory, f) for f in files]
+          files = [path.join(directory, f) for f in files]
           if len(files) > 1:
                files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files)-1)]
           logging.info(f'  >> available files {len(files)}')
           if len(files) == 0:
                logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
-               sys.exit()
+               exit()
 
           # Ensure process_ocs is always a list
           if not isinstance(files, list):
@@ -770,7 +829,7 @@ if __name__ == "__main__":
                )
 
           if len(files) > 1 and cfg.parallel:
-               with concurrent.futures.ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+               with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
                     executor.map(reduce_partial, files)
           elif len(files) > 1 and not cfg.parallel:
                for i in files:
@@ -788,25 +847,27 @@ if __name__ == "__main__":
           ext_ = f"_LV_1.0{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
-          files = sorted(os.listdir(directory))
+          files = sorted(listdir(directory))
           files = [f for f in files if f.endswith('.fits') and not f.startswith('._')]
           files = [f for f in files if dataid in f ]
           files = [f for f in files if ext_ in f ]
-          files = [os.path.join(directory, f) for f in files]
+          files = [path.join(directory, f) for f in files]
           print(files)
           if len(files) > 1:
                files = [files[i] for i in parse_range(cfg.process_files,max_value = len(files)-1)]
           logging.info(f'  >> available files {len(files)}')
           if len(files) == 0:
                logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
-               sys.exit()
+               exit()
 
           # Ensure process_ocs is always a list
           if not isinstance(files, list):
                files = [files]
           ######## 
           print('Importing zernikes: ', cfg.zernike_id)
-          zk = phased.import_zernikes(cfg.zernike_id,csv_path='TuMag_PD_results_All_filters_clean.csv') #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
+          BASE_DIR = Path(__file__).resolve().parent
+          file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"          
+          zk = phased.import_zernikes(cfg.zernike_id,csv_path=file_path_csv) #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
 
           reduce_partial = partial(
                reduce_image_1_1,
@@ -815,7 +876,7 @@ if __name__ == "__main__":
                )
 
           if len(files) > 1 and cfg.parallel:
-               with concurrent.futures.ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+               with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
                     executor.map(reduce_partial, files)
           elif len(files) > 1 and not cfg.parallel:
                for i in files:

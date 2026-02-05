@@ -6,10 +6,117 @@ Demodulation functions
 
 # ------------------------------ IMPORTS ----------------------------------------- #
 
-# Built-in libs
+import os
+import json
 import numpy as np
+import logging
 
-# ------------------------------ CONFIG ------------------------------------------ #
+# ============================================
+# PARÁMETROS 
+# ============================================
+DECIMALS = 3                 # redondeo de matrices de modulación al leer
+ROUND_DEMOD_DECIMALS = 6     # redondeo de matrices de demodulación (inversa)
+USE_PSEUDOINVERSE_FALLBACK = True  # usar pinv si la matriz no es invertible
+COND_WARN_THRESHOLD = 1e10   # umbral para advertir condición mal condicionada
+
+# ============================================
+# UTILIDADES
+# ============================================
+
+def load_matrix_rounded(path, decimals=3, shape=(4,4)):
+    """Lee una matriz desde un JSON, la convierte a np.array y redondea."""
+    with open(path, 'r') as f:
+        arr = np.array(json.load(f), dtype=float)
+    if shape is not None and arr.shape != shape:
+        raise ValueError(f"La matriz en {path} no tiene forma {shape}. Forma encontrada: {arr.shape}")
+    return np.round(arr, decimals=decimals)
+
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def module_file(filename):
+    """Ruta absoluta a un archivo incluido junto al módulo."""
+    return os.path.join(MODULE_DIR+'/CALDATA/', filename)
+
+def is_well_conditioned(A):
+    """Devuelve (condición, es_buena)."""
+    # Para 4x4, np.linalg.cond con norma 2 está bien.
+    cond = np.linalg.cond(A)
+    return cond, (not np.isnan(cond) and cond < COND_WARN_THRESHOLD)
+
+def compute_demodulation_matrices(
+        mod_matrices,
+        use_pinv_fallback=True,
+        round_decimals=6
+    ):
+    """
+    Calcula las matrices de demodulación (inversas) a partir de mod_matrices,
+    con validación, manejo de singularidades y redondeo opcional.
+
+    Parámetros:
+    -----------
+    mod_matrices : dict
+        Diccionario tipo mod_matrices_david_ct[filtro][cam] = matriz 4x4.
+    use_pinv_fallback : bool
+        Si True, usa seudoinversa cuando la matriz no es invertible.
+    round_decimals : int
+        Decimales para redondear la matriz de demodulación.
+
+    Devuelve:
+    ---------
+    demod_matrices : dict
+        Diccionario del mismo formato con las matrices inversas.
+    """
+
+    demod_matrices = {}
+
+    for filt, cams in mod_matrices.items():
+        demod_matrices[filt] = {}
+        for cam, M in cams.items():
+            # Validación de forma
+            if M.shape != (4, 4):
+                raise ValueError(f"[{filt}][{cam}] matriz de modulación no es 4x4: {M.shape}")
+
+            # Verificación de condición numérica
+            cond, ok = is_well_conditioned(M)
+            if not ok:
+                # print(f"ADVERTENCIA: [{filt}][{cam}] condición de M = {cond:.3e}")
+                pass
+            # Intento de invertir
+            try:
+                D = np.linalg.inv(M)
+            except np.linalg.LinAlgError:
+                if use_pinv_fallback:
+                    D = np.linalg.pinv(M)
+                    # print(f"INFO: [{filt}][{cam}] se usó pinv por singularidad.")
+                else:
+                    raise
+            # Redondeo final
+            D = np.round(D, decimals=round_decimals)
+
+            demod_matrices[filt][cam] = D
+
+    return demod_matrices
+
+# ============================================
+# CARGA DE MATRICES DE MODULACIÓN
+# ============================================
+
+mod_matrices_david_ct = {
+    "517": {
+        0: load_matrix_rounded(module_file('modulation_matrix_new_cam_0_mg.json'), decimals=DECIMALS),
+        1: load_matrix_rounded(module_file('modulation_matrix_new_cam_1_mg.json'), decimals=DECIMALS),
+    },
+
+    "525.02": {
+        0: load_matrix_rounded(module_file('modulation_matrix_new_cam_0_502.json'), decimals=DECIMALS),
+        1: load_matrix_rounded(module_file('modulation_matrix_new_cam_1_502.json'), decimals=DECIMALS),
+    },
+
+    "525.06": {
+        0: load_matrix_rounded(module_file('modulation_matrix_new_cam_0_506.json'), decimals=DECIMALS),
+        1: load_matrix_rounded(module_file('modulation_matrix_new_cam_1_506.json'), decimals=DECIMALS),
+    },
+}
 
 # Mean - Matrix Demodulation 
 mod_matrices = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024 
@@ -90,8 +197,6 @@ demod_matrices_acampos = {# articulo de A. Campos
     }
 }
 
-
-
 mod_matrices_david = { 
     "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
                           [0.9476, -0.5615, -0.6319, -0.3653],
@@ -124,57 +229,48 @@ mod_matrices_david = {
                               [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
  }
 
+# ============================================
+# CONSTRUCCIÓN DE MATRICES DE DEMODULACIÓN
+# ============================================
 
-mod_matrices_david_ct = { # TBD - Jaegli
-    "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
-                          [0.9476, -0.5615, -0.6319, -0.3653],
-                          [1.0471,  0.5569,  0.4372, -0.7102],
-                          [1.0398,  0.6294, -0.4595, 0.6237]]),
-
-            1 : np.array([[1.0505, 0.5992 , -0.6032 ,-0.5262],
-                          [1.0372, 0.6798 , 0.6194  ,0.3431],
-                          [0.9663, -0.4213, -0.4031 , 0.7268],
-                          [0.9459, -0.5206, 0.4653  ,-0.5974]])},
-
-    "525.02" : {0 : np.array([[0.9603, -0.5244,  0.6005, 0.4470],
-                              [0.9525, -0.5592, -0.6413, -0.3498],
-                              [1.0435, 0.5823 ,  0.3865, -0.7071],
-                              [1.0437, 0.6645 , -0.4272, 0.6306 ]]),
-                                
-                1 : np.array([[1.0598, 0.6811 , -0.6278, -0.4302],
-                              [1.0408, 0.6922 , 0.5852 ,  0.3614],
-                              [0.9610, -0.4278, -0.4182,  0.6859],
-                              [0.9384, -0.4984, 0.3609 , -0.6310]])},  
-
-    "525.06" : {0 : np.array([[0.9557, -0.5389,  0.5895, 0.4505],
-                              [0.9486, -0.5501, -0.6593, -0.3247],
-                              [1.0485, 0.5693 , 0.3855 , -0.7246],
-                              [1.0473, 0.6737 , -0.4148, 0.6236]]), 
-
-                1 : np.array([[1.0635, 0.6843 , -0.5910 ,-0.4638],
-                              [1.0466, 0.7028 , 0.6070  ,0.3110],
-                              [0.9570, -0.3960, -0.3864 ,0.7157],
-                              [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
- }
-
-
-# Compute demodulation matrixes by inverting
-demod_matrices = {}
-for filt in mod_matrices:
-    demod_matrices[filt] = {}
-    for cam in mod_matrices[filt]:
-        demod_matrices[filt][cam] = np.linalg.inv(mod_matrices[filt][cam])
-
-demod_matrices_david = {}
-for filt in mod_matrices_david:
-    demod_matrices_david[filt] = {}
-    for cam in mod_matrices_david[filt]:
-        demod_matrices_david[filt][cam] = np.linalg.inv(mod_matrices_david[filt][cam])
-
+demod_matrices_david_ct = compute_demodulation_matrices(mod_matrices_david_ct)
+demod_matrices_david = compute_demodulation_matrices(mod_matrices_david)
+demod_matrices = compute_demodulation_matrices(mod_matrices)
+mod_matrices_acampos = compute_demodulation_matrices(demod_matrices_acampos)
 # ------------------------------  CODE  ------------------------------------------ # 
 
-# def demodulate(data, filt, dmod_matrices = demod_matrices_david, onelambda = False, BothCams = False):
-def demodulate(data, filt, dmod_matrices = "demod_matrices_david", onelambda = False, BothCams = False):
+
+def demodulate_joint(imgs_cam1, imgs_cam2, M1, M2, weights=None):
+    """
+    imgs_cam1, imgs_cam2 : (4, X, Y) frames modulados (ya alineados y balanceados)
+    M1, M2 : (4,4) matrices de modulación por λ (filas: [1, a, b, c])
+    weights : None o array (8,) o (8,8) -> ponderación por estado/cámara
+
+    Devuelve:
+      S : (4, X, Y)  (I,Q,U,V) conjunta (dual-beam)
+    """
+    X, Y = imgs_cam1.shape[1:]
+    F1 = imgs_cam1.reshape(4, -1)  # (4, N)
+    F2 = imgs_cam2.reshape(4, -1)  # (4, N)
+    Fstack = np.vstack([F1, F2])   # (8, N)
+
+    Mstack = np.vstack([M1, M2])   # (8,4)
+
+    if weights is None:
+        D = np.linalg.pinv(Mstack)  # (4,8)
+    else:
+        # pesos diagonales (8,) o matriz completa (8,8)
+        if weights.ndim == 1:
+            W = np.diag(weights)
+        else:
+            W = weights
+        MtW = Mstack.T @ W
+        D = np.linalg.inv(MtW @ Mstack) @ MtW  # (4,8)
+
+    Sout = D @ Fstack  # (4, N)
+    return Sout.reshape(4, X, Y)
+
+def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda = False, BothCams = False, mode = 'separate'):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 
@@ -187,12 +283,20 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david", onelambda = F
         - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
         - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
     """
+
     if dmod_matrices == 'demod_matrices':
         dmod_matrix = demod_matrices
+        mod_matrix = mod_matrices
     if dmod_matrices == 'demod_matrices_acampos':
         dmod_matrix = demod_matrices_acampos
+        mod_matrix = mod_matrices
     if dmod_matrices == 'demod_matrices_david':
         dmod_matrix = demod_matrices_david
+        mod_matrix = mod_matrices_david
+    if dmod_matrices == 'demod_matrices_david_ct':
+        dmod_matrix = demod_matrices_david_ct
+        mod_matrix = mod_matrices_david_ct
+
 
     if onelambda:
         data = data[:, np.newaxis] # To allow for only one lamdba.
@@ -209,7 +313,7 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david", onelambda = F
     else:
         raise Exception(f"Expected 2 or 4 modulations but got: {nmods}.")
     #  if verbose:
-    print(f"Using {lcvr_mode} demodulation scheme")
+    logging.info(f"Using {lcvr_mode} demodulation scheme")
 
     # All wavelengths
     size = np.shape(data)[-1]
@@ -220,14 +324,25 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david", onelambda = F
     # print(dmod_matrices[filt][1])
     if lcvr_mode == "vectorial":
         # Each wavelength independently
-        for wl in range(nlambda):
-            dm_cam1 = np.matmul(dmod_matrix[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
-            dm_cam2 = np.matmul(dmod_matrix[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
 
-            demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
-            demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
-        
-            dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
+        if mode == 'join':
+
+            for wl in range(nlambda):
+                S = demodulate_joint(data[0, wl, :], data[1, wl, :], mod_matrix[filt][0], mod_matrix[filt][1])
+                dual_beam[wl] = S
+                demod[0, wl] = S  # si quieres replicar como "ambas cámaras = dual-beam"
+                demod[1, wl] = S
+
+        if mode == 'separate':
+
+            for wl in range(nlambda):
+                dm_cam1 = np.matmul(dmod_matrix[filt][0], np.reshape(data[0, wl, :], (4, size * size)))
+                dm_cam2 = np.matmul(dmod_matrix[filt][1], np.reshape(data[1, wl, :], (4, size * size)))
+
+                demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
+                demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
+            
+                dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
 
     elif lcvr_mode == "longitudinal":
         # Each wavelength independently
@@ -254,29 +369,3 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david", onelambda = F
         else:
             return dual_beam
 
-
-def demodulate_quadrants(data, nlambda, nmods, filt, nquads = 16, Np_quad = 354):
-    """
-    Function to perform the demodulation of the observation mode separated in quadrants. 
-    Inputs: 
-        - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
-        - nlambda (int): Number of wavelengths
-        - nmods (int) : Number of modulations
-        - filt (str) : Filter to demodulate (517, 525.02 or 525.06)
-        - nquads (int, default : 16) : Number of quadrants
-        - Np_quad (int, defaulr : 354) : Pixel soize of quadrant
-    Outputs:
-        - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
-        - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
-    """
-
-    demod = np.zeros((2, nlambda, nmods, nquads, Np_quad, Np_quad))
-    dual = np.zeros((nlambda, nmods, nquads, Np_quad, Np_quad))
-
-    for quad in range(nquads):
-
-        du, dem = demodulate(data[:, :, :, quad], nmods, nlambda, filt)
-        demod[:, :, :, quad] = dem
-        dual[:, :, quad] = du
-
-    return dual, demod

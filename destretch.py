@@ -15,9 +15,15 @@ import torchmfbd
 import torch
 import gc
 
+# Own functions
+from demodulation import demodulate
+from demodulation import mod_matrices_david_ct as mod_matrices
+from process_data_utils import balance
+from alignment import compute_pseudo_images_leastsq
+import logging
 
 def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6,
-            n_iterations=200, lambda_tt=0.01,aling_cam='partial'):
+            n_iterations=200, lambda_tt=0.01,aling_cam='partial', filter = filter):
     """
     Aligns modulations and camera data using the `torchmfbd` package.
 
@@ -64,23 +70,15 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
     if len(data.shape) == 4:
         data = data[:, np.newaxis] # To allow for only one lamdba.
     elif len(data.shape) == 5:
-        print('data shape is correct')
+        logging.info('data shape is correct')
     elif len(data.shape) == 3:
-        print('data shape is for serie option')
+        logging.info('data shape is for serie option')
     else:
         raise ValueError("Data must be of shape (Ncams, Nlambda, Nmods, Nx, Ny) or (Ncams, Nmods, Nx, Ny)")
     
-    # if filterflag:
-    #     data = filter_frecuencies(data, verbose=verbose)
-
-    # for the aligment between cameras, it is best to balance the intensities before
-# camera_balance = np.median(d1[0,0,:,size:-size,size:-size]) / np.median(d1[1,0,:,size:-size,size:-size])
-# print('camera balance', camera_balance)
-
-    # for lambd in range(1):
-    if aling_cam == 'full' or aling_cam == 'partial':
+    if aling_cam == 'full':
         for lambd in range(data.shape[1]):
-            print('aligning lambda', lambd)
+            logging.info('aligning lambda', lambd)
 
             #align modulations
             # first thing to do is move data to gpu memory
@@ -119,130 +117,110 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
             data[0,lambd] = warped_cam0_frames[0, 0].detach().cpu().numpy()
             data[1,lambd] = warped_cam1_frames[0, 0].detach().cpu().numpy()
 
-        # now between the cameras
 
-            # two optians, all four (2 to 2) or just m1 and apply to the rest 
-            if aling_cam=='full':
-                # dm0m_0 = torch.tensor(data[0,lambd,0,:,:].astype('float32'))  # (x, y)
-                # dm1m_0 = torch.tensor(data[1,lambd,0,:,:].astype('float32'))  # (x, y)
-                # dm0m_1 = torch.tensor(data[0,lambd,1,:,:].astype('float32'))  # (x, y)
-                # dm1m_1 = torch.tensor(data[1,lambd,1,:,:].astype('float32'))  # (x, y)
-                # dm0m_2 = torch.tensor(data[0,lambd,2,:,:].astype('float32'))  # (x, y)
-                # dm1m_2 = torch.tensor(data[1,lambd,2,:,:].astype('float32'))  # (x, y)
-                # dm0m_3 = torch.tensor(data[0,lambd,3,:,:].astype('float32'))  # (x, y)
-                # dm1m_3 = torch.tensor(data[1,lambd,3,:,:].astype('float32'))  # (x, y)
-
-                # dm_stack_0 = torch.stack([dm0m_0, dm1m_0], dim=0).unsqueeze(0).unsqueeze(0)
-                # dm_stack_1 = torch.stack([dm0m_1, dm1m_1], dim=0).unsqueeze(0).unsqueeze(0)
-                # dm_stack_2 = torch.stack([dm0m_2, dm1m_2], dim=0).unsqueeze(0).unsqueeze(0)
-                # dm_stack_3 = torch.stack([dm0m_3, dm1m_3], dim=0).unsqueeze(0).unsqueeze(0)
-
-                # warped_mod0, _ = torchmfbd.destretch(
-                #     dm_stack_0,
-                #     ngrid=ngrid,
-                #     lr=lr,
-                #     reference_frame=reference_frame,
-                #     border=border,
-                #     n_iterations=n_iterations,
-                #     lambda_tt=lambda_tt,
-                # )
-                # warped_mod1, _ = torchmfbd.destretch(
-                #     dm_stack_1,
-                #     ngrid=ngrid,
-                #     lr=lr,
-                #     reference_frame=reference_frame,
-                #     border=border,
-                #     n_iterations=n_iterations,
-                #     lambda_tt=lambda_tt,
-                # )
-                # warped_mod2, _ = torchmfbd.destretch(
-                #     dm_stack_2,
-                #     ngrid=ngrid,
-                #     lr=lr,
-                #     reference_frame=reference_frame,
-                #     border=border,
-                #     n_iterations=n_iterations,
-                #     lambda_tt=lambda_tt,
-                # )
-                # warped_mod3, _ = torchmfbd.destretch(
-                #     dm_stack_3,
-                #     ngrid=ngrid,
-                #     lr=lr,
-                #     reference_frame=reference_frame,
-                #     border=border,
-                #     n_iterations=n_iterations,
-                #     lambda_tt=lambda_tt,
-                # )
-
-                # data[:,lambd,0,:,:] = warped_mod0.detach().cpu().numpy()
-                # data[:,lambd,1,:,:] = warped_mod1.detach().cpu().numpy()
-                # data[:,lambd,2,:,:] = warped_mod2.detach().cpu().numpy()
-                # data[:,lambd,3,:,:] = warped_mod3.detach().cpu().numpy()
-
-                for m in range(4):
-                    dm0 = torch.tensor(data[0, lambd, m].astype('float32'))
-                    dm1 = torch.tensor(data[1, lambd, m].astype('float32'))
-                    dm_stack = torch.stack([dm0, dm1], dim=0).unsqueeze(0).unsqueeze(0)
-
-                    warped_mod, _ = torchmfbd.destretch(
-                        dm_stack, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
-                        border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
-                    )
-
-                    data[:, lambd, m] = warped_mod[0, 0].detach().cpu().numpy()
-
-            if aling_cam=='partial':
-
-                # dm0m_0 = torch.tensor(data[0,lambd,0,:,:].astype('float32'))  # (x, y)
-                # dm1m_0 = torch.tensor(data[1,lambd,0,:,:].astype('float32'))  # (x, y)
-
-                # dm_stack_0 = torch.stack([dm0m_0, dm1m_0], dim=0).unsqueeze(0).unsqueeze(0)
-
-                # warped_mod0, distortion_map = torchmfbd.destretch(
-                #     dm_stack_0,
-                #     ngrid=ngrid,
-                #     lr=lr,
-                #     reference_frame=reference_frame,
-                #     border=border,
-                #     n_iterations=n_iterations,
-                #     lambda_tt=lambda_tt,
-                # )
-
-                # for i in range(2):
-                #     for j in range(2):
-                #         print('shifts cam= ',i,'(x,y) = (0,1) ',j,' ',distortion_map[i,j,data.shape[-1]//2,data.shape[-1]//2],distortion_map[i,j,data.shape[-1]//2,data.shape[-1]//2])
-                        
-                # data[:,lambd,0,:,:] = warped_mod0.detach().cpu().numpy()
-
-                # #apply to QUV
-                # data[:,lambd,1,:,:] = torchmfbd.apply_destretch(torch.tensor(data[:,lambd,1,:,:].astype('float32')).unsqueeze(0).unsqueeze(0), distortion_map, mode='bilinear').detach().cpu().numpy()
-                # data[:,lambd,2,:,:] = torchmfbd.apply_destretch(torch.tensor(data[:,lambd,2,:,:].astype('float32')).unsqueeze(0).unsqueeze(0), distortion_map, mode='bilinear').detach().cpu().numpy()
-                # data[:,lambd,3,:,:] = torchmfbd.apply_destretch(torch.tensor(data[:,lambd,3,:,:].astype('float32')).unsqueeze(0).unsqueeze(0), distortion_map, mode='bilinear').detach().cpu().numpy()
-
-                dm0 = torch.tensor(data[0, lambd, 0].astype('float32'))
-                dm1 = torch.tensor(data[1, lambd, 0].astype('float32'))
+            for m in range(4):
+                dm0 = torch.tensor(data[0, lambd, m].astype('float32'))
+                dm1 = torch.tensor(data[1, lambd, m].astype('float32'))
                 dm_stack = torch.stack([dm0, dm1], dim=0).unsqueeze(0).unsqueeze(0)
 
-                warped_mod0, distortion_map = torchmfbd.destretch(
+                warped_mod, _ = torchmfbd.destretch(
                     dm_stack, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
                     border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
                 )
 
-                for i in range(2):
-                    for j in range(2):
-                        print('shifts cam=', i, '(x,y)=', j,
-                                distortion_map[i,j,data.shape[-1]//2,data.shape[-1]//2])
+                data[:, lambd, m] = warped_mod[0, 0].detach().cpu().numpy()
 
-                data[:, lambd, 0] = warped_mod0[0, 0].detach().cpu().numpy()
+    elif aling_cam=='same':
+        for lambd in range(data.shape[1]):
+            logging.info('aligning lambda', lambd)
 
-                for mod in [1, 2, 3]:
-                    mod_data = torch.tensor(data[:, lambd, mod].astype('float32')).unsqueeze(0).unsqueeze(0)
-                    warped = torchmfbd.apply_destretch(mod_data, distortion_map, mode='bilinear')
-                    data[:, lambd, mod] = warped[0, 0].detach().cpu().numpy()
+            # =============================
+            # (1) DEMODULACIÓN DE LAS CAMARAS
+            # =============================
+            _, demod = demodulate(data[:, lambd], 
+                                filt=filter, 
+                                # dmod_matrices='demod_matrices_david',
+                                onelambda=True, 
+                                BothCams=True)
+
+            # demod tiene shape (2, 4, x, y)
+            I_cam1 = demod[0, 0]
+            I_cam2 = demod[1, 0]
+
+            scale, gamma = balance(I_cam1, I_cam2)
+            I_cam2 = I_cam2 * scale
+            logging.info(f"Balance (2D): scale={scale:.6f}, gamma={gamma:.6f}")
+
+            # =============================
+            # (2) ALINEAR CAM1 <--> CAM2 CON STOKES I
+            # =============================
+            logging.info("Global alignment between cameras using Stokes I")
+
+            dm0 = torch.tensor(I_cam1.astype('float32'))
+            dm1 = torch.tensor(I_cam2.astype('float32'))
+            dm_stack = torch.stack([dm0, dm1], dim=0).unsqueeze(0).unsqueeze(0)
+
+            _, distortion_map = torchmfbd.destretch(
+                dm_stack, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
+                border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
+            )
+
+            for i in range(2):
+                for j in range(2):
+                    print('shifts cam=', i, '(x,y)=', j,
+                            distortion_map[i,j,data.shape[-1]//2,data.shape[-1]//2])
+
+            for mod in range(4):
+                mod_data = torch.tensor(data[:, lambd, mod].astype('float32')).unsqueeze(0).unsqueeze(0)
+                warped = torchmfbd.apply_destretch(mod_data, distortion_map, mode='bilinear')
+                data[:, lambd, mod] = warped[0, 0].detach().cpu().numpy()
+
+            # =============================
+            # (3) PSEUDO-IMÁGENES POR MODULACIÓN j
+            # =============================
+            imgs_cam1 = data[0, lambd]    # (4,x,y)
+            imgs_cam2 = data[1, lambd]    # (4,x,y)
+
+            M1 = mod_matrices[filter][0]
+            M2 = mod_matrices[filter][1]
+
+            pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
+                imgs_cam1, imgs_cam2, M1, M2
+            )
+
+            for j in range(4):
+                print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
+                    f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
+
+            # =============================
+            # (4) ALINEACIÓN ENTRE MODULACIONES
+            # =============================
+            logging.info("Aligning modulations using pseudo-images...")
+
+            pseudo_imgs_tensor = torch.tensor(pseudo_imgs.astype('float32')).unsqueeze(0).unsqueeze(0)
+
+            _, distortion_map_pseudo_imgs = torchmfbd.destretch(
+                pseudo_imgs_tensor, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
+                border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
+            )
+
+            for i in range(4):
+                for j in range(2):
+                    print('shifts mod=', i, '(x,y)=', j,
+                            distortion_map_pseudo_imgs[i,j,data.shape[-1]//2,data.shape[-1]//2])
+
+
+            # =============================
+            # (5) APLICAR ESTE JITTER A AMBAS CAMARAS
+            # =============================
+            for cam in range(2):
+                mod_data = torch.tensor(data[cam, lambd, :].astype('float32')).unsqueeze(0).unsqueeze(0)
+                warped = torchmfbd.apply_destretch(mod_data, distortion_map_pseudo_imgs, mode='bilinear')
+                data[cam, lambd, :] = warped[0, 0].detach().cpu().numpy()
 
     elif aling_cam == 'all':
         for lambd in range(data.shape[1]):
-            print('aligning lambda', lambd)
+            logging.info('aligning lambda', lambd)
 
             frames =  torch.tensor(np.reshape(data[:,lambd,:,:,:],(2*data.shape[-3],data.shape[-2],data.shape[-1])).astype('float32')) 
             # add tensor dimensions
@@ -327,6 +305,6 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
 
     tac = time.time()
 
-    print(f"Alignment finished in {round(tac - tic, 3)} s.")
+    logging.info(f"Alignment finished in {round(tac - tic, 3)} s.")
 
     return data, destretch_pars
