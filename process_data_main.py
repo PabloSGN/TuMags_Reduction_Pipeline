@@ -40,7 +40,7 @@ from pandas import read_csv
 import re
 from datetime import datetime
 from get_rotation import interpolate_filter, apply_transform
-from alignment import align_obsmode
+from alignment import align_obsmode, dual_align
 from demodulation import demodulate
 # from image_alignment_suit import image_alignment_affine
 from xtalk_jaeggli import fit_mueller_matrix, fit_mueller_matrix_2d,fit_mueller_matrix_2d_interference
@@ -144,8 +144,11 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
 
      cn, wn, pn, xs, ys = data.shape
      roi = cfg['level_07']['align_roi']
- 
-     scale, gamma = balance(data[0, 0], data[1, 0], roi=roi)
+     if roi[1] == -1 or roi[-1] == -1:
+          roi[1] = ys
+          roi[3] = xs
+          
+     scale, gamma = balance(data[0, 0], data[1, 0], roi=roi)#, clip_percentiles=(40,60))
      data[1] = data[1] * scale
      logging.info(f"Balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
 
@@ -210,6 +213,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
                                                align_sequence = align_sequence,
                                                debug = debug)
 
+
           # data[1,0,3,:,:] = image_alignment_affine(data[0,0,3,:,:],data[1,0,3,:,:], init_params = [0., 0.1, 0.1,
           #                result["center_x"], result["center_y"], 1.0, 1.0, 0.0, 0.0])
 
@@ -264,6 +268,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
 
      data = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'],mode=cfg['level_07']['demod_mode'])
 
+     # data = dual_align(data_both)
 
      plt_level(data_both, 
                     cfg['plots']['roi_plots'], 

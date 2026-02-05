@@ -322,6 +322,10 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
 
     # print(dmod_matrices[filt][0])
     # print(dmod_matrices[filt][1])
+    if BothCams:
+        mode = 'separate'
+        logging.info(f"Since bothcams = True, mode is forced to use separated")
+
     if lcvr_mode == "vectorial":
         # Each wavelength independently
 
@@ -330,8 +334,6 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
             for wl in range(nlambda):
                 S = demodulate_joint(data[0, wl, :], data[1, wl, :], mod_matrix[filt][0], mod_matrix[filt][1])
                 dual_beam[wl] = S
-                demod[0, wl] = S  # si quieres replicar como "ambas cámaras = dual-beam"
-                demod[1, wl] = S
 
         if mode == 'separate':
 

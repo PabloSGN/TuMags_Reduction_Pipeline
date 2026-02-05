@@ -1502,3 +1502,15 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
             return aligned[:, 0]
         else:    
             return aligned
+
+
+def dual_align(data_both):
+        
+    data_aligned = np.zeros_like(data_both[0])
+    for i in range(4):
+        for j in range(10):
+            dummy, _, _, _ = realign_subpixel(data_both[:, j, i, :, :], accu = 0.001, return_shift=True)
+            data_aligned[j,i] = dummy[1]
+    data_aligned = (data_both[0]+data_aligned)/2
+
+    return data_aligned
