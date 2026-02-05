@@ -132,7 +132,7 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
 
     elif aling_cam=='same':
         for lambd in range(data.shape[1]):
-            logging.info('aligning lambda', lambd)
+            logging.info(f'aligning lambda {lambd}')
 
             # =============================
             # (1) DEMODULACIÓN DE LAS CAMARAS
