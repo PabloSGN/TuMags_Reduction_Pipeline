@@ -3,6 +3,9 @@ import logging
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+from datetime import datetime 
+import re 
+from scipy.interpolate import interp1d
 
 class ConfigLoader:
     """ 
@@ -355,3 +358,257 @@ def balance(imgs_cam1, imgs_cam2, roi=None, eps=1e-12, clip_percentiles=(2, 98))
     scale = float(1.0 / (gamma + eps))
 
     return scale, gamma
+
+
+def interpolate_filter(df, timestamp_query): 
+    timestamps = df['timestamp'].values.astype(float)
+    results = {}
+
+#.    timestamp,angle_deg,t_y,t_x,center_y,center_x,scale_x,scale_y,shear_x,shear_y,cost
+
+
+    # Diccionario con valores por defecto por parámetro
+    default_values = {
+        "angle_deg": 0.0,
+        "t_y": 0.0,
+        "t_x": 0.0,
+        "center_y": 0.0,
+        "center_x": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "shear_x": 0.0,
+        "shear_y": 0.0,
+    }
+
+    for key in default_values:
+        if key in df.columns:
+            y = df[key].values.astype(float)
+            interp_func = interp1d(timestamps, y, kind='cubic', fill_value="extrapolate")
+            results[key] = float(interp_func(timestamp_query))
+        else:
+            results[key] = default_values[key]
+
+    return results
+
+def parse_header_time(val):
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        for fmt in ("%d%m%YT%H%M%S.%f", "%d%m%YT%H%M%S"):
+                try:
+                    return datetime.strptime(val, fmt)
+                except Exception:
+                    pass
+    try:
+        return datetime.fromtimestamp(float(val))
+    except Exception:
+        raise ValueError(f"Unsupported header time format: {val!r}")
+
+def minutes_from_dt(d):
+    return d.day * 1440 + d.hour * 60 + d.minute + d.second/60.0 + d.microsecond/60000000.0
+
+def _timestamp_from_filename(filename):
+    # Busca patrón tipo 10072024T191616
+    match = re.search(r'(\d{8}T\d{6})', filename)
+    if not match:
+        raise ValueError("No date-time pattern found in filename.")
+    
+    datetime_str = match.group(1)
+    date_obj = datetime.strptime(datetime_str, "%d%m%YT%H%M%S")
+
+    # Timestamp en minutos desde inicio de mes (tu definición)
+    timestamp = date_obj.day * 1440 + date_obj.hour * 60 + date_obj.minute  
+
+    return int(timestamp)
+
+
+def remove_freq(image, kx, ky, h):
+    ny, nx = image.shape
+    cy, cx = 800, 800
+
+    temp = np.full((1600, 1600), np.median(image))
+    temp[:ny, :nx] = image
+
+    fft = np.fft.fftshift(np.fft.fft2(temp))
+
+    for kx_, ky_ in zip(kx, ky):
+        fft[ky_ - h + cy : ky_ + h + 1 + cy,
+            kx_ - h + cx : kx_ + h + 1 + cx] = 0
+
+        fft[-ky_ - h + cy : -ky_ + h + 1 + cy,
+            -kx_ - h + cx : -kx_ + h + 1 + cx] = 0
+
+    fft = np.fft.ifft2(np.fft.ifftshift(fft))
+
+    return np.real(fft[:ny, :nx])
+
+
+from scipy.ndimage import gaussian_filter
+
+
+def correct_image_fft(
+    img,
+    kx,
+    ky,
+    h=3,
+    thr=0.003,
+    mode="stokes",
+    sigma_bg=50,
+):
+    """
+    FFT fringe correction for a single 2D image.
+
+    mode = "stokes"    -> assumes signal centered at zero, uses threshold
+    mode = "intensity" -> removes background, filters full residual (no threshold)
+    """
+
+    if mode == "intensity":
+        # remove slow background (offset)
+        offset = gaussian_filter(img, sigma=sigma_bg)
+        residual = img - offset
+
+        # filter EVERYTHING in residual
+        filtered = remove_freq(residual, kx, ky, h)
+
+        # restore background
+        return filtered + offset
+
+    else:  # "stokes"
+        low  = np.where(np.abs(img) > thr, 0, img)
+        high = img - low
+
+        return high + remove_freq(low, kx, ky, h)
+
+def correct_data_fft(
+    data,
+    kx,
+    ky,
+    h=3,
+    thr=0.003,
+    mode="stokes",
+    sigma_bg=50,
+):
+    """
+    Apply FFT fringe correction to N-D data.
+    Assumes last two axes are (y, x).
+    """
+
+    data_ = data.copy()
+    leading_shape = data_.shape[:-2]
+
+    for idx in np.ndindex(leading_shape):
+        img = data_[idx + (slice(None), slice(None))]
+
+        # # Calculate power spectrum with apodization and the inverse Fourier transform
+        # f_fft, power_spectrum = calculate_power_spectrum_with_apodization(data_[idx + (slice(None), slice(None))], window_type='hanning')
+
+        # # go back
+        # inverse_image = calculate_inverse_fourier_transform(f_fft)
+
+        # # Plot the results principales
+        # fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+        # axs[0].imshow(data_[idx + (slice(None), slice(None))], cmap='gray')
+        # axs[0].set_title('Original Image')
+        # axs[1].imshow(np.log10(power_spectrum[800-40:800+40,800-40:800+40]), cmap='gray')
+        # axs[1].set_title('Power Spectrum')
+        # axs[2].imshow(inverse_image.real, cmap='gray')
+        # axs[2].set_title('Inverse Fourier Transform')
+        # plt.show()
+        
+        data_[idx + (slice(None), slice(None))] = correct_image_fft(
+            img,
+            kx,
+            ky,
+            h=h,
+            thr=thr,
+            mode=mode,
+            sigma_bg=sigma_bg,
+        )
+
+        # # Calculate power spectrum with apodization and the inverse Fourier transform
+        # f_fft, power_spectrum = calculate_power_spectrum_with_apodization(data_[idx + (slice(None), slice(None))], window_type='hanning')
+
+        # # go back
+        # inverse_image = calculate_inverse_fourier_transform(f_fft)
+
+        # # Plot the results principales
+        # fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+        # axs[0].imshow(data_[idx + (slice(None), slice(None))], cmap='gray')
+        # axs[0].set_title('Original Image')
+        # axs[1].imshow(np.log10(power_spectrum[800-40:800+40,800-40:800+40]), cmap='gray')
+        # axs[1].set_title('Power Spectrum')
+        # axs[2].imshow(inverse_image.real, cmap='gray')
+        # axs[2].set_title('Inverse Fourier Transform')
+        # plt.show()
+
+
+    return data_
+
+
+from scipy.ndimage import maximum_filter, center_of_mass
+
+
+def calculate_power_spectrum_with_apodization(image, window_type=None):
+    """
+    Calculate the power spectrum of an image with apodization to avoid artifacts.
+
+    Parameters:
+        image (ndarray): Input 2D image array.
+        window_type (str): Type of window to apply for apodization. Default is 'hanning'.
+                          Other options include 'hamming', 'blackman', etc.
+
+    Returns:
+        power_spectrum (ndarray): 2D power spectrum of the image after applying apodization.
+    """
+    
+    # Get the size of the image
+    nx, ny = image.shape
+    
+    # Create a 1D window (Hanning by default, can be changed)
+    if window_type:
+        if window_type == 'hanning':
+            window_x = np.hanning(nx)
+            window_y = np.hanning(ny)
+        elif window_type == 'hamming':
+            window_x = np.hamming(nx)
+            window_y = np.hamming(ny)
+        elif window_type == 'blackman':
+            window_x = np.blackman(nx)
+            window_y = np.blackman(ny)
+        else:
+            raise ValueError(f"Unsupported window type: {window_type}")
+        
+        # Create the 2D window by outer product
+        window_2d = np.outer(window_x, window_y)
+        
+        # Apply the window to the image (element-wise multiplication)
+        apodized_image = image * window_2d
+    else:
+        apodized_image = np.copy(image)
+
+    # Perform 2D FFT (shift before and after for proper centering)
+    f_fft = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(apodized_image)))
+    
+    # Compute the power spectrum (magnitude squared of the FFT)
+    power_spectrum = np.abs(f_fft) ** 2
+    
+    return f_fft, power_spectrum
+
+def calculate_inverse_fourier_transform(f_fft):
+    """
+    Calculate the inverse Fourier transform of a given 2D FFT.
+
+    Parameters:
+        f_fft (ndarray): Input 2D FFT array.
+
+    Returns:
+        inverse_image (ndarray): 2D image obtained from the inverse Fourier transform.
+    """
+    
+    # Perform inverse 2D FFT (shift before and after for proper centering)
+    inverse_image = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(f_fft)))
+    
+    # Take the real part of the inverse image
+    inverse_image = np.real(inverse_image)
+    
+    return inverse_image

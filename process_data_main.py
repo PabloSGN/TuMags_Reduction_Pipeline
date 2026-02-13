@@ -37,10 +37,8 @@ from image_filtering import filter_frecuencies
 from fits_files_handling import generate_fits, update_header
 from astropy.io import fits
 from pandas import read_csv
-import re
-from datetime import datetime
-from get_rotation import interpolate_filter, apply_transform
-from alignment import align_obsmode, dual_align
+from alignment import align_obsmode
+from advanced_alignment import apply_transform, update_alignment_csv, advance_alignment
 from demodulation import demodulate
 # from image_alignment_suit import image_alignment_affine
 from xtalk_jaeggli import fit_mueller_matrix, fit_mueller_matrix_2d,fit_mueller_matrix_2d_interference
@@ -49,8 +47,9 @@ from destretch import destretch
 
 from process_data_utils import (ConfigLoader,parse_range, 
                               print_shifts_by_cam, plt_darks, 
-                              plt_flats,plt_level,
-                              balance) #, format_dict_two_rows
+                              plt_flats,plt_level, _timestamp_from_filename, 
+                              balance, parse_header_time, minutes_from_dt, 
+                              interpolate_filter, correct_image_fft) #, format_dict_two_rows
 from process_data_timelines import obs_dict # this brings into memory timeline_names and obs_dict
 
 # Global variables
@@ -119,7 +118,7 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
      
 # =======================  reduce_image_0_7   =======================
 
-def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
+def reduce_image_0_7(input_data_filename, cfg, df, line, from_label = "LV_0.5", to_label ="LV_0.7"):#ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
 
      try:
           align_sequence = cfg['level_07']['align_sequence']
@@ -134,7 +133,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      )
 
      logging.info(f' processing file: {input_data_filename} ')
-     filename = path.splitext(path.basename(input_data_filename.replace("LV_0.5", "LV_0.7")))[0]
+     filename = path.splitext(path.basename(input_data_filename.replace(from_label, to_label)))[0]
      obs_ID = cfg['obs_ID']
 
      #read data
@@ -152,42 +151,157 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
      data[1] = data[1] * scale
      logging.info(f"Balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
 
-     # Extract date and time pattern like 10072024T191616
-     match = re.search(r'(\d{8}T\d{6})', input_data_filename)
-     if not match:
-          raise ValueError("No date-time pattern found in filename.")
-
-     datetime_str = match.group(1)
-     # Parse into a datetime object
-     date_obj = datetime.strptime(datetime_str, "%d%m%YT%H%M%S")
-
-     # Compute timestamp in minutes since the start of the month (or however you define it)
-     timestamp = date_obj.day * 1440 + date_obj.hour * 60 + date_obj.minute
+     timestamp = _timestamp_from_filename(input_data_filename)
      logging.info(f'  timestamp: {timestamp} ')
-     result = interpolate_filter(df, timestamp)
-     # logging.info(f'  rotation: {result} ')
-     logging.info("rotation:\n%s", "\n".join(f"  {k:<20} : {v:.6f}" for k, v in result.items()))
 
-     if result["center_x"] == 0:
-          result["center_x"] = data.shape[-1]//2
-          result["center_y"] = data.shape[-2]//2
-     result["scale_x"] = 1.0000
-     result["scale_y"] = 1.0000
-     result["shear_x"] = 0.
-     result["shear_y"] = 0.
-     result["center_x"] = data.shape[-1]//2
-     result["center_y"] = data.shape[-2]//2 
+     try:
+          if cfg['level_07']['advanced_alignment']:
+               logging.info(f'  ADVANCE ROT MODE')
+               advanced = cfg['level_07']['advanced_alignment']
+          else:
+               advanced = False
+          if cfg['level_07']['advanced_wave']:
+               advanced_wave = cfg['level_07']['advanced_wave']
+          else:
+               advanced_wave = 0
+          if cfg['level_07']['advance_save']:
+               advance_save = cfg['level_07']['advance_save']
+          else:
+               advance_save = False
+          if cfg['level_07']['advance_overwrite']:
+               advance_overwrite = cfg['level_07']['advance_overwrite']
+          else:
+               advance_overwrite = False
+     except:
+          advanced = False
+          advanced_wave = 0
+          advance_save = False
+          advance_overwrite = False
 
-     for i in range(wn):
-          for j in range(pn):
-               data[1, i, j] = apply_transform(
-                         data[1, i, j], 
-                         result['rotation_angle_deg'], #0.0675  #0.05192....
-                         np.array([result['translation_y'], result['translation_x']]),
-                         np.array([result["center_y"],result["center_x"]]),
-                         scale_x=result["scale_x"], scale_y=result["scale_y"], 
-                         shear_x=result["shear_x"], shear_y=result["shear_y"]
-                         )
+     if cfg['debug']['filter_test']:
+          cm,wv,pl,_,_ = data.shape
+          data_ = np.copy(data)
+          if line['line'] == '525.02':
+               logging.info(f'  FILTERING NEW FREQ IN 525.02......')
+               for cam in range(cm):
+                    for wl in range(wv):
+                         for pn in range(pl):
+                              if wl == 0:
+                                   kx = (22, 22, 22, 23, 23, 23, 23, 24, 24, 24)
+                                   ky = (-3, -4, -5, -2, -3, -4, -5, -2, -3, -4)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+                              if wl >= 0 and wl <= 6:
+                                   kx = (22, 22, 22, 23, 23, 23, 23, 24, 24, 24)
+                                   ky = (3 , 4 , 5 , 2 , 3 , 4 , 5 , 2 , 3 , 4)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+                              if wl == 4:
+                                   kx = (16, 17, 18, 16, 17, 18)
+                                   ky = (-3, -3, -3, -4, -4, -4)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+                              if wl == 7:
+                                   kx = (20, 20, 20, 20, 21, 21, 21, 21, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 24, 24, 24, 24, 24)
+                                   ky = (-4, -5, -6, -7, -4, -5, -6, -7, -3, -4, -5, -6, -7, -3, -4, -5, -6, -7, -3, -4, -5, -6, -7)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+               data = np.copy(data_)
+               del data_
+          if line['line'] == '525.06':
+               pass
+          if line['line'] == '517':
+               logging.info(f'  FILTERING NEW FREQ IN 517......')
+               for cam in range(cm):
+                    for wl in range(wv):
+                         for pn in range(pl):
+                              if wl == 0:
+                                   kx = (22, 22, 22, 23, 23, 23, 24, 24, 24)
+                                   ky = (-2, -3, -4, -2, -3, -4, -2, -3, -4)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+                              if wl >= 7 and wl <= 8:
+                                   kx = (22, 22, 22, 23, 23, 23, 23, 24, 24, 24, 24)
+                                   ky = (-2, -3, -4, -2, -3, -4, -5, -2, -3, -4, -5)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+                              if wl == 9:
+                                   kx = (20, 20, 20, 20, 21, 21, 21, 21, 22, 22, 22, 22, 23, 23, 23, 23, 24, 24, 24, 24)
+                                   ky = (-2, -3, -4, -5, -2, -3, -4, -5, -2, -3, -4, -5, -2, -3, -4, -5, -2, -3, -4, -5)
+                                   data_[cam,wl,pn,:,:] = \
+                                        correct_image_fft(data[cam,wl,pn,:,:],kx=kx,ky=ky, 
+                                                          h=1,mode='intensity')
+               data = np.copy(data_)
+               del data_               # kx = (-24, -24)
+               # ky = (4, 4)
+               # data = correct_data_fft(data,kx=kx,ky=ky, h=4,mode='intensity')
+               
+     if advanced:
+
+          data, result = advance_alignment(data, line['line'], advanced_wave)
+
+          # time stamp es el que corresponda con la longitud de onda. Así mejoro la base de datos.
+
+          dt0 = parse_header_time(header[f'WV_{int(advanced_wave)}_M0'])
+          dt1 = parse_header_time(header[f'WV_{int(advanced_wave)}_M1'])
+          dt2 = parse_header_time(header[f'WV_{int(advanced_wave)}_M2'])
+          dt3 = parse_header_time(header[f'WV_{int(advanced_wave)}_M3'])
+
+          timestamp = int((minutes_from_dt(dt0) + minutes_from_dt(dt1) + minutes_from_dt(dt2) + minutes_from_dt(dt3)) / 4.0 )
+
+          if advance_save:
+
+               # Guardar resultado en CSV con UPDATE
+               MODULE_DIR = Path(__file__).resolve().parent
+               alignment_csv_filename = MODULE_DIR / "CALDATA" / "alignment_results.csv"
+               update_alignment_csv(
+                    alignment_csv_filename,
+                    timestamp,
+                    result.x,
+                    result.fun,
+                    overwrite = advance_overwrite,
+               )
+
+     else:
+
+          result = interpolate_filter(df, timestamp)
+
+          def _print_result_pretty(result, title="Resultado interpolado"):
+               print("\n" + "="*70)
+               print(f" {title}")
+               print("="*70)
+               for key, value in result.items():
+                    print(f"{key:<12} : {value}")
+               print("="*70 + "\n")
+
+          _print_result_pretty(result)
+
+          # result['rotation_angle_deg'] = 0.049591
+          # result['translation_y'] =  -1.251800
+          # result['translation_x'] =  -3.444528
+          # result["center_y"] = 792.282173
+          # result["center_x"] = 1108.208125
+          # result["scale_x"] = 0.999956
+          # result["scale_y"] = 0.999962
+          # result["shear_x"] = -0.000269
+          # result["shear_y"] = 0.000398
+
+          for i in range(wn):
+               for j in range(pn):
+                    data[1, i, j] = apply_transform(
+                              data[1, i, j], 
+                              result['angle_deg'], #0.0675  #0.05192....
+                              np.array([result['t_y'], result['t_x']]),
+                              np.array([result["center_y"],result["center_x"]]),
+                              scale_x=result["scale_x"], scale_y=result["scale_y"], 
+                              shear_x=result["shear_x"], shear_y=result["shear_y"]
+                              )
 
      if cfg['level_07']['align_mode'] == 'fourier':
 
@@ -203,27 +317,21 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
           except:
                debug = False
 
+          try:
+               print(cfg['level_07']['align_modulations'])
+               align_modulations = cfg['level_07']['align_modulations']
+          except:
+               align_modulations = True
 
-          data,shifts,_ = align_obsmode(data, acc=cfg['level_07']['align_accuracy'],
+          data,shifts,_  = align_obsmode(data, acc=cfg['level_07']['align_accuracy'],
                                                verbose=verb,
                                                filter=line['line'],
                                                returnshifts=True,
                                                roi=roi,
                                                quadrants = cfg['level_07']['align_quadrants'],
                                                align_sequence = align_sequence,
-                                               debug = debug)
-
-
-          # data[1,0,3,:,:] = image_alignment_affine(data[0,0,3,:,:],data[1,0,3,:,:], init_params = [0., 0.1, 0.1,
-          #                result["center_x"], result["center_y"], 1.0, 1.0, 0.0, 0.0])
-
-          # fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-          # im1 = axes[0].imshow(dd[0,0,3,:,:] - dd[1,0,3,:,:], clim=(-200,200))
-          # axes[0].set_title("Before Alignment")
-          # im2 = axes[1].imshow(data[0,0,3,:,:] - data[1,0,3,:,:], clim=(-200,200))
-          # axes[1].set_title("After Alignment")
-          # plt.tight_layout()
-          # plt.show()
+                                               debug = debug,
+                                               align_modulations = align_modulations)
 
           if cfg['level_07']['align_quadrants'] == 0:
                update_header(header, 'REALIGN', 1)
@@ -264,17 +372,49 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
 
      logging.info(f'  demodulation: ')
 
-     _, data_both = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'], BothCams=True)
+
+     # data[0], mmatrix = fit_mueller_matrix(data[0],  
+     #                          method = cfg['level_10']['crosst_mode'],
+     #                          norm = False,
+     #                          verbose = cfg['level_10']['crosst_verbose'],
+     #                          plots=cfg['level_10']['plot_crosst_method'], 
+     #                          last_wvl=cfg['level_10']['crosst_last_wave'],
+     #                          ctmethod='linfit',
+     #                          pthresh=cfg['level_10']['crosst_threshold'],
+     #                          region = cfg['level_10']['crosst_region'])
+     # data[1], mmatrix = fit_mueller_matrix(data[1],  
+     #                          method = cfg['level_10']['crosst_mode'],
+     #                          norm = False,
+     #                          verbose = cfg['level_10']['crosst_verbose'],
+     #                          plots=cfg['level_10']['plot_crosst_method'], 
+     #                          last_wvl=cfg['level_10']['crosst_last_wave'],
+     #                          ctmethod='linfit',
+     #                          pthresh=cfg['level_10']['crosst_threshold'],
+     #                          region = cfg['level_10']['crosst_region'])
+
+     # _, data_both = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'], BothCams=True)
+
+     # try:
+     # #     from astropy.io import fits
+
+     #      hdu = fits.PrimaryHDU(data)
+     #      hdu.header['COMMENT'] = 'I_cam1 - I_cam2 at last wavelength'
+     #      out_name = "anted_dual_bean.fits"
+     #      hdu.writeto(out_name, overwrite=True)
+     #      logging.info(f"Wrote difference FITS: {out_name}")
+     # except Exception as exc:
+     #      logging.warning(f"Could not write FITS (cam1-cam2): {exc}")
+     # plt_level(data_both, 
+     #                cfg['plots']['roi_plots'], 
+     #                cfg['output_folder']+obs_ID, 
+     #                filename,
+     #                '0.5','after_demod')
+
+     # exit()
 
      data = demodulate(data, line['line'],dmod_matrices = cfg['level_07']['demod_matrix'],mode=cfg['level_07']['demod_mode'])
 
      # data = dual_align(data_both)
-
-     plt_level(data_both, 
-                    cfg['plots']['roi_plots'], 
-                    cfg['output_folder']+obs_ID, 
-                    filename,
-                    '0.5','after_demod')
 
      # print(cfg['plots']['roi_plots'],cfg['output_folder']+obs_ID,filename)
      if cfg['plots']['plot_level0_7']:
@@ -283,9 +423,9 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
                     cfg['output_folder']+obs_ID, 
                     filename,
                     '0.7',
-                    label = '_'+cfg['level_07']['align_mode']+'demodulated')
+                    label = '_'+cfg['level_07']['align_mode']+'demodulated'+cfg['level_07']['add_level_07_label'])
 
-     out_file = input_data_filename.replace("LV_0.5", "LV_0.7"+cfg['level_07']['add_level_07_label'])
+     out_file = input_data_filename.replace(from_label, to_label+cfg['level_07']['add_level_07_label'])
      logging.info(f' Saving filename: {out_file}')
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
@@ -294,7 +434,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line):#ocs, OCs, cfg, dc_real
 
 # =======================  reduce_image_1_0   =======================
 
-def reduce_image_1_0(input_data_filename, cfg):
+def reduce_image_1_0(input_data_filename, cfg, from_label = "LV_0.7", to_label = "LV_1.0"):
 
      process_name = multiprocessing.current_process().name
      logging.basicConfig(
@@ -304,7 +444,7 @@ def reduce_image_1_0(input_data_filename, cfg):
      )
 
      logging.info(f'  >> processing file: {input_data_filename} ')
-     filename = path.splitext(path.basename(input_data_filename.replace("LV_0.7", "LV_1.0")))[0]
+     filename = path.splitext(path.basename(input_data_filename.replace(from_label, to_label)))[0]
      obs_ID = cfg['obs_ID']
 
 
@@ -414,6 +554,13 @@ def reduce_image_1_0(input_data_filename, cfg):
      else:
           pass
 
+     if cfg['plots']['plot_level1_0']:
+          plt_level(data, 
+                         cfg['plots']['roi_plots'], 
+                         cfg['output_folder']+obs_ID, 
+                         filename,
+                         '1.0','demod'+cfg['level_10']['add_level_10_label'])
+
      if cfg['level_10']['crosst_mode'] == 'jaeggli' and cfg['level_10']['crosst_quadrants'] == 0:
           update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
           for i in range(4):
@@ -423,7 +570,7 @@ def reduce_image_1_0(input_data_filename, cfg):
                     comment = f'Mueller matrix element [{i},{j}]'
                     header[key] = (val, comment)
 
-     if cfg['level_10']['crosst_mode'] == 'standard' and cfg['level_10']['crosst_quadrants'] == 0:
+     if cfg['level_10']['crosst_mode'] == 'standard' and cfg['level_10']['crosst_quadrants'] and not cfg['level_10']['crosst_last_wave'] == 0:
 
           update_header(header, 'CROSTALK', 1, after = 'ALIGMETH', comment='Was crosstalk correction applied?')
           key = f'SQ'
@@ -454,14 +601,7 @@ def reduce_image_1_0(input_data_filename, cfg):
      if cfg['level_10']['crosst_mode'] == 'standard' and cfg['level_10']['crosst_quadrants'] != 0:
           pass 
 
-     if cfg['plots']['plot_level1_0']:
-          plt_level(data, 
-                         cfg['plots']['roi_plots'], 
-                         cfg['output_folder']+obs_ID, 
-                         filename,
-                         '1.0','demod'+cfg['level_10']['add_level_10_label'])
-
-     out_file = input_data_filename.replace("LV_0.7", "LV_1.0"+cfg['level_10']['add_level_10_label'])
+     out_file = input_data_filename.replace(from_label, to_label+cfg['level_10']['add_level_10_label'])
      logging.info(f' Saving filename: {out_file}')
      with fits.open(input_data_filename) as hdu_list:
           hdu_list[0].data = data
@@ -517,6 +657,55 @@ def reduce_image_1_1(input_data_filename, cfg, zk = None):
           hdu_list[0].data = data
           hdu_list[0].header = header
           hdu_list.writeto(input_data_filename.replace("LV_1.0", "LV_1.1"), overwrite=True)
+
+# =======================  reduce_image_0_7pd   =======================
+
+def reduce_image_0_6(input_data_filename, cfg, zk = None, from_label = "LV_0.5", to_label ="LV_0.6"):
+
+     process_name = multiprocessing.current_process().name
+     logging.basicConfig(
+          level=logging.INFO,
+          format=f'%(asctime)s [{process_name}] %(levelname)s: %(message)s',
+          force=True  # resets logging config for each subprocess
+     )
+
+     logging.info(f'  >> processing file: {input_data_filename} ')
+     filename = path.splitext(path.basename(input_data_filename.replace(from_label, to_label)))[0]
+     obs_ID = cfg['obs_ID']
+
+     #read data
+     with fits.open(input_data_filename) as hdul:
+          data = hdul[0].data
+          header = hdul[0].header
+
+     cam, wn, pn, xs, ys = data.shape
+
+     with tqdm(total=wn*pn*cam) as pbar:
+          for cm in range(cam):
+               for wl in range(wn):
+                    for pl in range(pn):
+                         # test,_ = pd.restore_ima(data[wl,pl],
+                         #     zk,pd=0,low_f=0.2,noise='default',reg1=0.05,reg2=1,cobs=32.4)
+                         if pl == 0:
+                              data[cm,wl,pl],noise_filter = phased.restore_ima(data[cm,wl,pl],
+                                   zk,pd=0,low_f=0.2,reg1=0.05,reg2=1,cobs=32.4, epsilon=0.02, sigma= 5000, stray='moffat')
+                         else:
+                              data[cm,wl,pl],_ = phased.restore_ima(data[cm,wl,pl],
+                                   zk,pd=0,low_f=0.2,noise=noise_filter,reg1=0.05,reg2=1,cobs=32.4, epsilon=0.02, sigma= 5000, stray='moffat')
+
+                         pbar.update(1)
+
+     if cfg['plots']['plot_level0_5']:
+          plt_level(data, 
+                    cfg['plots']['roi_plots'], 
+                    cfg['output_folder']+obs_ID, 
+                    f"{filename}_{from_label}_v{cfg['proc_version']}",
+                    '0.5','pd')
+
+     with fits.open(input_data_filename) as hdu_list:
+          hdu_list[0].data = data
+          hdu_list[0].header = header
+          hdu_list.writeto(input_data_filename.replace(from_label, to_label), overwrite=True)
 
 # ===================================================================
 # =======================     MAIN PROGRAM    =======================
@@ -750,14 +939,84 @@ if __name__ == "__main__":
                     #      process_line_index=process_line_index
                     # )
 
-     # IF WE ARRIVED HERE, WE HAVE 0.5 and all info is in the header. The OCs are same as the fits sorted by date
      logging.info('-----------------------------------')
+     try:
+          deconvolve_first = cfg.force_redo['level0_6']
+          from_label = "LV_0.5"
+          to_label = "LV_0.6"
+     except:
+          deconvolve_first = False
+
+     if deconvolve_first:
+
+          logging.info(f'  >> Procesing level 0.6')
+          cfg.force_redo['level1_1'] = False
+
+          dataid = obs_ID+"_TM_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
+          ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
+
+          directory = cfg.output_folder+obs_ID+'/'
+          files_list = sorted(listdir(directory))
+          files_list = [f for f in files_list if f.endswith('.fits') and not f.startswith('._')]
+          files_list = [f for f in files_list if dataid in f ]
+          files_list = [f for f in files_list if ext_ in f ]
+          files_list = [path.join(directory, f) for f in files_list]
+          indices = parse_range(cfg.process_files,max_value = len(files_list)-1)
+          if len(files_list) >= 1 and len(indices) <= len(files_list):
+               files = [files_list[i] for i in indices]
+               logging.info(f'  >> available files {len(files)}')
+          if len(files_list) == 0:
+               logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+               exit()
+          if len(indices) > len(files_list):
+               logging.error(f'  >> More indices than files {indices} len of file list {len(files_list)}')
+               exit()
+
+          # Ensure process_ocs is always a list
+          if not isinstance(files, list):
+               files = [files]
+
+          print('Importing zernikes: ', cfg.zernike_id)
+          BASE_DIR = Path(__file__).resolve().parent
+          file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"          
+          zk = phased.import_zernikes(cfg.zernike_id,csv_path=file_path_csv) #06_SPOT_Fe2.02_0,06_SPOT_Mg1_0,06_SPOT_Fe2.02_1,06_SPOT_Mg1_1
+
+          reduce_partial = partial(
+               reduce_image_0_6,
+               cfg=cfg_dict,
+               zk = zk,
+               from_label = from_label, to_label = to_label
+               )
+
+          if len(files) > 1 and cfg.parallel:
+               with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+                    executor.map(reduce_partial, files)
+          elif len(files) > 1 and not cfg.parallel:
+               for i in files:
+                    reduce_partial(i)
+          else:
+               reduce_partial(files[0])
+
+     logging.info('-----------------------------------')
+
+     try:
+          if cfg.force_redo['use_pd']:
+               cfg.force_redo['level1_1'] = False
+               from_label = "LV_0.6"
+               to_label = "LV_0.8"
+          else:
+               from_label = "LV_0.5"
+               to_label = "LV_0.7"
+     except:
+          from_label = "LV_0.5"
+          to_label = "LV_0.7"
+   
      if cfg.force_redo['level0_7']:
 
           logging.info(f'  >> processing level 0.7 (alignment and demodulation)')
 
           dataid = obs_ID+"_TM_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
-          ext_ = f"_LV_0.5_v{cfg.proc_version}.fits"
+          ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
           files_list = sorted(listdir(directory))
@@ -777,11 +1036,12 @@ if __name__ == "__main__":
                exit()
 
           BASE_DIR = Path(__file__).resolve().parent
-          file_path_csv = BASE_DIR / f"{cfg.level_07['align_rot_data_filter']}"          
-          df = read_csv(file_path_csv)  # <-- make sure the file path is correct
-          # Convert day, hour, min to a single timestamp value (minutes since start)
-          df['timestamp'] = df['day'] * 1440 + df['hour'] * 60 + df['min']
+          file_path_csv = BASE_DIR / "CALDATA" / f"{cfg.level_07['align_rot_data_filter']}"          
 
+          df = read_csv(file_path_csv)  # <-- make sure the file path is correct
+          # Orden temporal
+          df = df.sort_values('timestamp').reset_index(drop=True)
+          
           # Ensure process_ocs is always a list
           if not isinstance(files, list):
                files = [files]
@@ -791,6 +1051,7 @@ if __name__ == "__main__":
                cfg=cfg_dict,
                df=df,
                line = cf.om_config[cfg.process_line],
+               from_label = from_label, to_label = to_label
                )
 
           if len(files) > 1 and cfg.parallel:
@@ -805,11 +1066,24 @@ if __name__ == "__main__":
      logging.info('-----------------------------------')
      if cfg.force_redo['level1_0']:
 
+          try:
+               if cfg.force_redo['use_pd']:
+                    cfg.force_redo['level1_1'] = False
+                    from_label = "LV_0.8"
+                    to_label = "LV_1.2"
+               else:
+                    from_label = "LV_0.7"
+                    to_label = "LV_1.0"
+
+          except:
+               from_label = "LV_0.7"
+               to_label = "LV_1.0"
+     
           logging.info(f'  >> processing level 1.0')
           # cmatrix = cfg.mmatrix 
 
           dataid = obs_ID+"_TM_"+cf.om_config[cfg.process_line]["name"]+'_'+str(cf.om_config[cfg.process_line]["Nlambda"])+"_"
-          ext_ = f"_LV_0.7{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
+          ext_ = f"_{from_label}{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
 
           directory = cfg.output_folder+obs_ID+'/'
           files = sorted(listdir(directory))
@@ -831,6 +1105,8 @@ if __name__ == "__main__":
           reduce_partial = partial(
                reduce_image_1_0,
                cfg=cfg_dict,
+               from_label = from_label,
+               to_label = to_label
                )
 
           if len(files) > 1 and cfg.parallel:

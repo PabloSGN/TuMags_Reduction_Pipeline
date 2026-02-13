@@ -18,7 +18,8 @@ from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 # Own functions
 from demodulation import demodulate
 from demodulation import mod_matrices_david_ct as mod_matrices
-from process_data_utils import balance
+from process_data_utils import balance, calculate_power_spectrum_with_apodization,calculate_inverse_fourier_transform
+from advanced_alignment import align_advance, apply_transform
 
 # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
@@ -853,7 +854,7 @@ def shift_subp(im: np.ndarray, shift=None, wrap=True, fill=0):
 
 def align_obsmode(data, acc = 0.01, verbose = False, filter = filter, 
                   onelambda = False, returnshifts = True,roi = [0,-1,0,-1], quadrants = 0,
-                  align_sequence = 0, debug = False):
+                  align_sequence = 0, debug = False, align_modulations = True):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
@@ -1056,10 +1057,32 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                 I_cam2 = I_cam2 * scale
                 logging.info(f"Balance (2D): scale={scale:.6f}, gamma={gamma:.6f}")
 
+                # def __bin_2x2(image):
+                #     h, w = image.shape
+                #     # Si el tamaño es impar, recortamos 1 píxel
+                #     h2, w2 = h - h % 2, w - w % 2
+                #     image_cropped = image[:h2, :w2]
+                #     # Binning 2x2
+                #     binned = image_cropped.reshape(h2//2, 2, w2//2, 2).mean(axis=(1,3))
+                #     # Volvemos a expandir para conservar la dimensión original
+                #     binned_full = np.kron(binned, np.ones((2,2)))
+                #     # Si se recortó, rellenamos el final con los valores del borde
+                #     if h % 2 != 0:
+                #         binned_full = np.vstack([binned_full, binned_full[-1:, :]])
+                #     if w % 2 != 0:
+                #         binned_full = np.hstack([binned_full, binned_full[:, -1:]])
+                #     return binned_full
+
+                # I_cam1 = __bin_2x2(I_cam1)
+                # I_cam2 = __bin_2x2(I_cam2)
                 # =============================
                 # (2) ALINEAR CAM1 <--> CAM2 CON STOKES I
                 # =============================
                 logging.info("Global alignment between cameras using Stokes I")
+                a,b = np.gradient(I_cam1)
+                I_cam1 = a+b
+                a,b = np.gradient(I_cam2)
+                I_cam2 = a+b
 
                 # TODO, Falta hacerlo al revés y promediar
                 _, srow_cam, scol_cam, err_I = realign_subpixel(
@@ -1070,16 +1093,9 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                 # Print numeric shifts
                 logging.info(f"Global camera shift → row={srow_cam[1]:.3f}, col={scol_cam[1]:.3f}")
 
-                # _, srow_cam, scol_cam, err_I = realign_subpixel(
-                #     np.array([I_cam2[roi[0]:roi[1], roi[2]:roi[3]],
-                #             I_cam1[roi[0]:roi[1], roi[2]:roi[3]]]),
-                #     verbose=verbose, accu=acc, return_shift=True
-                # )
-                # # Print numeric shifts
-                # print(f"Global camera shift → row={-srow_cam[1]:.3f}, col={-scol_cam[1]:.3f}")
-
                 err.append(err_I)
-
+                # srow_cam[1] = -0.6
+                # scol_cam[1] = 1.5
                 # Guardamos shifts globales
                 shifts[lambd, 1, 0, :] = srow_cam[1]   # cam2 shift
                 shifts[lambd, 1, 1, :] = scol_cam[1]
@@ -1137,87 +1153,125 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                         zoom_size=debug['zoom_size'],
                         title_prefix=f"λ={lambd} Camera alignment (M1_cam1 M1_cam2)"
                     )
+
+                            # # Calculate power spectrum with apodization and the inverse Fourier transform
+                    f_fft, power_spectrum = calculate_power_spectrum_with_apodization(imgs_after_cam1[0] - imgs_after_cam2[0], window_type='hanning')
+
+                    # go back
+                    inverse_image = calculate_inverse_fourier_transform(f_fft)
+
+                    # Plot the results principales
+                    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+                    axs[0].imshow(imgs_after_cam1[0] - imgs_after_cam2[0], cmap='gray')
+                    axs[0].set_title('Original Image')
+                    axs[1].imshow(np.log10(power_spectrum[800-40:800+40,800-40:800+40]), cmap='gray')
+                    axs[1].set_title('Power Spectrum')
+                    axs[2].imshow(inverse_image.real, cmap='gray')
+                    axs[2].set_title('Inverse Fourier Transform')
+                    plt.show()
+
                 # -------------------------------------------
 
+                if align_modulations:
+                    # =============================
+                    # (3) PSEUDO-IMÁGENES POR MODULACIÓN j
+                    # =============================
+                    imgs_cam1 = aligned[0, lambd]    # (4,x,y)
+                    imgs_cam2 = aligned[1, lambd]    # (4,x,y)
 
-                # =============================
-                # (3) PSEUDO-IMÁGENES POR MODULACIÓN j
-                # =============================
-                imgs_cam1 = aligned[0, lambd]    # (4,x,y)
-                imgs_cam2 = aligned[1, lambd]    # (4,x,y)
-
-                M1 = mod_matrices[filter][0]
-                M2 = mod_matrices[filter][1]
+                    M1 = mod_matrices[filter][0]
+                    M2 = mod_matrices[filter][1]
 
 
-                roi_norm = (roi[0], roi[1], roi[2], roi[3])
+                    roi_norm = (roi[0], roi[1], roi[2], roi[3])
 
-                pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
-                    imgs_cam1, imgs_cam2, M1, M2, roi=roi_norm
-                )
-
-                for j in range(4):
-                    print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
-                        f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
-
-                # =============================
-                # (4) ALINEACIÓN ENTRE MODULACIONES
-                # =============================
-                logging.info("Aligning modulations using pseudo-images...")
-
-                _, srow_mod, scol_mod, err_mod = realign_subpixel(
-                    pseudo_imgs[:, roi[0]:roi[1], roi[2]:roi[3]],
-                    verbose=verbose, accu=acc, return_shift=True
-                )
-                err.append(err_mod)
-
-                shifts[lambd, 0, 0] = srow_mod
-                shifts[lambd, 0, 1] = scol_mod
-
-                for j in range(4):
-                    print(f"Camera shift mod {j} → row={shifts[lambd, 0, 0][j]:.3f}, col={shifts[lambd, 0, 1][j]:.3f}")
-
-                if debug['activate']:
-                    # ===== DEBUG: Visualización del alineamiento de pseudo‑imágenes =====
-
-                    pseudo_before = pseudo_imgs.copy()
-
-                    # Construir pseudo_after aplicando el jitter
-                    pseudo_after = np.zeros_like(pseudo_imgs)
-                    for j in range(nmods):
-                        pseudo_after[j] = shift_subp(
-                            pseudo_imgs[j],
-                            shift=[srow_mod[j], scol_mod[j]],
-                            wrap=True,
-                            fill=0
-                        )
-
-                    plot_pseudo_mod_alignment(
-                        pseudo_before,
-                        pseudo_after,
-                        srow_mod, scol_mod,
-                        zoom_center=debug['zoom_center'],
-                        zoom_size=debug['zoom_size'],
-                        title_prefix=f"λ={lambd} – pseudo‑modulation alignment"
+                    pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
+                        imgs_cam1, imgs_cam2, M1, M2, roi=roi_norm
                     )
+                    # pseudo_imgs = (imgs_cam1 + imgs_cam2)/2.
+
+                    for j in range(4):
+                        print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
+                            f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
+
+                    # =============================
+                    # (4) ALINEACIÓN ENTRE MODULACIONES
+                    # =============================
+                    logging.info("Aligning modulations using pseudo-images...")
+
+                    _, srow_mod, scol_mod, err_mod = realign_subpixel(
+                        pseudo_imgs[:, roi[0]:roi[1], roi[2]:roi[3]],
+                        verbose=verbose, accu=acc, return_shift=True
+                    )
+                    err.append(err_mod)
+
+                    shifts[lambd, 0, 0] = srow_mod
+                    shifts[lambd, 0, 1] = scol_mod
+
+                    for j in range(4):
+                        print(f"Camera shift mod {j} → row={shifts[lambd, 0, 0][j]:.3f}, col={shifts[lambd, 0, 1][j]:.3f}")
+
+                    # if debug['activate']:
+                    #     # ===== DEBUG: Visualización del alineamiento de pseudo‑imágenes =====
+
+                    #     pseudo_before = pseudo_imgs.copy()
+
+                    #     # Construir pseudo_after aplicando el jitter
+                    #     pseudo_after = np.zeros_like(pseudo_imgs)
+                    #     for j in range(nmods):
+                    #         pseudo_after[j] = shift_subp(
+                    #             pseudo_imgs[j],
+                    #             shift=[srow_mod[j], scol_mod[j]],
+                    #             wrap=True,
+                    #             fill=0
+                    #         )
+
+                    #     plot_pseudo_mod_alignment(
+                    #         pseudo_before,
+                    #         pseudo_after,
+                    #         srow_mod, scol_mod,
+                    #         zoom_center=debug['zoom_center'],
+                    #         zoom_size=debug['zoom_size'],
+                    #         title_prefix=f"λ={lambd} – pseudo‑modulation alignment"
+                    #     )
 
 
-                # =============================
-                # (5) APLICAR ESTE JITTER A AMBAS CAMARAS
-                # =============================
-                for cam in range(2):
-                    for j in range(nmods):
-                        aligned[cam, lambd, j] = shift_subp(
-                            aligned[cam, lambd, j],
-                            shift=[srow_mod[j], scol_mod[j]],
-                            wrap=True,
-                            fill=0
-                        )
-
-                logging.info("Final modulation alignment applied.")
-
+                    # =============================
+                    # (5) APLICAR ESTE JITTER A AMBAS CAMARAS
+                    # =============================
+                    for cam in range(2):
+                        for j in range(nmods):
+                            aligned[cam, lambd, j] = shift_subp(
+                                aligned[cam, lambd, j],
+                                shift=[srow_mod[j], scol_mod[j]],
+                                wrap=True,
+                                fill=0
+                            )
+                    
+                    logging.info("Final modulation alignment applied.")
+                    # data = np.copy(aligned)
             else:
                 exit
+            
+            # --- Guardar FITS con I_cam1 - I_cam2 para la última longitud de onda ---
+            # try:
+            #     from astropy.io import fits
+            #     if lambd == 0:
+            #     # if lambd == nlambda-1:
+            #     # demodular las cámaras ya alineadas en la última lambda
+            #         _, dem_aligned = demodulate(aligned[:, lambd], filt=filter, onelambda=True, BothCams=True)
+            #         I_cam1 = dem_aligned[0, 0].astype(np.float32)
+            #         I_cam2 = dem_aligned[1, 0].astype(np.float32)
+            #         diff = I_cam1 - I_cam2
+
+            #         hdu = fits.PrimaryHDU(diff)
+            #         hdu.header['COMMENT'] = 'I_cam1 - I_cam2 at last wavelength'
+            #         out_name = "cam1_minus_cam2_firstlam.fits"
+            #         hdu.writeto(out_name, overwrite=True)
+            #         logging.info(f"Wrote difference FITS: {out_name}")
+            # except Exception as exc:
+            #     logging.warning(f"Could not write FITS (cam1-cam2): {exc}")
+
 
         elif quadrants > 0:
             logging.info(f"quadrants: {quadrants}")
@@ -1454,33 +1508,34 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                     for npol in range(1,nmods):
                             aligned[0, lambd,npol] = shift_subp(data[0, lambd,npol], shift=[shifts[lambd, q, 0, 0, npol], shifts[lambd, q, 0, 1, npol]], wrap=True, fill=0)
 
-                    # compute shifts for quadrants in camera 0. 
+                # compute shifts for quadrants in camera 0. 
+                for q, roises in enumerate(quadrants_roi):
+
+                    y1, y2, x1, x2 = roises
+                    patch = data[1, lambd, :, y1:y2, x1:x2]
+                    
+                    _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+
+                    shifts[lambd, q, 1, 0] = np.array(srow)
+                    shifts[lambd, q, 1, 1] = np.array(scol)
+
+                    for npol in range(1,nmods):
+                            aligned[1, lambd,npol] = shift_subp(data[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0)
+
+                # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
+                for npol in range(nmods):
                     for q, roises in enumerate(quadrants_roi):
                         y1, y2, x1, x2 = roises
-                        patch = data[1, lambd, :, y1:y2, x1:x2]
-                        
-                        _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+                        patch_1 = aligned[0, lambd, npol, y1:y2, x1:x2]
+                        patch_2 = aligned[1, lambd, npol, y1:y2, x1:x2] # ojo era rotated
 
-                        shifts[lambd, q, 1, 0] = np.array(srow)
-                        shifts[lambd, q, 1, 1] = np.array(scol)
+                        _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
+                        shifts[lambd, q, 1, 0, npol] = srow[1]
+                        shifts[lambd, q, 1, 1, npol] = scol[1]
 
-                        for npol in range(1,nmods):
-                                aligned[1, lambd,npol] = shift_subp(data[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0)
+                    # apply shifts for quadrants to camera 1. 
 
-                    # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
-                    for npol in range(nmods):
-                        for q, roises in enumerate(quadrants_roi):
-                            y1, y2, x1, x2 = roises
-                            patch_1 = aligned[0, lambd, npol, y1:y2, x1:x2]
-                            patch_2 = aligned[1, lambd, npol, y1:y2, x1:x2] # ojo era rotated
-
-                            _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
-                            shifts[lambd, q, 1, 0, npol] = srow[1]
-                            shifts[lambd, q, 1, 1, npol] = scol[1]
-
-                        # apply shifts for quadrants to camera 1. 
-
-                            aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0) # ojo era rotated
+                        aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0) # ojo era rotated
 
             else:
                 pass
