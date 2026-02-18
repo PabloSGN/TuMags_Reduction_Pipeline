@@ -10,17 +10,19 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 
 # ------------------------------ IMPORTS ----------------------------------------- #
 
-# Built-in Libs
-import time
+# Standard library
 import os
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+import time
 from datetime import datetime
 
-# Own libs
+# Third-party libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Local application modules
 from utils import read_Tumag
-from cam_linearity import modified_curve,modify_curve
+from cam_linearity import modified_curve, modify_curve
 import config as cf
 
 # Config
@@ -33,51 +35,53 @@ Organization_folder_files = os.path.join(current_dir, "Organized_files")
 class raw_header:
 
     # Transfer function for hvps commanded from counts to volts 
-    def hvps_commanded_2_volts(self, counts : int, sign : int) -> float:
+    def hvps_commanded_2_volts(self, counts: int, sign: int) -> float:
         return -1 ** (sign + 1) * (counts * 4999 / (2 ** 12 - 1))
     
     # Transfer function for hvps read from counts to volts
-    def hvps_read_2_volts(self, counts : int) -> float:
+    def hvps_read_2_volts(self, counts: int) -> float:
         return 5000 * (((2 * counts) / 4095) - 1)
     
     # Transfer function for lcvr 1 from counts to volts
-    def lcvr1_counts_2_volts(self,counts : int) -> float:
+    def lcvr1_counts_2_volts(self, counts: int) -> float:
         return counts * 0.00179439 
     
     # Transfer function for lcvr 2 from counts to volts
-    def lcvr2_counts_2_volts(self, counts : int) -> float:
+    def lcvr2_counts_2_volts(self, counts: int) -> float:
         return counts * 0.00179507 
 
-    def __init__(self, camID : int, om : int, nAcc : int, Roix : int, Roiy : int, 
-                 Roix_offset : int, Roiy_offset : int, oc : int, fw1 : int, fw2 : int,
-                 hvps_counts : int, hvps_sign : int, lcvr1_counts : int, lcvr2_counts : int,
-                 hvps_read_counts : int, lcvr1_read_counts : int, lcvr2_read_counts : int, image_name : str) -> None:
+    def __init__(
+        self,
+        camID: int, om: int, nAcc: int, Roix: int, Roiy: int, 
+        Roix_offset: int, Roiy_offset: int, oc: int, fw1: int, fw2: int,
+        hvps_counts: int, hvps_sign: int, lcvr1_counts: int, lcvr2_counts: int,
+        hvps_read_counts: int, lcvr1_read_counts: int, lcvr2_read_counts: int, image_name: str
+    ) -> None:
         # Initialize information dictionary
         self.info = {
-            "cam" : camID,
-            "ObservationMode_index" : om,
-            "ObservationMode" : cf.observation_modes[om],
-            "nAcc" : nAcc,
-            "Roix" : Roix,
-            "Roiy" : Roiy,
-            "Roix_offset" : Roix_offset,
-            "Roiy_offset" : Roiy_offset,
-            "ObservationCounter" : oc,
-            "FW1_ind" : fw1,
-            "FW2_ind" : fw2,
-            "FW1" : cf.filter_wheel["1"][fw1],
-            "FW2" : cf.filter_wheel["2"][fw2],
-            "hvps_counts" : hvps_counts,
-            "hvps_sign" : hvps_sign,
-            "lcvr1_counts" : lcvr1_counts,
-            "lcvr2_counts" : lcvr2_counts,
-            "hvps_read_counts" : hvps_read_counts,
-            "lcvr1_read_counts" : lcvr1_read_counts,
-            "lcvr2_read_counts" : lcvr2_read_counts,
-            "t_exp" : 42,
-            "image_name" : image_name,
-            "Date" : get_time_from_filename(image_name)
-
+            "cam": camID,
+            "ObservationMode_index": om,
+            "ObservationMode": cf.observation_modes[om],
+            "nAcc": nAcc,
+            "Roix": Roix,
+            "Roiy": Roiy,
+            "Roix_offset": Roix_offset,
+            "Roiy_offset": Roiy_offset,
+            "ObservationCounter": oc,
+            "FW1_ind": fw1,
+            "FW2_ind": fw2,
+            "FW1": cf.filter_wheel["1"][fw1],
+            "FW2": cf.filter_wheel["2"][fw2],
+            "hvps_counts": hvps_counts,
+            "hvps_sign": hvps_sign,
+            "lcvr1_counts": lcvr1_counts,
+            "lcvr2_counts": lcvr2_counts,
+            "hvps_read_counts": hvps_read_counts,
+            "lcvr1_read_counts": lcvr1_read_counts,
+            "lcvr2_read_counts": lcvr2_read_counts,
+            "t_exp": 42,
+            "image_name": image_name,
+            "Date": get_time_from_filename(image_name)
         }
         # Compute hvps commanded counts to volts
         self.info["hvps_comm_volts"] = self.hvps_commanded_2_volts(hvps_counts, hvps_sign)
@@ -93,28 +97,30 @@ class raw_header:
         return self.info
 
 # Read single images
-def read(image_path : str):
+def read(image_path: str):
     # Read .img file
     img, h = read_Tumag(image_path) 
     # Create header object
-    head = raw_header(int(h["CameraID"]), int(h["ObservationMode"]), int(h["nAcc"]), 
-                      int(h["Roi_x_size"]), int(h["Roi_y_size"]), int(h["Roi_x_offset"]),
-                      int(h["Roi_y_offset"]), int(h["Observation_Counter"]), int(h["FW1"]),
-                      int(h["FW2"]), int(h["EtalonDN"]), int(h["EtalonSign"]), int(h["Rocli1_LCVR"]),
-                      int(h["Rocli2_LCVR"]), int(h["EtalonVoltsReading"]), int(h["LCVR1_DN_Real"]),
-                      int(h["LCVR2_DN_Real"]), os.path.basename(image_path))
+    head = raw_header(
+        int(h["CameraID"]), int(h["ObservationMode"]), int(h["nAcc"]), 
+        int(h["Roi_x_size"]), int(h["Roi_y_size"]), int(h["Roi_x_offset"]),
+        int(h["Roi_y_offset"]), int(h["Observation_Counter"]), int(h["FW1"]),
+        int(h["FW2"]), int(h["EtalonDN"]), int(h["EtalonSign"]), int(h["Rocli1_LCVR"]),
+        int(h["Rocli2_LCVR"]), int(h["EtalonVoltsReading"]), int(h["LCVR1_DN_Real"]),
+        int(h["LCVR2_DN_Real"]), os.path.basename(image_path)
+    )
     
     return img, head.get_info()
 
 # Class to process the observation mode -> headers and array 
 class nominal_observation:
 
-    def __init__(self, om, images_path, dc, modify_linearity = (None, None)):
+    def __init__(self, om, images_path, dc, modify_linearity=(None, None)):
 
-        self.info = {"ObservationMode" : om,
-                     "Images_headers" : {}}
+        self.info = {"ObservationMode": om,
+                     "Images_headers": {}}
 
-        self.data = np.zeros((2, # Number of cameras 
+        self.data = np.zeros((2,  # Number of cameras 
                               cf.om_config[om]["Nlambda"],  # Number of wavelengths
                               cf.om_config[om]["Nmods"],    # Number of Modulations
                               cf.xsize, cf.ysize))  # Size of image (x, y)
@@ -124,23 +130,23 @@ class nominal_observation:
         
         images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
-        _, h1 = read(images_path_reshaped[0, 0, 0]) # read first image to get acc
+        _, h1 = read(images_path_reshaped[0, 0, 0])  # read first image to get acc
        
         # create interp function with new linearity 
-        if modify_linearity:
-            modify_linear =  modified_curve(center= modify_linearity[0], amplitude = modify_linearity[1])
+        if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
+            modify_linear = modified_curve(center=modify_linearity[0], amplitude=modify_linearity[1])
 
         for lambd in range(nlambda):
             print(f"Processing wavelength : {lambd + 1} / {nlambda}")
             self.info["Images_headers"][f"wv_{lambd}"] = {}
             for mod in range(nmods):
                 # Reading each image
-                im0, head0 = read(images_path_reshaped[lambd, mod, 0]) # Cam 1
-                im1, _ = read(images_path_reshaped[lambd, mod, 1]) # Cam 2
-                #modify linearity
-                if modify_linearity:
-                    im0 = modify_curve(modify_linear,im0/head0["nAcc"])*head0["nAcc"]
-                    im1 = modify_curve(modify_linear,im1/head0["nAcc"])*head0["nAcc"]
+                im0, head0 = read(images_path_reshaped[lambd, mod, 0])  # Cam 1
+                im1, _ = read(images_path_reshaped[lambd, mod, 1])      # Cam 2
+                # modify linearity
+                if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
+                    im0 = modify_curve(modify_linear, im0 / head0["nAcc"]) * head0["nAcc"]
+                    im1 = modify_curve(modify_linear, im1 / head0["nAcc"]) * head0["nAcc"]
                 # Saving images header except for CameraID entry
                 self.info["Images_headers"][f"wv_{lambd}"][f"M{mod}"] = {}
                 for key in head0:
@@ -151,7 +157,7 @@ class nominal_observation:
             
                 # Correct dark-current and save image data into main data array
                 self.data[0, lambd, mod] = im0 - (dc[0] * head0["nAcc"])
-                self.data[1, lambd, mod] = np.flip(im1, axis = -1) - (dc[1] * head0["nAcc"]) # Flip cam 2 image. 
+                self.data[1, lambd, mod] = np.flip(im1, axis=-1) - (dc[1] * head0["nAcc"])  # Flip cam 2 image. 
         
         # Completing info of Observation Mode with info from header
         self.info["nAcc"] = head0["nAcc"]
@@ -176,14 +182,14 @@ class nominal_observation:
 class nominal_flat:
 
     # Process the observations
-    def __init__(self, om, images_path, nreps, dc, lambda_repeat = 4, verbose = False, modify_linearity = (None, None)):
+    def __init__(self, om, images_path, nreps, dc, lambda_repeat=4, verbose=False, modify_linearity=(None, None)):
 
         print(f"Processing images...")
 
-        self.info = {"ObservationMode" : om,
-                     "Images_headers" : {}}
+        self.info = {"ObservationMode": om,
+                     "Images_headers": {}}
 
-        self.data = np.zeros((2, # Number of cameras 
+        self.data = np.zeros((2,  # Number of cameras 
                               cf.om_config[om]["Nlambda"],  # Number of wavelengths
                               cf.om_config[om]["Nmods"],    # Number of Modulations
                               cf.xsize, cf.ysize))  # Size of image (x, y)
@@ -194,8 +200,8 @@ class nominal_flat:
         images_path_reshaped = np.array(images_path).reshape(nreps, nlambda, lambda_repeat, nmods, 2)
 
         # create interp function with new linearity 
-        if modify_linearity:
-            modify_linear =  modified_curve(center= modify_linearity[0], amplitude = modify_linearity[1])
+        if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
+            modify_linear = modified_curve(center=modify_linearity[0], amplitude=modify_linearity[1])
 
         for rep in range(nreps):
             for lambd in range(nlambda):
@@ -207,12 +213,12 @@ class nominal_flat:
                         if f"Mod_{mod}" not in self.info["Images_headers"][f"wv_{lambd}"]:
                             self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"] = {}
                         # Reading each image
-                        im0, head0 = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 0]) # Cam 1
-                        im1, _ = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 1]) # Cam 2
+                        im0, head0 = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 0])  # Cam 1
+                        im1, _ = read(images_path_reshaped[rep, lambd, lambd_rep, mod, 1])      # Cam 2
                         # modify linearity
-                        if modify_linearity:
-                            im0 = modify_curve(modify_linear,im0/head0["nAcc"])*head0["nAcc"]
-                            im1 = modify_curve(modify_linear,im1/head0["nAcc"])*head0["nAcc"]
+                        if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
+                            im0 = modify_curve(modify_linear, im0 / head0["nAcc"]) * head0["nAcc"]
+                            im1 = modify_curve(modify_linear, im1 / head0["nAcc"]) * head0["nAcc"]
                         # Saving images header except for CameraID entry
                         for key in head0:
                             if key == "cam":
@@ -222,9 +228,9 @@ class nominal_flat:
                                     self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key] = []
                                 self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key].append(head0[key])
             
-                        # Sving image data into main data array
+                        # Saving image data into main data array
                         self.data[0, lambd, mod] += im0 - (dc[0] * head0["nAcc"])
-                        self.data[1, lambd, mod] += np.flip(im1, axis = -1) - (dc[1] * head0["nAcc"]) # Flip cam 2 image. 
+                        self.data[1, lambd, mod] += np.flip(im1, axis=-1) - (dc[1] * head0["nAcc"])  # Flip cam 2 image. 
         
         self.data /= (nreps * lambda_repeat)
 
@@ -248,16 +254,15 @@ class nominal_flat:
         return self.data
 
 def get_images_paths(queries):
-
     """
-    Provides the paths of the images associated to the quieres. 
+    Provides the paths of the images associated to the queries. 
 
-    Queries have to be in format: "DXX-start-end"]
+    Queries have to be in format: "DXX-start-end"
     start and end are integers. 
     "DXX" has to be one of the observation days -> D09 - D16 
     """
     
-    "Allowing for various queries in case observation changed day"
+    # Allowing for various queries in case observation changed day
     if isinstance(queries, list):
         selection = []
         for qry in queries:
@@ -268,13 +273,14 @@ def get_images_paths(queries):
 
             if end < start:
                 raise Exception(f"Query : {qry} not valid. Please prove end of quey larger than start.")
-            if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
-                raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
+            if day not in ["D09", "D10", "D11", "D12", "D13", "D14", "D15", "D16"]:
+                raise Exception(f"Query : {qry} not valid. Please prove a day within the list: D09, D10, D11, D12, D13, D14, D15, D16")
             df = pd.read_csv(f"{Organization_folder_files}/{day}.csv", index_col=False, header=None)
             selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
             selection.append(selection_df.iloc[:, 1].tolist())
 
-        selection = selection[0] + selection[1] # Concatenating both lists.
+        # MINIMAL FIX: concatenar cualquier número de listas
+        selection = sum(selection, [])
         
     else:
         parsed = queries.split("-")
@@ -284,15 +290,15 @@ def get_images_paths(queries):
 
         if end < start:
             raise Exception(f"Query : {queries} not valid. Please prove end of quey larger than start.")
-        if day not in ["D09", "D10", "D11","D12","D13","D14","D15","D16"]:
-            raise Exception(f"Query : {queries} not valid. Please prove a day within the list: D09, D10, D11, D12, D13,D14, D15, D16")
+        if day not in ["D09", "D10", "D11", "D12", "D13", "D14", "D15", "D16"]:
+            raise Exception(f"Query : {queries} not valid. Please prove a day within the list: D09, D10, D11, D12, D13, D14, D15, D16")
         df = pd.read_csv(f"{Organization_folder_files}/{day}.csv", index_col=False, header=None)
         selection_df = df[(df.iloc[:, 0] >= start) & (df.iloc[:, 0] <= end)]
         selection = selection_df.iloc[:, 1].tolist()
 
     return selection
         
-def read_ID(image_index, plotflag = False, verbose = False, header = False, binning = False):
+def read_ID(image_index, plotflag=False, verbose=False, header=False, binning=False):
     """
     Reads an image with a given ID.
     Inputs: 
@@ -309,7 +315,7 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
     day = image_index[:3]
     index = int(image_index[4:])
 
-    def bin_image(image, bin_size = 4):
+    def bin_image(image, bin_size=4):
     
         Nx, Ny = image.shape
         # Reshape and bin the image by averaging over bin_size x bin_size blocks
@@ -333,27 +339,25 @@ def read_ID(image_index, plotflag = False, verbose = False, header = False, binn
         print(H)
 
     if plotflag:
-        plt.figure(figsize = (10, 10))
-        plt.imshow(I, cmap = "gray")
+        plt.figure(figsize=(10, 10))
+        plt.imshow(I, cmap="gray")
         plt.show()
 
     return I, H
 
-def separate_ocs(paths, verbose = True, flat_fieldmode = False):
-
+def separate_ocs(paths, verbose=True, flat_fieldmode=False):
     """
     Function to separate the images provided into different OCS. 
 
     Inputs: 
         - paths (list) : path to the images. 
-        -flat_fieldmode (Boolean, default : False) : Boolean to enable flat-field mode. 
+        - flat_fieldmode (Boolean, default : False) : Boolean to enable flat-field mode. 
      In flat_field mode, the number of images expected per mode increases to evaluate the 
      completeness of the mode in case of aborts. 
     
     Returns:
         - OCs dictionary containing the organized data.
     """
-
 
     print(f"\nSeparating Observation counters...")
     tic = time.time()
@@ -394,13 +398,13 @@ def separate_ocs(paths, verbose = True, flat_fieldmode = False):
             OCs[oc_ind]["ims"].append(im)
 
             if H["ObservationMode"] in cf.om_config:
-                OCs[oc_ind]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"]  * mult
+                OCs[oc_ind]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] * mult
             else:
                 OCs[oc_ind]["Expected Nim"] = 999
 
         elif OCs[oc_ind]["empty"]:
             OCs[oc_ind]["ims"].append(im)
-            if len( OCs[oc_ind]["ims"]) == OCs[oc_ind]["Expected Nim"]:
+            if len(OCs[oc_ind]["ims"]) == OCs[oc_ind]["Expected Nim"]:
                 OCs[oc_ind]["empty"] = False
                 completed_ocs.append(oc_ind)
 
@@ -424,17 +428,16 @@ def get_time_from_filename(filename):
     """
     Function to get the time as a datetime object from the file name. 
     """
-
     split = [int(x) for x in filename[:-4].split("_")]
     return datetime(split[0], split[1], split[2], split[3], split[4], split[5])
 
-def obs_mode_separator(paths, verbose = False):
+def obs_mode_separator(paths, verbose=False):
     """
     Function to organize the images of an observing mode based on the properties of the header. 
     Used in case an observing mode is incomplete. 
 
     inputs:
-        - paths (list) : LÑist of paths to the images. 
+        - paths (list) : List of paths to the images. 
     returns:
         - obs: dictionary containing the organized images. 
     """
@@ -469,7 +472,7 @@ def obs_mode_separator(paths, verbose = False):
 
     return obs
 
-def check_timestamps(paths, verbose = True):
+def check_timestamps(paths, verbose=True):
     """
     Function to check the intervals between images. Generates a plot showing the intervals.
     inputs:
@@ -487,16 +490,16 @@ def check_timestamps(paths, verbose = True):
         intervals.append(time - prev)
         prev = time
 
-    intervals = [ x.total_seconds() for x in intervals]
-    fig, axs = plt.subplots(figsize = (10, 5))
-    axs.plot(times, intervals, c = 'indigo', lw = 1)
-    axs.grid(True, c = 'k', alpha = 0.3)
+    intervals = [x.total_seconds() for x in intervals]
+    fig, axs = plt.subplots(figsize=(10, 5))
+    axs.plot(times, intervals, c='indigo', lw=1)
+    axs.grid(True, c='k', alpha=0.3)
     axs.set_ylabel("Interval between consecutive images [s]")
     axs.set_xlabel("Time of image accquisition.")
     plt.tight_layout()
     plt.show()
 
-def snapshot_processing(paths, dc, verbose = True):
+def snapshot_processing(paths, dc, verbose=True):
     """
     Function to process the snapshot images (HC timelines.)
     inputs: 
@@ -519,7 +522,7 @@ def snapshot_processing(paths, dc, verbose = True):
         if H["cam"] == 0:
             c1.append(I - dc[0] * H["nAcc"])
         else:
-            c2.append(np.flip(I, axis = -1) - dc[1] * H["nAcc"])# Flip cam 2 image. 
+            c2.append(np.flip(I, axis=-1) - dc[1] * H["nAcc"])  # Flip cam 2 image. 
 
     return np.array([c1, c2])
 
@@ -556,26 +559,21 @@ def polarizers_parser(paths, filt, dc):
         for mod in range(Nmods):
             for cam in range(Ncams):
                 print(f"Mod: {mod} - Cam: {cam}")
-                im0, H = read(reshaped[nfilt, mod, 0]) # Cam 1
-                im1, _ = read(reshaped[nfilt, mod, 1]) # Cam 2
+                im0, H = read(reshaped[nfilt, mod, 0])  # Cam 1
+                im1, _ = read(reshaped[nfilt, mod, 1])  # Cam 2
                 
-                micros[0,  mod] = im0 - (dc[0] * H["nAcc"])
-                micros[1,  mod] = np.flip(im1, axis = -1) - (dc[1] * H["nAcc"]) # Flip cam 2 image. 
+                micros[0, mod] = im0 - (dc[0] * H["nAcc"])
+                micros[1, mod] = np.flip(im1, axis=-1) - (dc[1] * H["nAcc"])  # Flip cam 2 image. 
     else:
         micros = np.zeros((Ncams, Nfilts, Nmods, 2016, 2016))   
         for filt in range(Nfilts): 
             for mod in range(Nmods):
                 for cam in range(Ncams):
                     print(f"Mod: {mod} - Cam: {cam}")
-                    im0, H = read(reshaped[filt, mod, 0]) # Cam 1
-                    im1, _ = read(reshaped[filt, mod, 1]) # Cam 2
+                    im0, H = read(reshaped[filt, mod, 0])  # Cam 1
+                    im1, _ = read(reshaped[filt, mod, 1])  # Cam 2
                     
                     micros[0, filt, mod] = im0 - (dc[0] * H["nAcc"])
-                    micros[1, filt, mod] = np.flip(im1, axis = -1) - (dc[1] * H["nAcc"]) # Flip cam 2 image. 
+                    micros[1, filt, mod] = np.flip(im1, axis=-1) - (dc[1] * H["nAcc"])  # Flip cam 2 image. 
                 
     return micros
-        
-    
-
-
-

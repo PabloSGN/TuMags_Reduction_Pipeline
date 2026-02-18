@@ -2,35 +2,40 @@
 """
 Function to compute the dark current from a set of observations. 
 
-It averages all observations and retruns the dark current per acumulation.
+It averages all observations and returns the dark current per accumulation.
 
 """
+
 # ------------------------------ IMPORTS ----------------------------------------- #
 
-import numpy as np
-from utils import read_Tumag
+# Standard library
 import time
+
+# Third‑party libraries
+import numpy as np
+
+# Local application modules
+from utils import read_Tumag
 
 # ------------------------------  CODE  ------------------------------------------ # 
 
-def compute_master_darks(dark_paths, verbose = False):
+def compute_master_darks(dark_paths, verbose=False):
     """
     Function to compute the dark current from the paths to the images. 
     inputs:
         - dark_paths (list) : List of paths to the dark current images.
     returns: 
         - dc (np.array) : Array of the dark current for both cameras.
-    
     """
 
     tic = time.time()
     # Read first image to obtain image size.
     first_dark, head = read_Tumag(dark_paths[0]) 
-    dark_current = np.zeros((2, np.shape(first_dark)[0],np.shape(first_dark)[0]))
+    dark_current = np.zeros((2, np.shape(first_dark)[0], np.shape(first_dark)[0]))
     
     darks_cam_1 = [x for x in dark_paths if "_0_" in x]
     darks_cam_2 = [x for x in dark_paths if "_1_" in x]
-    rms_dark = np.zeros((4,len(darks_cam_1)))
+    rms_dark = np.zeros((4, len(darks_cam_1)))
 
     # Proccessing cam 1 darks
     if verbose:
@@ -40,18 +45,17 @@ def compute_master_darks(dark_paths, verbose = False):
         print(f"N darks for cam2 : {len(darks_cam_2)}")
         print(f"N accumulations : {head['nAcc']}")
 
-
     for index, img_path in enumerate(darks_cam_1):
         I, _ = read_Tumag(img_path)
         dark_current[0] += I
-        rms_dark[0,index] = np.std(I)
-        rms_dark[2,index] = np.median(I)
+        rms_dark[0, index] = np.std(I)
+        rms_dark[2, index] = np.median(I)
 
     for index, img_path in enumerate(darks_cam_2):
         I, _ = read_Tumag(img_path)
-        dark_current[1] += np.flip(I, axis = -1)
-        rms_dark[1,index] = np.std(I)
-        rms_dark[3,index] = np.median(I)
+        dark_current[1] += np.flip(I, axis=-1)
+        rms_dark[1, index] = np.std(I)
+        rms_dark[3, index] = np.median(I)
 
     dark_current[0] /= len(darks_cam_1)
     dark_current[1] /= len(darks_cam_2)
@@ -61,9 +65,3 @@ def compute_master_darks(dark_paths, verbose = False):
 
     print(f"Dark current computed in {round(time.time() - tic, 3)} s.\n")
     return dark_current, head, rms_dark
-
-
-
-
-
-

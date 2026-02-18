@@ -7,9 +7,10 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import logging
-from process_data_utils import balance
+from process_data_utils import balance, parse_header_time, minutes_from_dt
 from demodulation import demodulate
 import time
+
 
 # import (ConfigLoader,parse_range, 
 #                               print_shifts_by_cam, plt_darks, 
@@ -154,9 +155,9 @@ def _cost_function_pixelwise(params, image0, image1,
     print(
         f"[{_call_counter:04d}] "
         f"angle={angle_deg:+.6f}  "
-        f"ty={t_y:+.2f} tx={t_x:+.2f}  "
+        f"ty={t_y:+.5f} tx={t_x:+.5f}  "
         f"RMS={mean_rms:.6f}  "
-        f"cy={c_y:+.2f} cx={c_x:+.2f}  "
+        f"cy={c_y:+.5f} cx={c_x:+.5f}  "
 
     )
 
@@ -262,7 +263,7 @@ def _print_result(res):
     for name, value in zip(names, res.x):
         print(f"  {name:10s}: {value: .6f}")
 
-    print(f"\nCosto final: {res.fun:.6f}")
+    print(f"\f merito final: {res.fun:.6f}")
     print("=======================================\n")
 
 def align_advance(I_cam1, I_cam2):
@@ -321,52 +322,145 @@ def align_advance(I_cam1, I_cam2):
 
     return res
 
+def update_alignment_csv(
+    csv_path,
+    timestamp,
+    params_vec,
+    fun,
+    *,
+    overwrite=False,
+    obs_ID=None,
+    line=None,
+    wave=None,
+):
+    """
+    Actualiza/crea alignment_results.csv añadiendo la entrada de alineamiento
+    (expresamente guardando 'wave').
 
-def update_alignment_csv(csv_path, timestamp, parameter_vector, cost, overwrite = False):
+    Parameters
+    ----------
+    csv_path : str | Path
+        Ruta del CSV (p.ej. <MODULE_DIR>/CALDATA/alignment_results.csv)
+    timestamp : float
+        Marca temporal (en minutos o el sistema que uses) de la solución.
+    params_vec : array-like, len=9
+        Parámetros del alineamiento en el orden:
+          [angle_deg, t_y, t_x, center_y, center_x, scale_x, scale_y, shear_x, shear_y]
+    fun : float
+        Valor de la función objetivo del optimizador (para trazabilidad).
+    overwrite : bool
+        Si True, sustituye la fila existente con la misma clave (obs_ID, line, wave).
+        Si False, añade una nueva fila.
+    obs_ID : str | None
+        Identificador de la observación (se usa en la clave).
+    line : str | int | float | None
+        Línea espectral. Se almacena como string.
+    wave : int | None
+        Índice de longitud de onda (se almacena como int).
 
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame completo que queda escrito en el CSV.
+    """
     csv_path = Path(csv_path)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-    col_names = [
-            "timestamp",
-            "angle_deg", "t_y", "t_x",
-            "center_y", "center_x",
-            "scale_x", "scale_y",
-            "shear_x", "shear_y",
-            "cost"
-    ]
+    # --- Validación de params ---
+    params_vec = list(params_vec)
+    if len(params_vec) != 9:
+        raise ValueError(
+            f"Se esperaban 9 parámetros en 'params_vec' y llegaron {len(params_vec)}"
+        )
 
-    # Convert result into row dict
-    row = {
-            "timestamp": timestamp,
-            "angle_deg": parameter_vector[0],
-            "t_y": parameter_vector[1],
-            "t_x": parameter_vector[2],
-            "center_y": parameter_vector[3],
-            "center_x": parameter_vector[4],
-            "scale_x": parameter_vector[5],
-            "scale_y": parameter_vector[6],
-            "shear_x": parameter_vector[7],
-            "shear_y": parameter_vector[8],
-            "cost": cost
+    # --- Preparar nueva fila ---
+    angle_deg, t_y, t_x, center_y, center_x, scale_x, scale_y, shear_x, shear_y = params_vec
+
+    new_row = {
+        'timestamp': float(timestamp),
+        'angle_deg': float(angle_deg),
+        't_y': float(t_y),
+        't_x': float(t_x),
+        'center_y': float(center_y),
+        'center_x': float(center_x),
+        'scale_x': float(scale_x),
+        'scale_y': float(scale_y),
+        'shear_x': float(shear_x),
+        'shear_y': float(shear_y),
+        'fun': float(fun) if fun is not None else np.nan,
+        # metadatos de clave:
+        'obs_ID': str(obs_ID) if obs_ID is not None else "",
+        'line': str(line).strip() if line is not None else "",
+        'wave': int(wave) if wave is not None else -1,
     }
 
-    # Si no existe → crear
-    if not csv_path.exists():
-            df = pd.DataFrame([row], columns=col_names)
-            df.to_csv(csv_path, index=False)
-            return
-
-    # Si sí existe → cargar y reemplazar
-    df = pd.read_csv(csv_path)
-
-    # Buscar si el timestamp ya existe
-    if timestamp in df["timestamp"].values and not overwrite:
-            df.loc[df["timestamp"] == timestamp] = list(row.values())
+    # --- Leer CSV existente o crear DF vacío con esquema ---
+    if csv_path.exists():
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            logging.warning(f"[update_alignment_csv] No pude leer {csv_path}: {e}. Creo uno nuevo.")
+            df = pd.DataFrame()
     else:
-            df.loc[len(df)] = list(row.values())
+        df = pd.DataFrame()
 
-    # Guardar actualizado
+    # Garantizar columnas y orden
+    col_order = [
+        'timestamp',
+        'angle_deg','t_y','t_x','center_y','center_x',
+        'scale_x','scale_y','shear_x','shear_y',
+        'fun','obs_ID','line','wave'
+    ]
+    for c in col_order:
+        if c not in df.columns:
+            df[c] = np.nan
+
+    # --- Overwrite por clave (obs_ID, line, wave) ---
+    if overwrite:
+        mask = (
+            (df['obs_ID'].astype(str).fillna("") == new_row['obs_ID']) &
+            (df['line'].astype(str).fillna("")   == new_row['line'])   &
+            (df['wave'].fillna(-1).astype(int)   == new_row['wave'])
+        )
+        n_prev = int(mask.sum())
+        if n_prev > 0:
+            logging.info(f"[update_alignment_csv] Overwrite: eliminando {n_prev} fila(s) con misma clave (obs_ID,line,wave).")
+            df = df.loc[~mask].copy()
+
+    # --- Añadir fila y forzar tipos numéricos donde toque ---
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+
+    num_cols = [
+        'timestamp','angle_deg','t_y','t_x','center_y','center_x',
+        'scale_x','scale_y','shear_x','shear_y','fun','wave'
+    ]
+    for c in num_cols:
+        df[c] = pd.to_numeric(df[c], errors='coerce')
+
+    df['obs_ID'] = df['obs_ID'].astype(str).fillna("")
+    df['line']   = df['line'].astype(str).fillna("")
+
+    # Ordenar por (obs_ID, line, wave, timestamp) para legibilidad
+    df = df[col_order].sort_values(by=['obs_ID','line','wave','timestamp']).reset_index(drop=True)
+
+    # --- Escribir ---
     df.to_csv(csv_path, index=False)
+    logging.info(f"[update_alignment_csv] CSV actualizado: {csv_path} (filas={len(df)})")
+
+    return df
+
+def run_alignment_for_wavelength(data, line_value, wave, header):
+    """ Ejecuta advance_alignment para un wave y calcula timestamp. """
+    
+    data_aligned, result = advance_alignment(data, line_value, wave)
+
+    # Calcular timestamp con medias de M0-M3
+    dt = []
+    for k in range(4):
+        dt.append(parse_header_time(header[f"WV_{wave}_M{k}"]))
+    timestamp = sum(minutes_from_dt(d) for d in dt) / 4.0
+
+    return data_aligned, result, timestamp
 
 def advance_alignment(data, filter, wave):
     

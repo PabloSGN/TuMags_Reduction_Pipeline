@@ -8,19 +8,21 @@ Modified by FJBM on 2025-10-28.
 """
 
 # ------------------------------ IMPORTS ----------------------------------------- #
-# from statistics import mode
-import numpy as np
+
+# Standard library
 import time
+from pathlib import Path
+
+# Third-party libraries
+import numpy as np
 from tqdm import tqdm
 from scipy.interpolate import interp1d
 from scipy.optimize import minimize
-from pathlib import Path
 
-# Own modules
+# Local application modules
 import config as cf
 import image_handler as ih
 import prefilter_removal_fjbm as pr
-
 
 # ------------------------------  CODE  ------------------------------------------ # 
 

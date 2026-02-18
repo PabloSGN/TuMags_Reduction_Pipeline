@@ -1,154 +1,154 @@
 # ==========================================================
 # TuMags Reduction Pipeline Configuration (YAML)
 # ==========================================================
-# Ejecutar ejemplo:
+# Ejecución de ejemplo:
 #   python3 ../../TuMags_Reduction_Pipeline/process_data_main.py \
 #       -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
 #
 # Notas:
-# - Nombres de parámetros únicos.
-# - booleanos y none en minúscula: true, false, none
+# - Los nombres de parámetros deben ser únicos.
+# - Boolean y None en minúscula: true, false, none
+# - Puedes validar con visor.py el FITS generado.
 # ==========================================================
 
 # ----------------------------------------------------------
 # GLOBAL PARAMETERS
 # ----------------------------------------------------------
-obs_ID: "comm1"                    # ID de la observación (clave en process_data_timelines.py)
-proc_version: "0.3"                # Versión del procesamiento para nombres de archivo
+obs_ID: "comm1"                               # ID de la observación (clave en process_data_timelines.py)
+proc_version: "0.3"                           # Versión para nombre de archivos
 
-process_line: "2.02"               # Modo de observación a procesar (ver om_config en config.py)
-process_ocs: ":"                   # ":" -> todas las OCs, o rango "1:4", o índice único "3"
-process_files: ":"                 # ":" -> todos los archivos, o rango "1:6", o índice único "2"
+process_line: "2.02"                          # Modo de observación a procesar (ver om_config en config.py)
+process_ocs: ":"                              # ":" -> todas las OCs, o rango "1:4", o índice único "3"
+process_files: ":"                            # ":" -> todos los archivos, o rango "1:6", o índice único "2"
 
-parallel: false                    # true: usar procesamiento paralelo (ProcessPoolExecutor)
-max_workers: 3                     # nº de procesos si parallel = true
+parallel: false                               # true: usar multiprocessing
+max_workers: 3                                # nº de procesos si parallel=true
 
-tumag_data_location: "./"          # Ruta base donde están los datos organizados
-Organized_files_local_folder_name: "Organized_files_local"  # Nombre de carpeta con datos organizados
-
-output_folder: "/Volumes/TuMag_d5/reduccion/"  # Carpeta donde se escriben resultados
+tumag_data_location: "./"                     # Ruta base a datos organizados
+Organized_files_local_folder_name: "Organized_files_local"
+output_folder: "./reduccion/"                 # Carpeta de salida (usar absoluta si montajes externos)
 
 # ----------------------------------------------------------
 # REPROCESSING OPTIONS
 # ----------------------------------------------------------
 force_redo:
-  redo_flat: true                  # true: recalcular flats aunque exista cache .npz
-  redo_dark: true                  # true: recalcular darks aunque exista cache .npz
-  level0_5: true                   # true: volver a ejecutar reducción LV_0.5
-  level0_7: true                   # true: volver a ejecutar reducción LV_0.7
-  level1_0: true                   # true: volver a ejecutar reducción LV_1.0
-  level1_1: false                  # true: volver a ejecutar reducción LV_1.1 (PD)
+  redo_flat: true                             # Recalcular flats aunque exista cache
+  redo_dark: true                             # Recalcular darks aunque exista cache
+  level0_5: true                              # Ejecutar nivel 0.5
+  level0_6: false                             # Ejecutar nivel 0.6 (PD antes de 0.7); si true, usa use_pd
+  level0_7: true                              # Ejecutar nivel 0.7 (alineamiento + demod)
+  level1_0: true                              # Ejecutar nivel 1.0 (crosstalk)
+  level1_1: false                             # Ejecutar nivel 1.1 (restauración PD sobre 1.0)
+  use_pd: false                               # Requiere level0_6: true previamente o correr antes
 
 # ----------------------------------------------------------
 # PLOTTING OPTIONS
 # ----------------------------------------------------------
 plots:
-  plot_darks: false                # Generar gráficos para darks
-  plot_flats: false                # Generar gráficos para flats
-  plot_level0_5: true              # Graficar resultados LV_0.5
-  plot_level0_7: true              # Graficar resultados LV_0.7
-  plot_level1_0: true              # Graficar resultados LV_1.0
-  plot_level1_1: true              # Graficar resultados LV_1.1
-  roi_plots: [200, -200, 200, -200] # Región de interés para generación de plots [xmin,xmax,ymin,ymax]
+  plot_darks: false
+  plot_flats: false
+  plot_level0_5: true
+  plot_level0_6: true
+  plot_level0_7: true
+  plot_level1_0: true
+  plot_level1_1: true
+  roi_plots: [200, -200, 200, -200]          # [xmin, xmax, ymin, ymax]
 
 # ----------------------------------------------------------
 # DARK AND FLAT OPTIONS
 # ----------------------------------------------------------
 darks_indexes:
-  dark_from:                        # Índice inicial para selección de darks (None/ vacío usa heurística)
-  dark_to: -2                       # Índice final (ej. -2 = penúltimo). Define rango de darks a usar
+  dark_from:                                   # None/ vacío => usa todo o heurística interna
+  dark_to: -2                                  # -2: penúltimo (ejemplo)
 
-dark_file: false                    # Ruta a .npy con dark predefinido (false = no usar) 
+dark_file: false                               # false o ruta a .npz/.npy con dark
+flat_file: ""                                  # "" o ruta a .npz con flat preprocesado
 
-flat_file: ''                       # Ruta a .npz con flat preprocesado (vacío = calcular)
-flat_norm_roi: [250, -250, 250, -250] # Región para normalizar el flat (xmin,xmax,ymin,ymax)
-
-import_blueshift_guess: True       # Importar estimación de blueshift (si hay) desde metadatos
-norm_method: "blueshift"           # Método de normalización: "blueshift", "avg", "mod"
-remove_prefilter: True             # Quitar respuesta del prefiltro si aplica
-pref_model: True                   # Usar modelo de prefiltro conocido (True/False)
+flat_norm_roi: [250, -250, 250, -250]          # ROI normalización del flat (sin máscara)
+import_blueshift_guess: true                   # Importar estimación de blueshift si disponible
+norm_method: "blueshift"                       # "blueshift" | "avg" | "mod" | "none"
+remove_prefilter: true                         # Quitar respuesta del prefiltro
+pref_model: true                               # true: modelo conocido; false: ajuste a partir de datos
 
 # ----------------------------------------------------------
 # LEVEL 0.5 OPTIONS (preprocesado: dark/flat/crop/filter)
 # ----------------------------------------------------------
 level_05:
-  filtering: true                   # Eliminar contenido de alta frecuencia (filtro espacial)
-  save_level_05: true               # Guardar archivos LV_0.5
+  filtering: true                              # Filtro espacial (elimina patrones HF)
+  save_level_05: true                          # Guardar archivos LV_0.5
 
-size: 2016                          # Tamaño nominal de la imagen original (pix)
-centro: [973, 996]                  # Centro (x,y) de recorte / referencia
-corte: 800                          # Tamaño del recorte final (square half-size o tamaño dependiendo del código)
+size: 2016                                     # Tamaño nominal imagen original
+centro: [973, 996]                             # Centro (x,y) de recorte
+corte: 800                                     # Semitamaño de recorte
 
 # ----------------------------------------------------------
 # LEVEL 0.7 OPTIONS (alineamiento y demodulación)
 # ----------------------------------------------------------
 level_07:
-  align_mode: "fourier"             # "fourier" (corr. subpixel por fase) o "destretch" (mapeo local)
-  align_sequence: 1                 # Secuencia de alineado: 0 o 1 (ver doc en header original)
-    # 0: alinear modulación en ambas cámaras, luego cam1 respecto cam0
-    # 1: alinear cam1 respecto cam0 primero, luego modulación
-  align_roi: [0, -1, 0, -1]         # ROI usada para alineamiento [xmin,xmax,ymin,ymax]; -1 indica borde
-  align_accuracy: 0.001             # Exactitud objetivo del alineamiento (umbral de convergencia)
-  align_rot_data_filter: "pinholes_results.csv" # CSV con rotaciones/filtrado para interpolación (pinholes)
-  align_quadrants: 0                # Si >0, alinear por cuadrantes (división de imagen)
-  align_verbose: false              # Mostrar información de alineamiento
+  align_mode: "fourier"                        # "fourier" o "destretch"
+  align_sequence: 1                            # 0 o 1 (ver doc en código)
+  align_roi: [0, -1, 0, -1]                    # ROI para alinear; -1 = hasta borde
+  align_accuracy: 0.001                        # Umbral de convergencia
+  align_rot_data_filter: "alignment_results.csv"  # CSV de alineamientos (pinholes / advanced)
+  align_quadrants: 0                           # >0: alinear por cuadrantes
+  align_verbose: false
+  align_modulations: false
 
-  destretch_aling_cam: 'same'       # 'all'/'full'/'same' modo para destretch entre cámaras
-  destretch_n_iterations: 100       # Iteraciones para algoritmo destretch
-  destretch_ngrid: 4                # Resolución de la malla del destretch
-  destretch_lr: 0.1                 # Learning rate del destretch
-  destretch_lambda_tt: 0.02         # Parámetro regularizador para destretch
+  # Alineamiento avanzado (guardado por-onda con 'wave' en CSV)
+  advanced_alignment: false                    # true: recalcula y guarda en CSV
+  advanced_wave: [0,1,2,3,4,5,6,7,8,9]         # Índices de onda a alinear si advanced=true
+  advanced_save: true                          # Guardar en CSV
+  advanced_overwrite: true                     # Sobrescribir clave (obs_ID,line,wave) si existe
 
-  demod_matrix: 'demod_matrices_david_ct' # Etiqueta de matrices de demodulación
-  demod_mode: 'join'                # 'join' (demodular conjunto) o 'separate' (por cámara/serie)
+  aligment_level: "dataset"                    # "dataset" | "wave" | "pol" 
+  destretch_aling_cam: "same"                  # 'all' | 'full' | 'same'
+  destretch_n_iterations: 100
+  destretch_ngrid: 4
+  destretch_lr: 0.1
+  destretch_lambda_tt: 0.02
 
-  add_level_07_label: 'caso19'      # Etiqueta adicional que se añade a archivos LV_0.7 (opcional)
+  demod_matrix: "demod_matrices_david_ct"      # etiqueta de matrices de demodulación
+  demod_mode: "join"                           # 'join' | 'separate'
+  add_level_07_label: "caso19"                 # etiqueta añadida al LV_0.7
 
 # ----------------------------------------------------------
 # LEVEL 1.0 OPTIONS (normalización y corrección de crosstalk)
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "jaeggli"            # Método de crosstalk: "jaeggli" (ajuste avanzado) o "standard"
-  crosst_roi: [200, -200, 200, -200] # Región para normalización (intensidad)
-  crosst_region: [1, -1, 1, -1]     # Región usada para calcular crosstalk (xmin,xmax,ymin,ymax)
-  crosst_threshold: 0.01            # Umbral para detección (puede ser valor único o lista para Q,U,V)
-  crosst_intensity_threshold: 0.8   # Umbral de intensidad para evitar zonas de umbra (0 desactiva)
-  crosst_last_wave: -1              # Índice de última onda usada en cálculo (-1 o -2 según método)
-  crosst_quadrants: 0               # Si >0, calcular crosstalk por cuadrantes
-  crosst_interference: 0            # 0: no interferencia, o int (nº) o ruta a .npz con slope/intercept
-  mmatrix: 0                        # Flag/valor para forzar/usar matriz de Mueller predefinida (según implementación)
-  normalization: 0                  # Tipo de normalización aplicada (0 = default)
-  plot_crosst_method: false         # Pintar resultados intermedios del ajuste de crosstalk
-  crosst_verbose: false             # Modo detallado para crosstalk
-  add_level_10_label: ''            # Etiqueta que se añade a archivos LV_1.0 (opcional)
+  crosst_mode: "jaeggli"                       # "jaeggli" (avanzado) | "standard"
+  crosst_roi: [200, -200, 200, -200]           # ROI para normalización de intensidad
+  crosst_region: [1, -1, 1, -1]                # ROI para cálculo de crosstalk
+  crosst_threshold: 0.01                       # Umbral detección (float o [Q,U,V])
+  crosst_intensity_threshold: 0.8              # 0 => sin filtro por intensidad
+  crosst_last_wave: -1                         # -1 / -2 según método
+  crosst_quadrants: 0                          # >0: tiles por cuadrantes
+  crosst_interference: 0                       # 0: off | int (n tiles) | path .npz
+  mmatrix: 0                                   # Si aplicáis matriz predefinida 
+  normalization: 0                             # Tipo de normalización (0 = default)
+  plot_crosst_method: false
+  crosst_verbose: false
+  add_level_10_label: ""                       # etiqueta añadida al LV_1.0
+
+# Bloque de aplicación directa de crosstalk (opcional)
+crosstalk:
+  apply_only: false               # Modo aplicar-sin-estimar
+  use_local: true                 # Usa derivadas (Ix,Iy[,L])
+  local_order: 1                  # 1 -> Ix,Iy ; 2 -> + Laplaciano
+  deriv_sigma: 0.0                # Suavizado previo de I para derivadas
+  coeffs_global:
+    Q: {a: 10.5, b: 2.1e-3, c: -1.2e-4, d: 9.5e-5, e: 0.0}
+    U: {a:  0.0, b: 1.8e-3, c:  0.0,    d: 0.0,    e: 0.0}
+    V: {a:  0.0, b: 0.0,    c:  0.0,    d: 0.0,    e: 0.0}
+  channels: ["Q","U","V"]
 
 # ----------------------------------------------------------
 # LEVEL 1.1 OPTIONS (restauración por diversidad de fase)
 # ----------------------------------------------------------
-zernike_id: "01_QSUN_Fe2.02"        # Identificador de modo Zernike / set de calibración PD
+zernike_id: "01_QSUN_Fe2.02"                  # ID de set PD (usado en 1.1 o 0.6)
 
 # ----- DEBUGGING OPTIONS
 debug:
-  activate: False                   # Activar modo debug (salidas adicionales / recortes)
-  zoom_center: [800, 800]           # Centro del zoom de debug (x,y)
-  zoom_size: 400                    # Tamaño del recorte de debug
-
-# ----------------------------------------------------------
-# OBSERVATION MODES (REFERENCIA)
-# ----------------------------------------------------------
-# observation_modes = {
-#     0   : "0s",
-#     1   : "0p",
-#     2   : "1",
-#     3   : "2.02",
-#     4   : "2.06",
-#     5   : "3.02",
-#     6   : "3.06",
-#     7   : "4",
-#     8   : "5.02",
-#     9   : "5.06",
-#     64  : "PD_calibration",
-#     65  : "Spectral_calibration",
-#     66  : "Polarimetric_calibration",
-#     128 : "Test"
-# }
+  activate: false
+  zoom_center: [800, 800]
+  zoom_size: 400
+  filter_test: false

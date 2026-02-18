@@ -8,12 +8,14 @@ Instituto de Astrofísica de Andalucía (IAA-CSIC)
 
 # ------------------------------ IMPORTS ----------------------------------------- #
 
-# Built-in Libs
+# Standard library
 import os
+from datetime import datetime
+
+# Third-party libraries
 import numpy as np
 from astropy.io import fits
 from astropy.time import Time
-from datetime import datetime
 
 # ------------------------------  CONFIG  ------------------------------------------ # 
 

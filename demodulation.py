@@ -10,7 +10,7 @@ import os
 import json
 import numpy as np
 import logging
-
+from process_data_utils import balance
 # ============================================
 # PARÁMETROS 
 # ============================================
@@ -343,7 +343,10 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
 
                 demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
                 demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
-            
+
+    #             scale, gamma = balance(data[0, 0], data[1, 0], roi=roi)#, clip_percentiles=(40,60))
+    #  logging.info(f"Balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
+
                 dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
 
     elif lcvr_mode == "longitudinal":

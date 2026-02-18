@@ -19,7 +19,6 @@ from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
 from demodulation import demodulate
 from demodulation import mod_matrices_david_ct as mod_matrices
 from process_data_utils import balance, calculate_power_spectrum_with_apodization,calculate_inverse_fourier_transform
-from advanced_alignment import align_advance, apply_transform
 
 # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
 
@@ -1008,14 +1007,13 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
         plt.show()
     err = []
 
+    logging.info(f"quadrants 0: {quadrants}")
     for lambd in range(nlambda):
         logging.info(f"Aligning wavelength: {lambd + 1}/{nlambda}")
 
         if quadrants == 0:
-            logging.info(f"quadrants 0: {quadrants}")
             if align_sequence == 0:
-                if verbose:
-                    logging.info(f"Shifts for cam 1 - modulation alignment")
+                logging.info(f"Shifts for cam 1 - modulation alignment")
 
                 _, srow, scol, error = realign_subpixel(data[0, lambd,:,roi[0]:roi[1],roi[2]:roi[3]], verbose = verbose, accu = acc, return_shift=True)
                 err.append(error)
@@ -1026,8 +1024,7 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                 for nm in range(nmods-1):
                     aligned[0, lambd,nm + 1] = shift_subp(data[0, lambd,nm+1], shift=[srow[nm + 1], scol[nm + 1]], wrap=True, fill=0)
 
-                if verbose:
-                    logging.info("Shifts of camera 2 alignment")
+                logging.info("Shifts of camera 2 alignment")
                 for mod in range(nmods):
 
                     _, srow, scol,error = realign_subpixel(np.array([aligned[0,lambd,mod,roi[0]:roi[1],roi[2]:roi[3]], data[1, lambd, mod,roi[0]:roi[1],roi[2]:roi[3]]]), verbose = verbose, accu = acc, return_shift=True)
