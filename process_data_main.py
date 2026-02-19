@@ -54,7 +54,8 @@ import pd_functions_v22 as phased
 from xtalk_new import (
     fit_mueller_matrix, fit_mueller_matrix_tiled,
     write_crosstalk_header, fit_interference_Iref_to_Q_tiled,
-    write_interference_Iref_to_Q_header, apply_crosstalk_coeffs_standard
+    write_interference_Iref_to_Q_header, apply_crosstalk_coeffs_standard,
+    load_polynomial_coeffs_csv,apply_polynomial_Iref2Q
 )
 
 from process_data_utils import (
@@ -315,8 +316,9 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         logging.info("  Entering advanced_alignment .....")
 
         # Ruta del CSV
-        MODULE_DIR = Path(__file__).resolve().parent
-        alignment_csv_filename = MODULE_DIR / "CALDATA" / f"{cfg['level_07']['align_rot_data_filter']}"
+        if cfg['level_07']['advanced_save']:
+            MODULE_DIR = Path(__file__).resolve().parent
+            alignment_csv_filename = MODULE_DIR / "CALDATA" / f"{cfg['level_07']['align_rot_data_filter']}"
 
         advanced_wave = cfg['level_07']['advanced_wave']
         line_value = line['line']
@@ -325,7 +327,10 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         for wave in wave_list:
             logging.info(f"  Aligning advanced mode for λ={wave} line={line_value}")
 
-            data, result, timestamp = run_alignment_for_wavelength(
+            # _, result, timestamp = run_alignment_for_wavelength(
+            #     data, line_value, wave, header
+            # )
+            result, timestamp = run_alignment_for_wavelength(
                 data, line_value, wave, header
             )
 
@@ -358,17 +363,17 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
             logging.warning("  alignment_results.csv no existe aún tras advanced mode.")
 
     # =================== INTERPOLACIÓN (sin advanced) =================== #
-    df = _normalize_alignment_df(df)
+    # df = _normalize_alignment_df(df)
 
     # ---- Nivel: DATASET (una sola interpolación para todo el cubo) ---- #
     if cfg['level_07']['aligment_level'] == 'dataset':
         logging.info('  Interpolating rotation (dataset-level) ...')
 
-        try:
-            timestamp_ds = timestamp
-        except NameError:
-            dt = [parse_header_time(header[f"WV_{0}_M{k}"]) for k in range(4)]
-            timestamp_ds = sum(minutes_from_dt(d) for d in dt) / 4.0
+        # try:
+        #     timestamp_ds = timestamp
+        # except NameError:
+        dt = [parse_header_time(header[f"WV_{wave_list[0]}_M{k}"]) for k in range(4)]
+        timestamp_ds = sum(minutes_from_dt(d) for d in dt) / 4.0
 
         result = interpolate_filter(
             df=df,
@@ -379,8 +384,10 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         )
         _print_result_pretty(result)
 
+        # from matplotlib import pyplot as plt
         for i in range(wn):
             for j in range(pn):
+                # dd = data[1, i, j].copy()
                 data[1, i, j] = apply_transform(
                     data[1, i, j],
                     result['angle_deg'],
@@ -389,6 +396,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
                     scale_x=result["scale_x"], scale_y=result["scale_y"],
                     shear_x=result["shear_x"], shear_y=result["shear_y"]
                 )
+                # plt.imshow(dd - data[1, i, j], cmap='bwr', vmin=-np.percentile(np.abs(dd - data[1, i, j]), 99), vmax=np.percentile(np.abs(dd - data[1, i, j]), 99))
+                # plt.show()
 
     # ---- Nivel: WAVE (interpolación por λ) ---- #
     elif cfg['level_07']['aligment_level'] == 'wave':
@@ -432,15 +441,16 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         try:
             align_modulations = cfg['level_07']['align_modulations']
         except Exception:
-            align_modulations = True
+            align_modulations = False
 
         data, shifts, _ = align_obsmode(
             data, acc=cfg['level_07']['align_accuracy'], verbose=verb,
             filter=line['line'], returnshifts=True, roi=roi,
             quadrants=cfg['level_07']['align_quadrants'],
-            align_sequence=cfg['level_07'].get('align_sequence', 0),
-            debug=debug, align_modulations=align_modulations
-        )
+            align_sequence=cfg['level_07'].get('align_sequence', 1),
+            debug=debug, align_modulations=align_modulations,
+            manual_shift = cfg['level_07'].get('manual_shift', None)
+          )
 
         if cfg['level_07']['align_quadrants'] == 0:
             update_header(header, 'REALIGN', 1)
@@ -542,7 +552,7 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
         params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
 
         if params['apply_only']:
-            data, info_apply = apply_crosstalk_coeffs_standard(
+            data, info = apply_crosstalk_coeffs_standard(
                 data, coeffs, per_wavelength=per_wv,
                 use_local=params['use_local'], local_order=params['local_order'],
                 deriv_sigma=params['deriv_sigma'], channels=params['channels']
@@ -552,28 +562,31 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                 f"local_order={params['local_order']}, deriv_sigma={params['deriv_sigma']}, "
                 f"channels={params['channels']}, per_wavelength={per_wv}"
             )
+            info['mode'] = 'global' 
+            if cfg['level_10']['crosst_mode'] == 'standard':
+                 header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+
         else:
-            pass
+               logging.info(f'  >> fitting cross-talk factors:')
 
-        data, info = fit_mueller_matrix(
-            data,
-            method=cfg['level_10']['crosst_mode'],
-            pthresh=cfg['level_10']['crosst_threshold'],
-            ctmethod='linfit',
-            last_wvl=cfg['level_10']['crosst_last_wave'],
-            region=cfg['level_10']['crosst_region'],
-            use_local=cfg['level_10']['use_local'],
-            local_order=1,
-            deriv_sigma=0.0,
-            local_ridge_lambda=0.0,
-            aggregate_wavelengths=False,
-            channels=('Q', 'U', 'V'),
-            verbose=cfg['level_10']['crosst_verbose'],
-            dualI=dualI,
-        )
-
-        if cfg['level_10']['crosst_mode'] == 'standard':
-            header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+               data, info = fit_mueller_matrix(
+                    data,
+                    method=cfg['level_10']['crosst_mode'],
+                    pthresh=cfg['level_10']['crosst_threshold'],
+                    ctmethod='linfit',
+                    last_wvl=cfg['level_10']['crosst_last_wave'],
+                    region=cfg['level_10']['crosst_region'],
+                    use_local=cfg['level_10']['use_local'],
+                    local_order=1,
+                    deriv_sigma=0.0,
+                    local_ridge_lambda=0.0,
+                    aggregate_wavelengths=False,
+                    channels=('Q', 'U', 'V'),
+                    verbose=cfg['level_10']['crosst_verbose'],
+                    dualI=dualI,
+               )
+               if cfg['level_10']['crosst_mode'] == 'standard':
+                    header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
 
         if cfg['level_10']['crosst_mode'] == 'jaeggli':
             matrix = info.get('MM1a', {})
@@ -603,32 +616,48 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
         )
 
     if cfg['level_10']['crosst_interference']:
-        ref_wvl = -1
-        data, tiles, out = fit_interference_Iref_to_Q_tiled(
-            data,
-            ref_wvl=ref_wvl,
-            divisions=int(cfg['level_10']['crosst_interference']),
-            region=[0, -1, 0, -1],
-            ctmethod='linfit',
-            n_sigma=3,
-            pthresh_intensity=0.0,
-            use_local=False,
-            local_order=1,
-            deriv_sigma=0.0,
-            local_ridge_lambda=0.0,
-            apply=True,
-            show_grid=False,
-            verbose=False
-        )
+        # chech if cfg['level_10']['crosst_interference'] is a number of a string.
+        if not isinstance(cfg['level_10']['crosst_interference'], int):
+            logging.info(f'  >> using interference cross-talk factors from:')
 
-        header = write_interference_Iref_to_Q_header(
-            header,
-            a=out['a'], b=out['b'], c=out['c'], d=out['d'], e=out['e'],
-            ref_wvl=out['ref_wvl'], divisions=out['divisions'], tiles=tiles,
-            use_local=out['use_local'], local_order=out['local_order'],
-            deriv_sigma=out['deriv_sigma'], ridge_lambda=out['ridge'],
-            index_width=3, after_keyword='ALIGMETH'
-        )
+            coeffs = load_polynomial_coeffs_csv(cfg['level_10']['crosst_interference'])
+            
+            wn, pn, _, _ = data.shape
+
+            with tqdm(total=wn * pn) as pbar:
+
+               for wl in range(wn):
+                    for pl in range(1,pn):
+                         data[wl, pl] = apply_polynomial_Iref2Q(data[wl, pl], data[-1, 0], coeffs, wavelength=wl)
+                         pbar.update(1)
+
+        else:
+            ref_wvl = -1
+            data, tiles, out = fit_interference_Iref_to_Q_tiled(
+                data,
+                ref_wvl=ref_wvl,
+                divisions=int(cfg['level_10']['crosst_interference']),
+                region=[0, -1, 0, -1],
+                ctmethod='linfit',
+                n_sigma=3,
+                pthresh_intensity=0.0,
+                use_local=False,
+                local_order=1,
+                deriv_sigma=0.0,
+                local_ridge_lambda=0.0,
+                apply=True,
+                show_grid=False,
+                verbose=False
+            )
+
+            header = write_interference_Iref_to_Q_header(
+                header,
+                a=out['a'], b=out['b'], c=out['c'], d=out['d'], e=out['e'],
+                ref_wvl=out['ref_wvl'], divisions=out['divisions'], tiles=tiles,
+                use_local=out['use_local'], local_order=out['local_order'],
+                deriv_sigma=out['deriv_sigma'], ridge_lambda=out['ridge'],
+                index_width=3, after_keyword='ALIGMETH'
+            )
 
     if cfg['plots']['plot_level1_0']:
         plt_level(

@@ -1,6 +1,8 @@
 timeline_names = ['comm1','02_EMEF_AR1','02_EMEF_AR2','06_SPOT_AR1','06_SPOT_AR2',
                 "10_SPOT_SP12","10_SPOT_SP4ab","10_SPOT_SP9","12_FLAR_FL1",
-                "16_LIMB_PL1","16_LIMB_PL4"]
+                "16_LIMB_PL1","16_LIMB_PL4","04_QSUN_QS12a","04_QSUN_QS4ab","04_QSUN_QS8","35_CHOL_QS5a",
+                "27_EMEF_AR1",
+                ]
 
 obs_dict = {
     "comm1": {
@@ -131,7 +133,14 @@ obs_dict = {
         "flats": ["D16-38563-39202","D16-36899-38178"],
         "obsdata": ["D16-26560-36406"],
     },
-    }
+    "27_EMEF_AR1": {  #OBA SAN DATA
+        "lines": ['517','525.02'],
+        "obs_is": ['1','2.02'],
+        "obs_size": [10*4*2,8*4*2],
+        "darks": ["D15-45710-45809"],
+        "flats": ["D15-47480-48695","D15-46200-47479"],
+        "obsdata": ["D15-20652-44940"],
+    },    }
 
 
 # SUNSPOT_2 (SP8) dataset from July 14 (around 21:40–23:40 UTC) r

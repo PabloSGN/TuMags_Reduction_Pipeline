@@ -853,7 +853,7 @@ def shift_subp(im: np.ndarray, shift=None, wrap=True, fill=0):
 
 def align_obsmode(data, acc = 0.01, verbose = False, filter = filter, 
                   onelambda = False, returnshifts = True,roi = [0,-1,0,-1], quadrants = 0,
-                  align_sequence = 0, debug = False, align_modulations = True):
+                  align_sequence = 0, debug = False, align_modulations = True, manual_shift = None):
     """
     Function to filter, rotate camera 2 and align an obs mode. 
 
@@ -1247,6 +1247,19 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                     
                     logging.info("Final modulation alignment applied.")
                     # data = np.copy(aligned)
+            elif align_sequence == 2 and manual_shift is not None:
+                logging.info("Manual alignment.")
+                # data provided in yalm
+                # Aplicar shift global SOLO a cam2 
+                for j in range(nmods):
+                    aligned[1, lambd, j] = shift_subp(
+                        data[1, lambd, j],
+                        shift = manual_shift,
+                        wrap=True, fill=0
+                    )
+                # Cam1 no se toca (referencia)
+                aligned[0, lambd] = data[0, lambd]
+
             else:
                 exit
             

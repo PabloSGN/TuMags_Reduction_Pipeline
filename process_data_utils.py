@@ -119,7 +119,7 @@ DEFAULT_CONFIG = {
         "advanced_overwrite": True,
 
         # Nivel de aplicación del alineamiento
-        "aligment_level": "wave",          # "dataset", "wave" o "pol"
+        "aligment_level": "dataset",          # "dataset", "wave" o "pol"
 
         # Destretch options
         "destretch_aling_cam": "same",     # 'all' | 'full' | 'same'
@@ -532,7 +532,7 @@ def print_shifts_by_cam(shifts):
     """
     wn, _, _, pn = shifts.shape
 
-    for cam in range(2):
+    for cam in range(1,2):
         print(f"\n==================== Camera {cam} ====================")
 
         for rc_idx, rc_label in enumerate(["row", "col"]):

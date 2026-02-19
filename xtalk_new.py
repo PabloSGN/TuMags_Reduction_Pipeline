@@ -15,9 +15,7 @@ from scipy.stats import linregress
 from scipy.ndimage import sobel, laplace, gaussian_filter
 from typing import List, Tuple, Dict, Any, Optional
 from astropy.io.fits import Header
-
-
-# from process_data_utils import generar_cuadrantes_nx_n
+import csv
 
 def _generate_squares(radius,divisions: int = 6):
     square_centers = np.linspace(-radius,radius,divisions+1,endpoint=True)[1:] - radius / divisions
@@ -1643,12 +1641,6 @@ def write_crosstalk_header(
 
     return header
 
-import numpy as np
-from typing import List, Tuple, Dict, Any, Optional
-from scipy.ndimage import sobel, laplace, gaussian_filter
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
-
 # ------------------------- helpers rejilla -------------------------
 def _grid_tiles(H: int, W: int, y1: int, y2: int, x1: int, x2: int, divisions: int) -> List[Tuple[int,int,int,int]]:
     """Rejilla n×n no solapada dentro de [y1:y2, x1:x2]. Devuelve [(yt1,yt2,xt1,xt2), ...]."""
@@ -1861,9 +1853,6 @@ def fit_interference_Iref_to_Q_tiled(
     }
     return data_corr, tiles, out
 
-from astropy.io.fits import Header
-import numpy as np
-
 def write_interference_Iref_to_Q_header(
     header: "Header",
     a: np.ndarray,        # shape (n_wvl, n_tiles)
@@ -1936,3 +1925,65 @@ def write_interference_Iref_to_Q_header(
             header[f'IL{suf}'] = (float(e[iw, it]), f'Interference I->Q: laplacian e (w={iw},t={it})')
 
     return header
+
+def load_polynomial_coeffs_csv(csv_path):
+    with open(csv_path) as f:
+        r = csv.DictReader(f)
+        rows = list(r)
+
+    coeffs = {}
+    for row in rows:
+        iw = int(row["wavelength"])
+        degx = int(row["degx"])
+        degy = int(row["degy"])
+
+        surfA = {}
+        surfB = {}
+
+        for key,val in row.items():
+            if key.startswith("a_"):
+                _,i,j = key.split("_")
+                surfA[(int(i),int(j))] = float(val)
+            if key.startswith("b_"):
+                _,i,j = key.split("_")
+                surfB[(int(i),int(j))] = float(val)
+
+        coeffs[iw] = {
+            "degx": degx,
+            "degy": degy,
+            "a": surfA,
+            "b": surfB
+        }
+    return coeffs
+
+
+# ==========================================================
+# 8) APLICAR A UN DATASET
+# ==========================================================
+
+def normalize_pixel(x, y, nx, ny):
+    xn = 2*(x+0.5)/nx - 1.0
+    yn = 2*(y+0.5)/ny - 1.0
+    return xn, yn
+
+def eval_poly2d(x, y, surf):
+    value = 0.0
+    for (i,j), c in surf.items():
+        value += c * (x**i) * (y**j)
+    return value
+
+def apply_polynomial_Iref2Q(Q, Iref, coeffs, wavelength):
+    surfA = coeffs[wavelength]["a"]
+    surfB = coeffs[wavelength]["b"]
+
+    ny,nx = Q.shape
+    Qcorr = np.zeros_like(Q)
+
+    for y in range(ny):
+        for x in range(nx):
+            xn, yn = normalize_pixel(x, y, nx, ny)
+            a = eval_poly2d(xn, yn, surfA)
+            b = eval_poly2d(xn, yn, surfB)
+            Qcorr[y,x] = Q[y,x] - (a + b * Iref[y,x])
+
+    return Qcorr

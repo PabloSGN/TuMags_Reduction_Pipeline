@@ -452,7 +452,8 @@ def update_alignment_csv(
 def run_alignment_for_wavelength(data, line_value, wave, header):
     """ Ejecuta advance_alignment para un wave y calcula timestamp. """
     
-    data_aligned, result = advance_alignment(data, line_value, wave)
+    result = advance_alignment(data, line_value, wave)
+    # data_aligned, result = advance_alignment(data, line_value, wave)
 
     # Calcular timestamp con medias de M0-M3
     dt = []
@@ -460,7 +461,8 @@ def run_alignment_for_wavelength(data, line_value, wave, header):
         dt.append(parse_header_time(header[f"WV_{wave}_M{k}"]))
     timestamp = sum(minutes_from_dt(d) for d in dt) / 4.0
 
-    return data_aligned, result, timestamp
+    return result, timestamp
+    # return data_aligned, result, timestamp
 
 def advance_alignment(data, filter, wave):
     
@@ -485,20 +487,21 @@ def advance_alignment(data, filter, wave):
     # I_cam2 = a+b
 
     result = align_advance(I_cam1,I_cam2)
-    angle_deg, t_y, t_x, c_y, c_x, scale_x, scale_y, shear_x, shear_y = result.x
-    t = np.array([t_y, t_x])
-    center = np.array([c_y, c_x])
+    # angle_deg, t_y, t_x, c_y, c_x, scale_x, scale_y, shear_x, shear_y = result.x
+    # t = np.array([t_y, t_x])
+    # center = np.array([c_y, c_x])
 
-    # Aplicar shift global SOLO a cam2 
-    for ld in range(data.shape[1]):
-        for j in range(data.shape[2]):
-            data[1, ld, j] = apply_transform(
-                data[1, ld, j], angle_deg, t, center,
-                scale_x, scale_y, shear_x, shear_y
-            )
+    # # Aplicar shift global SOLO a cam2 
+    # for ld in range(data.shape[1]):
+    #     for j in range(data.shape[2]):
+    #         data[1, ld, j] = apply_transform(
+    #             data[1, ld, j], angle_deg, t, center,
+    #             scale_x, scale_y, shear_x, shear_y
+    #         )
 
     tac = time.time()
 
     logging.info(f"Alignment finished in {round(tac - tic, 3)} s.")
 
-    return data, result
+    # return data, result
+    return result
