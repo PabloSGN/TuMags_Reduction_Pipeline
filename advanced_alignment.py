@@ -321,6 +321,10 @@ def align_advance(I_cam1, I_cam2):
     _print_result(res)
 
     return res
+from pathlib import Path
+import logging
+import numpy as np
+import pandas as pd
 
 def update_alignment_csv(
     csv_path,
@@ -349,7 +353,7 @@ def update_alignment_csv(
     fun : float
         Valor de la función objetivo del optimizador (para trazabilidad).
     overwrite : bool
-        Si True, sustituye la fila existente con la misma clave (obs_ID, line, wave).
+        Si True, sustituye la fila existente con la misma clave (obs_ID, line, wave, timestamp).
         Si False, añade una nueva fila.
     obs_ID : str | None
         Identificador de la observación (se usa en la clave).
@@ -415,16 +419,27 @@ def update_alignment_csv(
         if c not in df.columns:
             df[c] = np.nan
 
-    # --- Overwrite por clave (obs_ID, line, wave) ---
-    if overwrite:
+    # --- Overwrite por clave (obs_ID, line, wave, timestamp) ---
+    if overwrite and not df.empty:
+        # Asegurar tipos para comparaciones
+        df_obs   = df['obs_ID'].astype(str).fillna("")
+        df_line  = df['line'].astype(str).fillna("")
+        df_wave  = pd.to_numeric(df['wave'], errors='coerce').fillna(-1).astype(int)
+        df_tst   = pd.to_numeric(df['timestamp'], errors='coerce')
+
         mask = (
-            (df['obs_ID'].astype(str).fillna("") == new_row['obs_ID']) &
-            (df['line'].astype(str).fillna("")   == new_row['line'])   &
-            (df['wave'].fillna(-1).astype(int)   == new_row['wave'])
+            (df_obs == new_row['obs_ID']) &
+            (df_line == new_row['line']) &
+            (df_wave == new_row['wave']) &
+            (df_tst == float(new_row['timestamp']))   # <-- misma marca temporal
         )
+
         n_prev = int(mask.sum())
         if n_prev > 0:
-            logging.info(f"[update_alignment_csv] Overwrite: eliminando {n_prev} fila(s) con misma clave (obs_ID,line,wave).")
+            logging.info(
+                "[update_alignment_csv] Overwrite: eliminando %d fila(s) con misma clave (obs_ID,line,wave,timestamp).",
+                n_prev
+            )
             df = df.loc[~mask].copy()
 
     # --- Añadir fila y forzar tipos numéricos donde toque ---

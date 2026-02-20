@@ -372,7 +372,12 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         # try:
         #     timestamp_ds = timestamp
         # except NameError:
-        dt = [parse_header_time(header[f"WV_{wave_list[0]}_M{k}"]) for k in range(4)]
+        # dt = [parse_header_time(header[f"WV_{wave_list[0]}_M{k}"]) for k in range(4)]
+        try:
+            dt = [parse_header_time(header[f"WV_{advanced_wave}_M{k}"]) for k in range(4)]
+        except:
+            dt = [parse_header_time(header[f"WV_{0}_M{k}"]) for k in range(4)]
+
         timestamp_ds = sum(minutes_from_dt(d) for d in dt) / 4.0
 
         result = interpolate_filter(
@@ -627,9 +632,11 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
             with tqdm(total=wn * pn) as pbar:
 
                for wl in range(wn):
-                    for pl in range(1,pn):
-                         data[wl, pl] = apply_polynomial_Iref2Q(data[wl, pl], data[-1, 0], coeffs, wavelength=wl)
-                         pbar.update(1)
+                    # for pl in range(1,pn):
+                    #      data[wl, pl] = apply_polynomial_Iref2Q(data[wl, pl], data[-1, 0], coeffs, wavelength=wl)
+                    #      pbar.update(1)
+                    data[wl, 1] = apply_polynomial_Iref2Q(data[wl, 1], data[-1, 0], coeffs, wavelength=wl)
+                    pbar.update(1)
 
         else:
             ref_wvl = -1
