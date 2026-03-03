@@ -1350,48 +1350,13 @@ def apply_crosstalk_coeffs_standard(
         channels=channels
     )
     return data_corr, info
-# ---------------------------------------------------------------------
-# Helpers: grid generation and region slicing
-# ---------------------------------------------------------------------
-def _grid_tiles_from_region(H: int, W: int, y1: int, y2: int, x1: int, x2: int, divisions: int) -> List[Tuple[int,int,int,int]]:
-    """
-    Build an n×n grid of tiles covering the region [y1:y2, x1:x2].
-    Returns list of (yt1, yt2, xt1, xt2) tiles in row-major order.
-    """
-    h = max(0, y2 - y1)
-    w = max(0, x2 - x1)
-    if h <= 0 or w <= 0:
-        raise ValueError("Region must have positive area.")
-    base_h = h / divisions
-    base_w = w / divisions
 
-    tiles = []
-    for i in range(divisions):
-        for j in range(divisions):
-            yt1 = int(round(y1 + i * base_h))
-            yt2 = int(round(y1 + (i + 1) * base_h))
-            xt1 = int(round(x1 + j * base_w))
-            xt2 = int(round(x1 + (j + 1) * base_w))
-            # clamp inside image
-            yt1 = max(0, min(H, yt1)); yt2 = max(0, min(H, yt2))
-            xt1 = max(0, min(W, xt1)); xt2 = max(0, min(W, xt2))
-            if yt2 > yt1 and xt2 > xt1:
-                tiles.append((yt1, yt2, xt1, xt2))
-    return tiles
 
-def _slice_region(region: List[int]) -> Tuple[slice, slice]:
-    y1, y2, x1, x2 = region
-    return slice(y1, y2), slice(x1, x2)
-
-# ---------------------------------------------------------------------
-# Main: tiled Mueller/crosstalk fit using your fit_mueller_matrix()
-# ---------------------------------------------------------------------
 def fit_mueller_matrix_tiled(
     data: np.ndarray,
     pthresh: float = 0.02,
     norm: bool = False,
-    divisions: int = 8,
-    region: List[int] = [0, -1, 0, -1],  # [y1,y2,x1,x2] (sobre el cubo completo)
+    quadrants: int = 8,
     method: str = 'standard',            # 'standard' | 'jaeggli' | 'all_wvls' | 'corr'
     last_wvl: Optional[int] = None,
     plots: bool = False,
@@ -1405,8 +1370,6 @@ def fit_mueller_matrix_tiled(
     local_ridge_lambda: float = 0.0,
     aggregate_wavelengths: bool = False,
     # --- control tiles ---
-    min_valid: int = 64,                 # píxeles mínimos por tile para ajustar
-    show_grid: bool = False              # plot opcional de la rejilla sobre I
 ) -> Tuple[np.ndarray, List[Tuple[int,int,int,int]], List[Dict[str,Any]]]:
     """
     Divide la imagen en una rejilla n×n de tiles y, en cada tile, llama a
@@ -1438,45 +1401,49 @@ def fit_mueller_matrix_tiled(
         Lista de metadatos devueltos por fit_mueller_matrix(...) por tile.
         (coeficientes por λ, modelo, etc.)
     """
+
+    def _generar_cuadrantes_nx_n(H, W, n):
+        """
+        Divide una imagen en una cuadrícula n×n de cuadrados del mismo tamaño.
+
+        Parámetros:
+            H, W : int
+                Alto (H) y ancho (W) de la imagen.
+            n : int
+                Número de cuadrados por eje (n=2 -> 2x2, n=3 -> 3x3, etc.)
+
+        Retorna:
+            Lista de tuplas (y1, y2, x1, x2) que representan las coordenadas
+            de cada cuadrado en formato (fila_superior, fila_inferior, col_izquierda, col_derecha).
+        """
+        # tamaño ideal de cada cuadrado
+        base_h = H / n
+        base_w = W / n
+
+        rois = []
+        for i in range(n):
+            for j in range(n):
+                y1 = int(round(i * base_h))
+                y2 = int(round((i + 1) * base_h))
+                x1 = int(round(j * base_w))
+                x2 = int(round((j + 1) * base_w))
+                rois.append((y1, y2, x1, x2))
+
+        return rois
+    
     if data.ndim != 4 or data.shape[1] != 4:
         raise ValueError("Expected data shape (wavelength, 4, x, y) with Stokes=[I,Q,U,V].")
 
-    n_wvl, _, H, W = data.shape
-    ysl, xsl = _slice_region(region)
-    H_reg = len(range(*ysl.indices(H)))
-    W_reg = len(range(*xsl.indices(W)))
-
-    # Construir rejilla de tiles sobre region
-    tiles = _grid_tiles_from_region(H, W, ysl.start or 0, ysl.stop or H, xsl.start or 0, xsl.stop or W, divisions)
-
-    # Plot rejilla (opcional)
-    if show_grid:
-        I0 = data[0, 0]
-        v0 = I0[np.isfinite(I0)].ravel()
-        lims = (np.nanmedian(v0) - 1.5*np.nanstd(v0), np.nanmedian(v0) + 1.5*np.nanstd(v0)) if v0.size else None
-        fig, ax = plt.subplots(figsize=(8, 8))
-        im = ax.imshow(I0, cmap='gray', vmin=None if lims is None else lims[0], vmax=None if lims is None else lims[1])
-        for (y1, y2, x1, x2) in tiles:
-            ax.add_patch(Rectangle((x1, y1), x2-x1, y2-y1, fill=False, edgecolor='r', lw=0.8))
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        ax.set_title(f"Tile grid ({divisions}×{divisions}) over I (λ=0)")
-        plt.tight_layout()
-        plt.show()
+    H, W = data.shape[-1], data.shape[-1]   # dimensiones de la imagen
+    quadrants_roi = _generar_cuadrantes_nx_n(H, W, quadrants)
 
     data_corr = np.copy(data)
     infos: List[Dict[str, Any]] = []
 
-    # Loop por tiles
-    for t_idx, (yt1, yt2, xt1, xt2) in enumerate(tiles):
-        sub = data[:, :, yt1:yt2, xt1:xt2]
 
-        # chequeo píxeles válidos
-        n_valid = int(np.isfinite(sub[0]).sum())
-        if n_valid < min_valid:
-            if verbose:
-                logging.info(f"[tile {t_idx:02d}] skip: too few valid pixels ({n_valid}<{min_valid}).")
-            infos.append({'tile': (yt1, yt2, xt1, xt2), 'skipped': True})
-            continue
+    for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+
+        sub = data[:,:,y1:y2, x1:x2]
 
         # Llamada por tile a tu fit_mueller_matrix (usa TODO lo que ya integraste)
         data_corr_tile, info = fit_mueller_matrix(
@@ -1499,20 +1466,187 @@ def fit_mueller_matrix_tiled(
         )
 
         # Volcar resultado al mosaico
-        data_corr[:, :, yt1:yt2, xt1:xt2] = data_corr_tile
+        data_corr[:, :, y1:y2, x1:x2] = data_corr_tile
 
         # Guarda info del tile
         info = dict(info)  # copia
-        info['tile'] = (yt1, yt2, xt1, xt2)
+        info['tile'] = (y1, y2, x1, x2)
         infos.append(info)
 
-        if verbose:
-            mode = info.get('mode', method)
-            logging.info(f"[tile {t_idx+1}/{len(tiles)}] {mode} OK -> region=({yt1}:{yt2},{xt1}:{xt2})")
+        logging.info(f"[tile {q+1}/{len(quadrants_roi)}] OK -> region=({y1}:{y2},{x1}:{x2})")
 
-    return data_corr, tiles, infos
+    return data_corr, infos
 
+import numpy as np
+import matplotlib.pyplot as plt
 
+def ver_planos_ajuste(planes, samples):
+    """
+    Muestra por canal/término:
+      - coeficientes del plano (A,B,C)
+      - puntos usados (cx,cy,z)
+      - y dibuja el plano si hay >=3 puntos
+    planes[ch][t] = (A,B,C)
+    samples[ch][t] = [(cx,cy,z), ...]  o ndarray (N,3)  o (cx,cy,z)
+    """
+
+    def _pts(pts):
+        # Normaliza a lista de (x,y,z)
+        if pts is None:
+            return []
+        if isinstance(pts, (list, tuple)):
+            if len(pts) == 0: return []
+            if isinstance(pts[0], (list, tuple, np.ndarray)) and len(pts[0]) == 3:
+                return [tuple(map(float, p)) for p in pts]
+            if len(pts) == 3 and all(isinstance(v, (int,float,np.floating)) for v in pts):
+                return [tuple(map(float, pts))]
+            return []
+        if isinstance(pts, np.ndarray):
+            pts = np.asarray(pts)
+            if pts.ndim == 2 and pts.shape[1] == 3:
+                return [tuple(map(float, p)) for p in pts]
+            if pts.ndim == 1 and pts.size == 3:
+                return [tuple(map(float, pts))]
+        return []
+
+    any_plot = False
+    for ch in sorted(planes.keys()):
+        for t in sorted(planes[ch].keys()):
+
+            coefs = planes[ch][t]
+            if len(coefs) == 3:
+                A, B, C = coefs
+                Dxy = 0.0
+            else:
+                A, B, C, Dxy = coefs
+
+            pts = _pts(samples.get(ch, {}).get(t, []))
+
+            print(f"\n=== {ch} / {t} ===")
+            print(f"Plano: z = {A:.6e} * x + {B:.6e} * y + {C:.6e}")
+            if not pts:
+                print("Puntos: (ninguno)")
+                continue
+
+            print("Puntos (cx, cy, z):")
+            for (x,y,z) in pts:
+                print(f"  ({x:.1f}, {y:.1f}, {z:.6e})")
+
+            if len(pts) < 3:
+                print(f"Aviso: solo {len(pts)} punto(s). No se dibuja el plano.")
+                continue
+
+            xs = np.array([p[0] for p in pts], float)
+            ys = np.array([p[1] for p in pts], float)
+            zs = np.array([p[2] for p in pts], float)
+
+            xx = np.linspace(xs.min(), xs.max(), 20)
+            yy = np.linspace(ys.min(), ys.max(), 20)
+            XX, YY = np.meshgrid(xx, yy)
+            ZZ = A*XX + B*YY + C + Dxy*(XX*YY)
+
+            fig = plt.figure(figsize=(5,4))
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(xs, ys, zs, c='r', s=40, label='Puntos')
+            ax.plot_surface(XX, YY, ZZ, alpha=0.5, cmap='viridis')
+            ax.set_title(f"{ch} – {t}")
+            ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("coef")
+            ax.legend()
+            plt.tight_layout(); plt.show()
+            any_plot = True
+
+    if not any_plot:
+        print("\nNo se ha dibujado ninguna superficie (faltan términos con >=3 puntos).")
+
+def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw):
+    """
+    Minimal:
+    - Extrae a,b,c,d,e desde info['coeffs_per_wvl'][λ]['fit'][ch]
+    - Ajusta planos por término
+    - Aplica corrección
+    """
+
+    L, _, Y, X = data.shape
+    name2idx = {'I':0,'Q':1,'U':2,'V':3}
+    TERMS = ('a','b','c','d','e')
+
+    # --- cortar ROI ---
+    def recorte(cx,cy,lado):
+        h = lado//2
+        x1=max(0,cx-h); x2=min(X,cx+h+(lado%2))
+        y1=max(0,cy-h); y2=min(Y,cy+h+(lado%2))
+        return x1,x2,y1,y2
+
+    # --- extraer a,b,c,d,e (promedio en λ) ---
+    def extraer_coef(info):
+        out={ch:{} for ch in channels}
+        per = info.get('coeffs_per_wvl',[])
+        if not per: return {}
+        for ch in channels:
+            acc={t:[] for t in TERMS}
+            for elt in per:
+                fd = elt['fit'].get(ch,{})
+                for t in TERMS:
+                    if t in fd: acc[t].append(float(fd[t]))
+            out[ch] = {t: np.nanmean(acc[t]) for t in TERMS if acc[t]}
+        return out
+
+    # --- recolectar puntos ---
+    samples = {ch:{t:[] for t in TERMS} for ch in channels}
+    infos=[]
+
+    for (cx,cy,lado) in rois:
+        print(f"Procesando ROI centrada en ({cx},{cy}) con lado {lado}...")
+        x1,x2,y1,y2 = recorte(cx,cy,lado)
+        sub = data[:,:,y1:y2, x1:x2]
+
+        _, info = fit_mueller_matrix(sub, channels=channels, **kw)
+        infos.append(info)
+
+        coefs = extraer_coef(info)
+        for ch in channels:
+            for t in TERMS:
+                if t in coefs.get(ch,{}):
+                    samples[ch][t].append((cx,cy,float(coefs[ch][t])))
+        logging.info(f"ROI ({cx},{cy}) -> coeficientes extraídos: {coefs}")
+    # --- planos ---
+    planes={ch:{} for ch in channels}
+    maps  ={ch:{} for ch in channels}
+
+    xs=np.arange(X)[None,:]
+    ys=np.arange(Y)[:,None]
+
+    for ch in channels:
+        for t in TERMS:
+            pts=samples[ch][t]
+            if len(pts)<3: continue
+
+            P = np.array([[x, y, x*y, 1.0] for (x,y,_) in pts], float)
+            z = np.array([v for (_,_,v) in pts], float)
+            A, B, Dxy, C = np.linalg.lstsq(P, z, rcond=None)[0]
+            planes[ch][t] = (A, B, C, Dxy)             # guardamos 4 coef.
+            maps[ch][t]   = A*xs + B*ys + C + Dxy*(ys*xs)  # (Y,X) por broadcasting
+
+    # --- corrección ---
+    data_corr = data.copy()
+    for l in range(L):
+        I = data_corr[l,0]
+        dIx = sobel(I, axis=1)
+        dIy = sobel(I, axis=0)
+
+        for ch in channels:
+            j = name2idx[ch]
+            CT = np.zeros_like(I)
+            for t,(arr) in maps[ch].items():
+                if t=='a': CT += arr
+                if t=='b': CT += arr * I
+                if t=='c': CT += arr * dIx
+                if t=='d': CT += arr * dIy
+                # if t=='e': CT += arr * lap
+            data_corr[l,j] -= CT
+
+    # ✅ DEVUELVE LOS PUNTOS ORIGINALES (SIN SOBREESCRIBIRLOS)
+    return data_corr, planes, maps, infos, samples
 
 def write_crosstalk_header(
     header: "Header",

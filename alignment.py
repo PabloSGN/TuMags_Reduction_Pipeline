@@ -1007,7 +1007,7 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
         plt.show()
     err = []
 
-    logging.info(f"quadrants 0: {quadrants}")
+    logging.info(f"quadrants: {quadrants}")
     for lambd in range(nlambda):
         logging.info(f"Aligning wavelength: {lambd + 1}/{nlambda}")
 
@@ -1403,72 +1403,74 @@ def align_obsmode(data, acc = 0.01, verbose = False, filter = filter,
                         title_prefix=f"λ={lambd} Camera alignment (per quadrant, feather={10}px)"
                     )
 
-                # =============================
-                # (3) PSEUDO-IMÁGENES POR MODULACIÓN j (con cámaras ya patch‑alineadas)
-                # =============================
-                imgs_cam1 = aligned[0, lambd]    # (4,x,y)
-                imgs_cam2 = aligned[1, lambd]    # (4,x,y)
+                if align_modulations:
 
-                M1 = mod_matrices[filter][0]
-                M2 = mod_matrices[filter][1]
+                    logging.info("Modulation alignment (per quadrant) using pseudo‑images")
+                    # =============================
+                    # (3) PSEUDO-IMÁGENES POR MODULACIÓN j (con cámaras ya patch‑alineadas)
+                    # =============================
+                    imgs_cam1 = aligned[0, lambd]    # (4,x,y)
+                    imgs_cam2 = aligned[1, lambd]    # (4,x,y)
 
-                roi_norm = (roi[0], roi[1], roi[2], roi[3])
-                pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
-                    imgs_cam1, imgs_cam2, M1, M2, roi=roi_norm
-                )
+                    M1 = mod_matrices[filter][0]
+                    M2 = mod_matrices[filter][1]
 
-                for j in range(nmods):
-                    print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
-                        f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
-
-                # =============================
-                # (4) ALINEACIÓN ENTRE MODULACIONES (POR CUADRANTE)
-                # =============================
-                logging.info("Modulation alignment (per quadrant) using pseudo‑images")
-
-                for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
-                    patch_pseudo = pseudo_imgs[:, y1:y2, x1:x2]  # (4, h, w)
-                    _, srow_mod_q, scol_mod_q, _ = realign_subpixel(
-                        patch_pseudo, verbose=verbose, accu=acc, return_shift=True
+                    roi_norm = (roi[0], roi[1], roi[2], roi[3])
+                    pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
+                        imgs_cam1, imgs_cam2, M1, M2, roi=roi_norm
                     )
 
-                    # Guardar shifts de modulación por cuadrante
-                    shifts[lambd, q, 0, 0, :] = np.array(srow_mod_q, dtype=float)  # axis=0 (row)
-                    shifts[lambd, q, 0, 1, :] = np.array(scol_mod_q, dtype=float)  # axis=1 (col)
+                    for j in range(nmods):
+                        print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
+                            f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
 
-                    # # Aplicar shift de modulación SOLO en este cuadrante a ambas cámaras
-                    # for cam in range(2):
-                    #     for j in range(nmods):
-                    #         dy_mod = float(srow_mod_q[j])
-                    #         dx_mod = float(scol_mod_q[j])
-                    #         aligned[cam, lambd, j] = _apply_patch_shift(
-                    #             aligned[cam, lambd, j], y1, y2, x1, x2, dy_mod, dx_mod,
-                    #             wrap=True, fill=0
-                    #         )
+                    # =============================
+                    # (4) ALINEACIÓN ENTRE MODULACIONES (POR CUADRANTE)
+                    # =============================
 
-                    srs = ", ".join([f"{float(s):+.3f}" for s in srow_mod_q])
-                    scs = ", ".join([f"{float(s):+.3f}" for s in scol_mod_q])
-                    print(f"  Q{q}: mod shifts dy=[{srs}]  dx=[{scs}]")
+                    for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+                        patch_pseudo = pseudo_imgs[:, y1:y2, x1:x2]  # (4, h, w)
+                        _, srow_mod_q, scol_mod_q, _ = realign_subpixel(
+                            patch_pseudo, verbose=verbose, accu=acc, return_shift=True
+                        )
 
-                Q = len(quadrants_roi)
-                # Construir shifts por mod para todos los cuadrantes
-                shifts_q_per_mod = []
-                for j in range(nmods):
-                    # para mod j, vector de Q tuples (dy,dx)
-                    shifts_for_j = [(float(shifts[lambd, q, 0, 0, j]), float(shifts[lambd, q, 0, 1, j]))
-                                    for q in range(Q)]
-                    shifts_q_per_mod.append(shifts_for_j)
+                        # Guardar shifts de modulación por cuadrante
+                        shifts[lambd, q, 0, 0, :] = np.array(srow_mod_q, dtype=float)  # axis=0 (row)
+                        shifts[lambd, q, 0, 1, :] = np.array(scol_mod_q, dtype=float)  # axis=1 (col)
 
-                # Aplica por cuadrante a CAM1 y CAM2
-                for cam in range(2):
-                    aligned[cam, lambd] = apply_quadrant_shifts_with_feather_stack(
-                        aligned[cam, lambd],             # (4,X,Y)
-                        quadrants_roi=quadrants_roi,
-                        shifts_q_per_mod=shifts_q_per_mod,
-                        margin=10,
-                        shift_func=shift_subp,
-                        wrap=False, fill=0
-                    )
+                        # # Aplicar shift de modulación SOLO en este cuadrante a ambas cámaras
+                        # for cam in range(2):
+                        #     for j in range(nmods):
+                        #         dy_mod = float(srow_mod_q[j])
+                        #         dx_mod = float(scol_mod_q[j])
+                        #         aligned[cam, lambd, j] = _apply_patch_shift(
+                        #             aligned[cam, lambd, j], y1, y2, x1, x2, dy_mod, dx_mod,
+                        #             wrap=True, fill=0
+                        #         )
+
+                        srs = ", ".join([f"{float(s):+.3f}" for s in srow_mod_q])
+                        scs = ", ".join([f"{float(s):+.3f}" for s in scol_mod_q])
+                        print(f"  Q{q}: mod shifts dy=[{srs}]  dx=[{scs}]")
+
+                    Q = len(quadrants_roi)
+                    # Construir shifts por mod para todos los cuadrantes
+                    shifts_q_per_mod = []
+                    for j in range(nmods):
+                        # para mod j, vector de Q tuples (dy,dx)
+                        shifts_for_j = [(float(shifts[lambd, q, 0, 0, j]), float(shifts[lambd, q, 0, 1, j]))
+                                        for q in range(Q)]
+                        shifts_q_per_mod.append(shifts_for_j)
+
+                    # Aplica por cuadrante a CAM1 y CAM2
+                    for cam in range(2):
+                        aligned[cam, lambd] = apply_quadrant_shifts_with_feather_stack(
+                            aligned[cam, lambd],             # (4,X,Y)
+                            quadrants_roi=quadrants_roi,
+                            shifts_q_per_mod=shifts_q_per_mod,
+                            margin=10,
+                            shift_func=shift_subp,
+                            wrap=False, fill=0
+                        )
 
 
                 if debug['activate']:

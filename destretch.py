@@ -23,7 +23,7 @@ from alignment import compute_pseudo_images_leastsq
 import logging
 
 def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6,
-            n_iterations=200, lambda_tt=0.01,aling_cam='partial', filter = filter):
+            n_iterations=200, lambda_tt=0.01,aling_cam='partial', filter = filter, align_modulations = False):
     """
     Aligns modulations and camera data using the `torchmfbd` package.
 
@@ -175,48 +175,49 @@ def destretch(data, ngrid=8, ngrid_mod = 2, lr=0.50, reference_frame=0, border=6
                 warped = torchmfbd.apply_destretch(mod_data, distortion_map, mode='bilinear')
                 data[:, lambd, mod] = warped[0, 0].detach().cpu().numpy()
 
-            # =============================
-            # (3) PSEUDO-IMÁGENES POR MODULACIÓN j
-            # =============================
-            imgs_cam1 = data[0, lambd]    # (4,x,y)
-            imgs_cam2 = data[1, lambd]    # (4,x,y)
+            if align_modulations:
+                # =============================
+                # (3) PSEUDO-IMÁGENES POR MODULACIÓN j
+                # =============================
+                imgs_cam1 = data[0, lambd]    # (4,x,y)
+                imgs_cam2 = data[1, lambd]    # (4,x,y)
 
-            M1 = mod_matrices[filter][0]
-            M2 = mod_matrices[filter][1]
+                M1 = mod_matrices[filter][0]
+                M2 = mod_matrices[filter][1]
 
-            pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
-                imgs_cam1, imgs_cam2, M1, M2
-            )
+                pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
+                    imgs_cam1, imgs_cam2, M1, M2
+                )
 
-            for j in range(4):
-                print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
-                    f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
+                for j in range(4):
+                    print(f"[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, "
+                        f"gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}")
 
-            # =============================
-            # (4) ALINEACIÓN ENTRE MODULACIONES
-            # =============================
-            logging.info("Aligning modulations using pseudo-images...")
+                # =============================
+                # (4) ALINEACIÓN ENTRE MODULACIONES
+                # =============================
+                logging.info("Aligning modulations using pseudo-images...")
 
-            pseudo_imgs_tensor = torch.tensor(pseudo_imgs.astype('float32')).unsqueeze(0).unsqueeze(0)
+                pseudo_imgs_tensor = torch.tensor(pseudo_imgs.astype('float32')).unsqueeze(0).unsqueeze(0)
 
-            _, distortion_map_pseudo_imgs = torchmfbd.destretch(
-                pseudo_imgs_tensor, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
-                border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
-            )
+                _, distortion_map_pseudo_imgs = torchmfbd.destretch(
+                    pseudo_imgs_tensor, ngrid=ngrid, lr=lr, reference_frame=reference_frame,
+                    border=border, n_iterations=n_iterations, lambda_tt=lambda_tt,
+                )
 
-            for i in range(4):
-                for j in range(2):
-                    print('shifts mod=', i, '(x,y)=', j,
-                            distortion_map_pseudo_imgs[i,j,data.shape[-1]//2,data.shape[-1]//2])
+                for i in range(4):
+                    for j in range(2):
+                        print('shifts mod=', i, '(x,y)=', j,
+                                distortion_map_pseudo_imgs[i,j,data.shape[-1]//2,data.shape[-1]//2])
 
 
-            # =============================
-            # (5) APLICAR ESTE JITTER A AMBAS CAMARAS
-            # =============================
-            for cam in range(2):
-                mod_data = torch.tensor(data[cam, lambd, :].astype('float32')).unsqueeze(0).unsqueeze(0)
-                warped = torchmfbd.apply_destretch(mod_data, distortion_map_pseudo_imgs, mode='bilinear')
-                data[cam, lambd, :] = warped[0, 0].detach().cpu().numpy()
+                # =============================
+                # (5) APLICAR ESTE JITTER A AMBAS CAMARAS
+                # =============================
+                for cam in range(2):
+                    mod_data = torch.tensor(data[cam, lambd, :].astype('float32')).unsqueeze(0).unsqueeze(0)
+                    warped = torchmfbd.apply_destretch(mod_data, distortion_map_pseudo_imgs, mode='bilinear')
+                    data[cam, lambd, :] = warped[0, 0].detach().cpu().numpy()
 
     elif aling_cam == 'all':
         for lambd in range(data.shape[1]):

@@ -991,10 +991,6 @@ def correct_data_fft(
 
     return data_
 
-
-from scipy.ndimage import maximum_filter, center_of_mass
-
-
 def calculate_power_spectrum_with_apodization(image, window_type=None):
     """
     Calculate the power spectrum of an image with apodization to avoid artifacts.

@@ -7,10 +7,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import logging
-from process_data_utils import balance, parse_header_time, minutes_from_dt
+from process_data_utils import parse_header_time, minutes_from_dt
 from demodulation import demodulate
 import time
-
 
 # import (ConfigLoader,parse_range, 
 #                               print_shifts_by_cam, plt_darks, 
@@ -102,14 +101,10 @@ def _extract_patch(image, center, size=20):
 
     return image[y - half : y + half, x - half : x + half]
 
-_call_counter = 0
-
 def _cost_function_pixelwise(params, image0, image1,
                             size_corner=300,
-                            size_center=180, _call_counter = _call_counter):
-
-    # global _call_counter
-    _call_counter += 1
+                            size_center=180,
+                            weight = [0.5,2.0,1.0]):
 
     angle_deg, t_y, t_x, c_y, c_x, scale_x, scale_y, shear_x, shear_y = params
 
@@ -125,19 +120,20 @@ def _cost_function_pixelwise(params, image0, image1,
 
     weighted_rms = []
     weights = []
+    weight_val = 0
 
     for i, p in enumerate(points):
 
         # --- tamaños ---
         if i == 8:        # centro
             size = size_center
-            weight = 0.5
+            weight_val = weight[0]
         elif i < 4:       # esquinas
             size = size_corner
-            weight = 2.0
+            weight_val = weight[1]
         else:             # lados
             size = size_corner
-            weight = 1.0
+            weight_val = weight[1]
 
         patch0 = _extract_patch(image0, p, size=size)
         patch1 = _extract_patch(transformed_image1, p, size=size)
@@ -145,20 +141,16 @@ def _cost_function_pixelwise(params, image0, image1,
         if patch0.shape == patch1.shape:
             diff = patch0 - patch1
             rms = np.sqrt(np.mean(diff**2))
-            weighted_rms.append(weight * rms)
-            weights.append(weight)
+            weighted_rms.append(weight_val * rms)
+            weights.append(weight_val)
 
     mean_rms = np.sum(weighted_rms) / np.sum(weights)
 
-    # ---- DEBUG PRINT ----
-    # if _call_counter % 10 == 0:
     print(
-        f"[{_call_counter:04d}] "
         f"angle={angle_deg:+.6f}  "
         f"ty={t_y:+.5f} tx={t_x:+.5f}  "
         f"RMS={mean_rms:.6f}  "
         f"cy={c_y:+.5f} cx={c_x:+.5f}  "
-
     )
 
     return mean_rms
@@ -242,7 +234,7 @@ def plot_sampling_patches(image1, image2, size_corner=100, size_center=180, marg
 
     plt.show()
 
-def _print_result(res):
+def print_alignment_result(res, nox = False):
     names = [
         "angle_deg",
         "t_y",
@@ -256,75 +248,18 @@ def _print_result(res):
     ]
 
     print("\n=== RESULTADO FINAL DE OPTIMIZACIÓN ===")
-    print(f"Convergió: {res.success}")
-    print(f"Mensaje:   {res.message}")
     print("\nParámetros óptimos:\n")
 
-    for name, value in zip(names, res.x):
-        print(f"  {name:10s}: {value: .6f}")
+    if nox:
+        for name in names:
+            value = res[name]
+            print(f"  {name:10s}: {value: .6f}")
+    else:    
+        for name, value in zip(names, res.x):
+            print(f"  {name:10s}: {value: .6f}")
 
-    print(f"\f merito final: {res.fun:.6f}")
-    print("=======================================\n")
-
-def align_advance(I_cam1, I_cam2):
-
-    size_corner = 500   # half=150
-    size_center = 300   # half=100
-    margin = 200
-    # plot_sampling_patches(
-    #     I_cam1, I_cam2,
-    #     size_corner=size_corner,
-    #     size_center=size_center,
-    #     margin=margin
-    # )
-    args=(I_cam1, I_cam2,size_corner,size_center,_call_counter)
-
-    init_params = [
-        0.08,   # angle_deg
-        0.1,    # t_y
-        0.1,    # t_x
-        800,    # center_y
-        800,    # center_x
-        1.0,    # scale_x
-        1.0,    # scale_y
-        0.0,    # shear_x
-        0.0     # shear_y
-    ]
-
-
-    H, W = I_cam1.shape[:2]
-
-    bounds = [
-        (-1.0, 1.0),        # angle_deg
-        (-5.0,  5.0),       # t_y
-        (-5.0,  5.0),       # t_x
-        (200,     1400),         # center_y
-        (200,     1400),         # center_x
-        (0.99, 1.01),     # scale_x (FIJO)
-        (0.99, 1.01),     # scale_y (FIJO)
-        (-0.01, 0.01),     # shear_x (FIJO)
-        (-0.01, 0.01),     # shear_y (FIJO)
-    ]
-
-    res = minimize(
-        _cost_function_pixelwise,
-        init_params,
-        args=args,
-        method='Powell',
-        bounds=bounds,
-        options={
-            'maxiter': 100,
-            'disp': True,
-        }
-    )
-
-    _print_result(res)
-
-    return res
-from pathlib import Path
-import logging
-import numpy as np
-import pandas as pd
+        print(f"\f F. merito final: {res.fun:.6f}")
+        print("=======================================\n")
 
 def update_alignment_csv(
     csv_path,
@@ -464,22 +399,7 @@ def update_alignment_csv(
 
     return df
 
-def run_alignment_for_wavelength(data, line_value, wave, header):
-    """ Ejecuta advance_alignment para un wave y calcula timestamp. """
-    
-    result = advance_alignment(data, line_value, wave)
-    # data_aligned, result = advance_alignment(data, line_value, wave)
-
-    # Calcular timestamp con medias de M0-M3
-    dt = []
-    for k in range(4):
-        dt.append(parse_header_time(header[f"WV_{wave}_M{k}"]))
-    timestamp = sum(minutes_from_dt(d) for d in dt) / 4.0
-
-    return result, timestamp
-    # return data_aligned, result, timestamp
-
-def advance_alignment(data, filter, wave):
+def alignment(data, header, filter, wave, size_corner=500, size_center=300, weight=[0.5,2.0,1.0]):
     
     tic = time.time()
 
@@ -491,32 +411,287 @@ def advance_alignment(data, filter, wave):
     I_cam1 = demod[0, 0]
     I_cam2 = demod[1, 0]
 
-    scale, gamma = balance(I_cam1, I_cam2)
-    I_cam2 = I_cam2 * scale
-    logging.info(f"Balance (in advance_alignment): wave: {wave}, scale={scale:.6f}, gamma={gamma:.6f}")
+    # scale, gamma = balance(I_cam1, I_cam2)
+    # I_cam2 = I_cam2 * scale
+    # logging.info(f"Balance (in advance_alignment): wave: {wave}, scale={scale:.6f}, gamma={gamma:.6f}")
 
-    # logging.info("Global alignment between cameras (in advanced mode) using Stokes I")
+    # logging.info("Global alignment between cameras using Stokes I")
     # a,b = np.gradient(I_cam1)
     # I_cam1 = a+b
     # a,b = np.gradient(I_cam2)
     # I_cam2 = a+b
 
-    result = align_advance(I_cam1,I_cam2)
-    # angle_deg, t_y, t_x, c_y, c_x, scale_x, scale_y, shear_x, shear_y = result.x
-    # t = np.array([t_y, t_x])
-    # center = np.array([c_y, c_x])
+    args=(I_cam1, I_cam2,size_corner,size_center, weight)
 
-    # # Aplicar shift global SOLO a cam2 
-    # for ld in range(data.shape[1]):
-    #     for j in range(data.shape[2]):
-    #         data[1, ld, j] = apply_transform(
-    #             data[1, ld, j], angle_deg, t, center,
-    #             scale_x, scale_y, shear_x, shear_y
-    #         )
+    init_params = [
+        0.08,   # angle_deg
+        0.1,    # t_y
+        0.1,    # t_x
+        800,    # center_y
+        800,    # center_x
+        1.0,    # scale_x
+        1.0,    # scale_y
+        0.0,    # shear_x
+        0.0     # shear_y
+    ]
+
+    bounds = [
+        (-1.0, 1.0),        # angle_deg
+        (-5.0,  5.0),       # t_y
+        (-5.0,  5.0),       # t_x
+        (200,     1400),         # center_y
+        (200,     1400),         # center_x
+        (0.99, 1.01),     # scale_x (FIJO)
+        (0.99, 1.01),     # scale_y (FIJO)
+        (-0.01, 0.01),     # shear_x (FIJO)
+        (-0.01, 0.01),     # shear_y (FIJO)
+    ]
+
+    logging.info(f"Starting alignment with size_corner={size_corner}, size_center={size_center}, weight={weight} for wave {wave}...")
+    result = minimize(
+        _cost_function_pixelwise,
+        init_params,
+        args=args,
+        method='Powell', #method='Powell',
+        bounds=bounds,
+        options={
+            'maxiter': 100,
+            'disp': True,
+        }
+    )
+
+    # Calcular timestamp con medias de M0-M3
+    dt = []
+    for k in range(4):
+        dt.append(parse_header_time(header[f"WV_{wave}_M{k}"]))
+    timestamp = sum(minutes_from_dt(d) for d in dt) / 4.0
 
     tac = time.time()
 
     logging.info(f"Alignment finished in {round(tac - tic, 3)} s.")
 
-    # return data, result
-    return result
+    return result, timestamp
+
+
+def lm_v2(x, y, pars, funct, ilambda = 10, niter = 20, njacobian = True,
+    weights = 1.0, w_cut = 1e-10, chi2_stop = 1e-3, cvm = False,istep = 10.,
+    fix = None,limits = None, autolambda = False, accel = False, **kwargs):
+    """
+    Levemberg Marquardt algorithm
+    D. Orozco Suarez (summer 2021)
+    All inputs numpy arrays please, be serious or use C.
+    x - independent values
+    y - dependent values
+    pars - parameters (initial estimate)
+    funct - funtion to fit
+        called as y, jac = funct(x,pars) if njacobian = False
+        called as y, _   = funct(x,pars) if njacobian = True
+    njacobian = True ; estimate jacobian numerically
+    weights = array of same size of x if given. == 1 if not given.
+    w_cut = SVD inverse cut (whatever)
+    ilambda = 10. ; initial lambda parameter. Could be 0.1 but who cares.
+    niter = 20. ; max default iterations
+    chi2_stop = 1e-3 ; stopping criteria
+        when np.abs((ochi2 - chi2)/chi2)*100 < chi2_stop
+
+    Example: lm_test() is just a full example.
+    """
+    if autolambda:
+        print('Auto lambda')
+    def __orderOfMagnitude(number):
+        return 10**np.floor(np.log10(number))
+
+    def check_limits(input,limits):
+        if limits.any() != None:
+            if len(limits.flatten()) > 3:
+                for lim in np.arange(len(limits[:,0])):
+                    pos = int(lim)
+                    idx = int(limits[pos,0])
+                    if input[idx] > limits[pos,2]:
+                        input[idx] = limits[pos,2]
+                    if input[idx] < limits[pos,1]:
+                        input[idx] = limits[pos,1]
+            else:
+                idx = int(limits[0])
+                if input[idx] > limits[2]:
+                    input[idx] = limits[2]
+                if input[idx] < limits[1]:
+                    input[idx] = limits[1]
+
+        return input
+
+    if limits:
+        check_limits(pars,limits)
+
+    # calculate jacobian
+    if njacobian:
+        #numerically calculate the jacobian
+        yfit, jac = numerical_der(x,pars,funct, **kwargs)
+    else:
+        yfit, jac = funct(x,pars, **kwargs)
+
+    #Check length of x (can be anything provided it is flatten()
+    x_length = len(yfit)
+    pars_length = len(pars)
+
+    if isinstance(weights, float) :
+        print("weights is float")
+        w = np.ones(x_length)
+    else:
+        w = np.copy(weights)
+
+    print(fix)
+    if fix is None:
+        print("Fix is None")
+        fix = np.ones(pars_length)
+    else:
+        print("Fix is NOT None")
+        if len(fix) != pars_length:
+            print('Fix ne x_length')
+            return
+
+    free = x_length - pars_length
+    if free <= 1:
+        print('not enough points')
+        return
+
+    #Set derivaties to zero when not taken into account
+    jac = jac * fix[np.newaxis,:]
+    #determine jacobian of merit function
+    ochi = (y - yfit) * w
+    J = np.matmul(ochi, jac)
+    H = np.matmul(np.transpose(jac), jac*w[:,np.newaxis])
+    ochi2 = np.sum(ochi**2)/free
+    loop = 0
+    if autolambda:
+        ilambda = __orderOfMagnitude(autolambda*np.sqrt(np.linalg.norm(J)))
+
+    while loop < niter:
+
+        if cvm:
+            covar = np.sqrt(np.outer(H.diagonal(),H.diagonal()))
+            H /= covar
+            H = np.nan_to_num(H)
+            np.fill_diagonal(H, (1+ilambda))
+            Hi = svd_solve(H,w_cut =w_cut) / covar
+            Hi = np.nan_to_num(Hi)
+            delta = np.matmul(Hi,J)
+        else:
+            np.fill_diagonal(H, H.diagonal()*(1+ilambda))
+            delta = svd_solve(H, b = J,w_cut =w_cut)
+
+        if accel:
+            hpar = 1e-5
+            # yfit_prev , _ = funct(x,pars, **kwargs) #f(x)
+            yfit_accel, _ = funct(x,pars + hpar*delta*fix, **kwargs) #f(x+hd)
+            chi_accel = (y - yfit_accel) * w             
+            accel_val = 2./hpar * ( (chi_accel - ochi)/hpar - J.T.dot(delta) )
+            accel_val = svd_solve(jac.T.dot(jac), b = jac.T.dot(accel_val),w_cut =w_cut)
+            print(accel_val)
+
+        new_pars = pars + delta * fix
+        
+        if limits:
+            check_limits(new_pars,limits)
+
+        yfit, _ = funct(x,new_pars, **kwargs)
+        chi = (y - yfit) * w
+        chi2 = np.sum(chi**2)/free
+
+        if chi2 - ochi2 < 0:
+            print('{:<6s}{:>3.0f}{:<8s}{:>12.4e}{:<6s}{:>1.2e}{:<6s}'.format('Iter: ',loop,' Lambda: ',ilambda,' chi2: ',ochi2,' better'))
+            ilambda /= istep
+            pars = np.copy(new_pars)
+
+            # calculate jacobian
+            if njacobian:
+                #numerically calculate the jacobian
+                yfit, jac = numerical_der(x,pars,funct, **kwargs)
+            else:
+                yfit, jac = funct(x,pars, **kwargs)
+            jac = jac * fix[np.newaxis,:]
+
+
+            #determine jacobian of merit function
+            ochi = (y - yfit) * w
+            J = np.matmul(ochi, jac)
+            H = np.matmul(np.transpose(jac), jac*w[:,np.newaxis])
+            if np.abs((ochi2 - chi2)/chi2)*100 < chi2_stop:
+                print('STOP because (ochi2 - chi2)/chi2)*100 < chi2_stop')
+                break
+            ochi2 = np.sum(ochi**2)/free
+
+        else:
+            print('{:<6s}{:>3.0f}{:<8s}{:>12.4e}{:<6s}{:>1.2e}{:<6s}'.format('Iter: ',loop,' Lambda: ',ilambda,' chi2: ',ochi2,' worse'))
+            ilambda *= istep
+
+        if (ilambda < 1e-12) or (ilambda > 1e12):
+            print('STOP because ilambda reached a limit')
+            break
+        loop += 1
+    if loop == niter:
+        print('STOP because max niter')
+
+    chi2 = np.sum(chi**2)/free
+    Hi = svd_solve(H)
+    sigma = np.sqrt(Hi.diagonal())
+
+    return pars, yfit, sigma, chi2
+
+def numerical_der(x,pars,funct,**kwargs):
+
+    #    for key, value in kwargs.items():
+    try:
+        h = kwargs['h']
+    except Exception:
+        h = 1
+    y, _ = funct(x,pars, **kwargs)
+    perturbation = np.copy(pars)
+    y_length = len(y)
+    pars_length = len(pars)
+    jac = np.zeros((y_length,pars_length))
+
+    for i in range(pars_length):
+    #     if abs(pars[i]) > 1e-9:
+    #         perturbation[i] = pars[i] * (1. + h)
+    #         y_d, _ = funct(x,perturbation)
+    #         perturbation[i] = pars[i] / (1. + h) * (1. - h)
+    #         y_i, _ = funct(x,perturbation)
+    #         perturbation[i] = pars[i] / (1. - h)
+    #     else:
+        perturbation[i] = pars[i] + h
+        y_d, _ = funct(x,perturbation, **kwargs)
+        perturbation[i] = pars[i] - 2*h
+        y_i, _ = funct(x,perturbation, **kwargs)
+        perturbation[i] = pars[i] + h
+        jac[:,i] = (y_d - y_i)/(2.*h)
+
+    return y,jac
+
+def svd_solve(A, b=None, w_cut=1e-10):
+    """
+    This function solves the system of equations Ax=b by calculating the
+    inverse of A using the SVD method: x=A^(-1)*b; A^(-1)=V*S^(-1)*U'
+    Inputs:
+        A: 2D array of dimensions nxm (n>=m)
+        b: 1D array of dimensions n
+        w_cut: cut-off frequency for singular values (fraction of the maximum).
+        Diagonal elements S^(-1) are zero for the positions of S where its
+        value is less than w_cut.
+    """
+    # Ab = np.abs(A)
+    # A = np.where(Ab < np.min(Ab)*10.,0,A)
+    # #Ac = np.zeros_like(b)
+    # #Ac[:,0] = A[:,0]
+    # #b = np.where(Ac == 0.0, 0 ,b)
+    # bb = np.abs(b)
+    # b = np.where(bb < np.min(bb)*10.,0,b)
+
+    U, S, Vt = np.linalg.svd(A)
+    sigma = w_cut*np.max(S)
+    Sinv = np.where(S < sigma, 0, (1/S))
+    # print(S)
+    # print(sigma)
+    zeros_Sinv = np.argwhere(Sinv == 0)
+    Ainv = np.dot(np.transpose(Vt)*Sinv, np.transpose(U))
+    return Ainv if b is None else np.dot(Ainv, b)

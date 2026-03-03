@@ -42,20 +42,20 @@ PROJECT_ROOT = add_project_root()
 import config as cf
 import image_handler as ih
 from master_dark import compute_master_darks
-from master_flatfield import compute_master_flat_field
+from master_flatfield_v2 import compute_master_flat_field
 from image_filtering import filter_frecuencies
 from fits_files_handling import generate_fits, update_header
 from alignment import align_obsmode
-from advanced_alignment import apply_transform, update_alignment_csv, run_alignment_for_wavelength
+from advanced_alignment import apply_transform, update_alignment_csv, alignment,print_alignment_result
 from demodulation import demodulate
 from destretch import destretch
 import pd_functions_v22 as phased
 
 from xtalk_new import (
-    fit_mueller_matrix, fit_mueller_matrix_tiled,
+    fit_mueller_matrix,fit_mueller_matrix_rois_with_plane,
     write_crosstalk_header, fit_interference_Iref_to_Q_tiled,
     write_interference_Iref_to_Q_header, apply_crosstalk_coeffs_standard,
-    load_polynomial_coeffs_csv,apply_polynomial_Iref2Q
+    load_polynomial_coeffs_csv,apply_polynomial_Iref2Q,ver_planos_ajuste
 )
 
 from process_data_utils import (
@@ -276,14 +276,6 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         data = np.copy(data_)
         del data_
 
-    def _print_result_pretty(result, title="Resultado interpolado"):
-        print("\n" + "=" * 70)
-        print(f" {title}")
-        print("=" * 70)
-        for key, value in result.items():
-            print(f"{key:<12} : {value}")
-        print("=" * 70 + "\n")
-
     # --- Normalizador DF (gestiona wave faltante como -1) ---
     def _normalize_alignment_df(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -330,12 +322,15 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
             # _, result, timestamp = run_alignment_for_wavelength(
             #     data, line_value, wave, header
             # )
-            result, timestamp = run_alignment_for_wavelength(
-                data, line_value, wave, header
+            result, timestamp = alignment(
+                data, header, line_value, wave, 
+                cfg['level_07'].get('size_corner', 500),
+                cfg['level_07'].get('size_center', 300),
+                cfg['level_07'].get('weight', [0.5,2.0,1.0]),
             )
 
             logging.info(f"  Done advanced_alignment for λ={wave}")
-            _print_result_pretty(result)
+            print_alignment_result(result)
 
             if cfg['level_07']['advanced_save']:
                 update_alignment_csv(
@@ -350,17 +345,18 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
                 )
 
         # Recarga y normaliza CSV
-        if alignment_csv_filename.exists():
-            df = pd.read_csv(
-                alignment_csv_filename,
-                dtype={'obs_ID': 'string', 'line': 'string'},
-                converters={'wave': lambda x: int(float(x)) if pd.notna(x) and str(x).strip() != '' else -1}
-            )
-            df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=['timestamp'])
-            df = _normalize_alignment_df(df)
-            logging.info("  Reloaded & normalized alignment CSV after advanced mode.")
-        else:
-            logging.warning("  alignment_results.csv no existe aún tras advanced mode.")
+        if cfg['level_07']['advanced_save']:
+            if alignment_csv_filename.exists():
+                df = pd.read_csv(
+                    alignment_csv_filename,
+                    dtype={'obs_ID': 'string', 'line': 'string'},
+                    converters={'wave': lambda x: int(float(x)) if pd.notna(x) and str(x).strip() != '' else -1}
+                )
+                df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=['timestamp'])
+                df = _normalize_alignment_df(df)
+                logging.info("  Reloaded & normalized alignment CSV after advanced mode.")
+            else:
+                logging.warning("  alignment_results.csv no existe aún tras advanced mode.")
 
     # =================== INTERPOLACIÓN (sin advanced) =================== #
     # df = _normalize_alignment_df(df)
@@ -380,14 +376,37 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
 
         timestamp_ds = sum(minutes_from_dt(d) for d in dt) / 4.0
 
-        result = interpolate_filter(
-            df=df,
-            timestamp=timestamp_ds,
-            line=line['line'],
-            obs_ID=cfg['obs_ID'],
-            wave=None
-        )
-        _print_result_pretty(result)
+        if not cfg['level_07']['advanced_save'] and cfg['level_07']['advanced_alignment']:
+            logging.warning("  No advanced alignment or save enabled, but 'dataset' level interpolation selected. Ensure the CSV has relevant data or consider enabling advanced mode for better results.")
+            # y esto quiere decir que result no esta en el formato adecuado.
+                # --- Preparar nueva fila ---
+            angle_deg, t_y, t_x, center_y, center_x, scale_x, scale_y, shear_x, shear_y = result.x
+            result = {
+                'timestamp': float(timestamp),
+                'angle_deg': float(angle_deg),
+                't_y': float(t_y),
+                't_x': float(t_x),
+                'center_y': float(center_y),
+                'center_x': float(center_x),
+                'scale_x': float(scale_x),
+                'scale_y': float(scale_y),
+                'shear_x': float(shear_x),
+                'shear_y': float(shear_y),
+                'fun': np.nan,
+                # metadatos de clave:
+                'obs_ID': str(obs_ID) if obs_ID is not None else "",
+                'line': str(line).strip() if line is not None else "",
+                'wave': int(wave) if wave is not None else -1,
+            }
+        else:
+            result = interpolate_filter(
+                df=df,
+                timestamp=timestamp_ds,
+                line=line['line'],
+                obs_ID=cfg['obs_ID'],
+                wave=None
+            )
+            print_alignment_result(result,nox=True)
 
         # from matplotlib import pyplot as plt
         for i in range(wn):
@@ -419,7 +438,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
                 obs_ID=cfg['obs_ID'],
                 wave=i  # si no hay, fallback a -1 dentro de interpolate_filter
             )
-            _print_result_pretty(result)
+            print_alignment_result(result)
 
             for j in range(pn):
                 data[1, i, j] = apply_transform(
@@ -490,7 +509,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
             ngrid=cfg['level_07']['destretch_ngrid'],
             lr=cfg['level_07']['destretch_lr'],
             lambda_tt=cfg['level_07']['destretch_lambda_tt'],
-            filter=line['line']
+            filter=line['line'],
+            align_modulations = cfg['level_07'].get('align_modulations', False)
         )
 
     logging.info(f'  demodulation: ')
@@ -592,7 +612,16 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                )
                if cfg['level_10']['crosst_mode'] == 'standard':
                     header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+               logging.info("cross-talk parameters:")
 
+               coeffs = ["a", "b", "c","d", "e"]
+               for entry in info["coeffs_per_wvl"]:
+                    print("λ =", entry["wavelength_index"])
+                    for stokes in ["Q", "U", "V"]:
+                        f = entry["fit"][stokes]
+                        vals = "  ".join(f"{f[k]:.5f}" for k in coeffs)
+                        print(stokes, vals)
+                
         if cfg['level_10']['crosst_mode'] == 'jaeggli':
             matrix = info.get('MM1a', {})
             update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
@@ -603,22 +632,42 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                     header[key] = (val, f'Mueller matrix element [{i},{j}]')
 
     else:
-        data, info = fit_mueller_matrix_tiled(
+        # data, info = fit_mueller_matrix_tiled(
+        #     data,
+        #     method=cfg['level_10']['crosst_mode'],
+        #     pthresh=cfg['level_10']['crosst_threshold'],
+        #     ctmethod='linfit',
+        #     last_wvl=cfg['level_10']['crosst_last_wave'],
+        #     use_local=cfg['level_10']['use_local'],
+        #     local_order=1,
+        #     deriv_sigma=0.0,
+        #     local_ridge_lambda=0.0,
+        #     aggregate_wavelengths=False,
+        #     channels=('Q', 'U', 'V'),
+        #     verbose=cfg['level_10']['crosst_verbose'],
+        #     quadrants=cfg['level_10']['crosst_quadrants'],
+        # )
+
+                # rois = [(cx, cy, lado), ...] en píxeles (>=3)
+        rois = [(100, 100, 400), (1500, 100, 400), (1500, 1500, 400), (100, 1500, 400)]
+
+        data, planes, maps, infos, samples  = fit_mueller_matrix_rois_with_plane(
             data,
+            rois=rois,
             method=cfg['level_10']['crosst_mode'],
             pthresh=cfg['level_10']['crosst_threshold'],
-            ctmethod='linfit',
             last_wvl=cfg['level_10']['crosst_last_wave'],
-            region=cfg['level_10']['crosst_region'],
             use_local=cfg['level_10']['use_local'],
             local_order=1,
-            deriv_sigma=0.0,
-            local_ridge_lambda=0.0,
-            aggregate_wavelengths=False,
-            channels=('Q', 'U', 'V'),
+            ctmethod='linfit',
+            channels=('Q','U','V'),
             verbose=cfg['level_10']['crosst_verbose'],
-            divisions=cfg['level_10']['crosst_quadrants'],
         )
+
+        ver_planos_ajuste(planes, samples)
+
+
+        # 'planes' contiene (a,b,c) por término (p.ej. 'I->Q'), y 'maps' el mapa 2D evaluado del plano.
 
     if cfg['level_10']['crosst_interference']:
         # chech if cfg['level_10']['crosst_interference'] is a number of a string.
