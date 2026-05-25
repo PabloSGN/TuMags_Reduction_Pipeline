@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-TuMags Reduction Pipeline — main entry point (refactor)
+TuMags Reduction Pipeline — punto de entrada principal.
+
+Orquesta la reducción por niveles (LV_0.5 … LV_1.1): calibración,
+alineación, demodulación, crosstalk y restauración PD según YAML.
 """
 
 from __future__ import annotations
@@ -102,6 +105,7 @@ def setup_logging(workspace: Path, level: int = logging.INFO) -> Path:
 
 # ============================ ARGUMENT PARSING =============================== #
 def parse_args(argv=None) -> Namespace:
+    """Construye y ejecuta el parser CLI de la pipeline (config YAML, hilos BLAS, actualización YAML)."""
     p = ArgumentParser(
         description="TuMags Reduction Pipeline",
         epilog="Ejemplo: python3 process_data_main.py -f ./config_tumag.yaml"
@@ -137,6 +141,11 @@ cam_linearity = ([1539, 1540], [1.0, 1.0])
 # ======================= processing programs ======================= #
 # =======================  reduce_image_0_5   ======================= #
 def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
+    """Nivel LV_0.5: carga observación nominal, corrige por flat, recorta, filtra opcionalmente y escribe FITS.
+
+    Pensado para ejecutarse en subproceso (un ``ocs`` por worker). Solo procesa si ``cfg['process_line']``
+    coincide con el modo de observación del bloque ``ocs``.
+    """
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
         level=logging.INFO,
@@ -187,6 +196,10 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
 
 # =======================  reduce_image_0_7   ======================= #
 def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to_label="LV_0.7"):
+    """Nivel LV_0.7: balance entre cámaras, alineación (avanzada / Fourier / destretch), demodulación y salida FITS.
+
+    ``df`` contiene histórico de alineación para interpolación por instante (dataset o por longitud de onda).
+    """
     # Subproceso: logging local
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
@@ -278,6 +291,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
 
     # --- Normalizador DF (gestiona wave faltante como -1) ---
     def _normalize_alignment_df(df: pd.DataFrame) -> pd.DataFrame:
+        """Garantiza columnas numéricas y orden para el CSV de alineación."""
         df = df.copy()
         required = [
             'timestamp',
@@ -542,6 +556,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
 
 # =======================  reduce_image_1_0   ======================= #
 def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV_1.0"):
+    """Nivel LV_1.0: normalización, corrección de crosstalk (global, ROI o interferencia) y escritura FITS."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
         level=logging.INFO,
@@ -730,6 +745,7 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
 
 # =======================  reduce_image_1_1   ======================= #
 def reduce_image_1_1(input_data_filename, cfg, zk=None):
+    """Nivel LV_1.1: restauración PD por longitud de onda y polarización (``restore_ima``) sobre cubo LV_1.0."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
         level=logging.INFO,
@@ -752,14 +768,20 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
             for pl in range(pn):
                 if pl == 0:
                     data[wl, pl], noise_filter = phased.restore_ima(
-                        data[wl, pl], zk, pd=0, low_f=0.2, reg1=0.05, reg2=1,
-                        cobs=32.4, epsilon=0.02, sigma=5000, stray='moffat'
+                        data[wl, pl], zk,
+                        cfg['pd'], cfg['low_f'], 
+                        cfg['reg1'], cfg['reg2'],
+                        cfg['cobs'], cfg['epsilon'],
+                        cfg['sigma'], cfg['stray'],
                     )
                 else:
                     data[wl, pl], _ = phased.restore_ima(
-                        data[wl, pl], zk, pd=0, low_f=0.2,
-                        noise=noise_filter, reg1=0.05, reg2=1,
-                        cobs=32.4, epsilon=0.02, sigma=5000, stray='moffat'
+                        data[wl, pl], zk,
+                        cfg['pd'], cfg['low_f'], 
+                        cfg['reg1'], cfg['reg2'],
+                        cfg['cobs'], cfg['epsilon'],
+                        cfg['sigma'], cfg['stray'],
+                        noise=noise_filter,
                     )
             pbar.update(1)
 
@@ -776,6 +798,7 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
 
 # =======================  reduce_image_0_6   ======================= #
 def reduce_image_0_6(input_data_filename, cfg, zk=None, from_label="LV_0.5", to_label="LV_0.6"):
+    """Nivel LV_0.6: restauración PD por cámara antes de alineación/demodulación (Zernike por cámara)."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
         level=logging.INFO,
@@ -804,14 +827,20 @@ def reduce_image_0_6(input_data_filename, cfg, zk=None, from_label="LV_0.5", to_
                 for pl in range(pn):
                     if pl == 0:
                         data[cm, wl, pl], noise_filter = phased.restore_ima(
-                            data[cm, wl, pl], zknew[cm], pd=0, low_f=0.2,
-                            reg1=0.05, reg2=1, cobs=32.4, epsilon=epsilon[cm], sigma=5000, stray='moffat'
-                        )
+                            data[cm, wl, pl], zknew[cm],
+                            cfg['pd'], cfg['low_f'], 
+                            cfg['reg1'], cfg['reg2'],
+                            cfg['cobs'], cfg['epsilon'],
+                            cfg['sigma'], cfg['stray'],
+                    )                        
                     else:
                         data[cm, wl, pl], _ = phased.restore_ima(
-                            data[cm, wl, pl], zknew[cm], pd=0, low_f=0.2, noise=noise_filter,
-                            reg1=0.05, reg2=1, cobs=32.4, epsilon=epsilon[cm], sigma=5000, stray='moffat'
-                        )
+                            data[cm, wl, pl], zknew[cm],
+                            cfg['pd'], cfg['low_f'], 
+                            cfg['reg1'], cfg['reg2'],
+                            cfg['cobs'], cfg['epsilon'],
+                            cfg['sigma'], cfg['stray'],
+                    )                        
                     pbar.update(1)
 
     if cfg['plots']['plot_level0_6']:
@@ -829,6 +858,32 @@ def reduce_image_0_6(input_data_filename, cfg, zk=None, from_label="LV_0.5", to_
 # =======================     MAIN PROGRAM    =======================
 # ===================================================================
 def main(argv=None) -> int:
+    """Punto de entrada: carga la configuración YAML y ejecuta las etapas activadas (LV_0.5 … LV_1.1).
+
+    Invocación típica desde la raíz del proyecto (o con ruta absoluta al script)::
+
+        python3 process_data_main.py
+        python3 process_data_main.py -f /ruta/a/mi_config.yaml
+
+    Desde código se puede pasar ``argv`` como lista de argumentos (sin el nombre del ejecutable), p. ej.
+    ``main(['-f', 'mi_config.yaml', '--threads', '2'])``.
+
+    Opciones de línea de órdenes (definidas en ``parse_args``; ver también ``python3 process_data_main.py -h``):
+
+    ``-f`` / ``--config`` (str, por defecto ``config_tumag.yaml``)
+        Ruta al fichero YAML de configuración (observación, carpetas, ``force_redo``, etc.).
+
+    ``--threads`` (int, opcional)
+        Número de hilos para BLAS/OpenBLAS/MKL/numexpr. Si se omite, se usa ``OMP_NUM_THREADS`` del entorno
+        o **1**, para limitar la competición con ``multiprocessing`` (véase ``configure_threads``).
+
+    ``--no-ask-update`` (flag)
+        Si se indica, no se pregunta interactivamente por actualizar el YAML con claves por defecto que falten
+        (comportamiento gestionado por ``ConfigLoader``).
+
+    Devuelve
+        Código de salida: ``0`` si todo va bien, ``1`` si falla una comprobación o no hay datos esperados.
+    """
     logging.info('-----------------------------------')
     logging.info('  >> Running process_data_main ')
 
@@ -989,7 +1044,8 @@ def main(argv=None) -> int:
 
             process_ocs = [process_ocs[i] for i in parse_range(cfg.process_ocs, max_value=len(process_ocs)-1)]
             logging.info(f'  >> process ocs {process_ocs}')
-
+            
+            #########################  PROCESO DE REDUCCIÓN 0.5  #########################  
             reduce_partial = partial(
                 reduce_image_0_5,
                 OCs=OCs, cfg=cfg_dict, dc_real=dc_real, ff_data=ff_data,

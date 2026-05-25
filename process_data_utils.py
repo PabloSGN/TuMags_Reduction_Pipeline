@@ -182,6 +182,14 @@ DEFAULT_CONFIG = {
         "zoom_size": 600,
         "filter_test": False,
     },
+    "pd": 0,
+    "low_f": 0.2,
+    "reg1": 0.05,
+    "reg2": 1,
+    "cobs": 32.4,
+    "epsilon": 0.02,
+    "sigma": 5000,
+    "stray": 'moffat'
 }
 
 def _pretty_value(v: Any) -> str:
