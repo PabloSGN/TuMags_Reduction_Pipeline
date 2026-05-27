@@ -118,6 +118,23 @@ mod_matrices_david_ct = {
     },
 }
 
+demod_matrices_david_v2 = {
+    "517": { # TOBE ADDED
+        0: load_matrix_rounded(module_file('demodulation_matrix_v2_cam_0_4.json'), decimals=DECIMALS),
+        1: load_matrix_rounded(module_file('demodulation_matrix_v2_cam_1_4.json'), decimals=DECIMALS),
+    },
+
+    "525.02": {
+        0: load_matrix_rounded(module_file('demodulation_matrix_v2_cam_0_502.json'), decimals=DECIMALS),
+        1: load_matrix_rounded(module_file('demodulation_matrix_v2_cam_1_502.json'), decimals=DECIMALS),
+    },
+
+    "525.06": { # TOBE ADDED
+        0: load_matrix_rounded(module_file('demodulation_matrix_v2_cam_0_506.json'), decimals=DECIMALS),
+        1: load_matrix_rounded(module_file('demodulation_matrix_v2_cam_1_506.json'), decimals=DECIMALS),
+    },
+}
+
 # Mean - Matrix Demodulation 
 mod_matrices = { # Calculadas por Antonio C -> 18 Abril Kiruna 2024 
     "517": {0 : np.array([[0.951,  -0.612,	0.474	,0.459],
@@ -229,16 +246,51 @@ mod_matrices_david = {
                               [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
  }
 
+
+mod_matrices_david_26 = { 
+    "517": {0 : np.array([[0.9655, -0.4865,  0.6307, 0.4986],
+                          [0.9476, -0.5615, -0.6319, -0.3653],
+                          [1.0471,  0.5569,  0.4372, -0.7102],
+                          [1.0398,  0.6294, -0.4595, 0.6237]]),
+
+            1 : np.array([[1.0505, 0.5992 , -0.6032 ,-0.5262],
+                          [1.0372, 0.6798 , 0.6194  ,0.3431],
+                          [0.9663, -0.4213, -0.4031 , 0.7268],
+                          [0.9459, -0.5206, 0.4653  ,-0.5974]])},
+
+
+    "525.02" : {0 : np.array([[ 0.95687565 ,-0.53863032 ,  0.59449421 ,  0.42037868],
+                            [ 0.95663816 ,-0.54386372 , -0.68174226 , -0.32962326],
+                            [ 1.04326687 , 0.59492788 ,  0.36012102 , -0.71126456],
+                            [ 1.04321931 , 0.64823575 , -0.41648437 ,  0.64651781]]),
+                                
+                1 : np.array(  
+                            [[ 1.06765146,   0.6839871 ,  -0.64232587 , -0.43731464],
+                            [ 1.03705125 ,  0.69354896 ,  0.56481631  , 0.34421197],
+                            [ 0.96262347 , -0.44798874 , -0.42101804  , 0.69412179],
+                            [ 0.93267382 , -0.48423927 ,  0.36781736 ,-0.61920695]])},
+
+    "525.06" : {0 : np.array([[0.9557, -0.5389,  0.5895, 0.4505],
+                              [0.9486, -0.5501, -0.6593, -0.3247],
+                              [1.0485, 0.5693 , 0.3855 , -0.7246],
+                              [1.0473, 0.6737 , -0.4148, 0.6236]]), 
+
+                1 : np.array([[1.0635, 0.6843 , -0.5910 ,-0.4638],
+                              [1.0466, 0.7028 , 0.6070  ,0.3110],
+                              [0.9570, -0.3960, -0.3864 ,0.7157],
+                              [0.9329, -0.5181, 0.3745  ,-0.6051]])},            
+ }
+
 # ============================================
 # CONSTRUCCIÓN DE MATRICES DE DEMODULACIÓN
 # ============================================
 
 demod_matrices_david_ct = compute_demodulation_matrices(mod_matrices_david_ct)
 demod_matrices_david = compute_demodulation_matrices(mod_matrices_david)
+mod_matrices_david_v2 = compute_demodulation_matrices(demod_matrices_david_v2)
 demod_matrices = compute_demodulation_matrices(mod_matrices)
 mod_matrices_acampos = compute_demodulation_matrices(demod_matrices_acampos)
 # ------------------------------  CODE  ------------------------------------------ # 
-
 
 def demodulate_joint(imgs_cam1, imgs_cam2, M1, M2, weights=None):
     """
@@ -270,7 +322,9 @@ def demodulate_joint(imgs_cam1, imgs_cam2, M1, M2, weights=None):
     Sout = D @ Fstack  # (4, N)
     return Sout.reshape(4, X, Y)
 
-def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda = False, BothCams = False, mode = 'separate'):
+def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", 
+               onelambda = False, BothCams = False, mode = 'separate',
+               correct_rotation = True):
     """
     Function to perform the demodulation of the observation mode. 
     Inputs: 
@@ -279,6 +333,7 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
         - demod_matrices (np.array : default : demod_matrices_David) : Demodulations matrix to use
         - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
         - BothCams (Boolean, default : False) : Set to true to output individual cameras in addition to dual beam.
+        - correct_rotation (Boolean, default : False) : Set to true to correct for rotation in the demodulation process.
     Outputs:
         - dual_beamed (np.array) : Demodulated data with cameras combined (Nlambda x Nmods x Nx x Ny).
         - demodulated (np.array) : Demodulated data with cameras not yet combined (Ncams x Nlambda x Nmods x Nx x Ny). 
@@ -296,6 +351,9 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
     if dmod_matrices == 'demod_matrices_david_ct':
         dmod_matrix = demod_matrices_david_ct
         mod_matrix = mod_matrices_david_ct
+    if dmod_matrices == 'demod_matrices_david_v2':
+        dmod_matrix = demod_matrices_david_v2
+        mod_matrix = mod_matrices_david_v2
 
 
     if onelambda:
@@ -329,10 +387,36 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
     if lcvr_mode == "vectorial":
         # Each wavelength independently
 
+
+            
+            
         if mode == 'join':
 
+
+            D0 = mod_matrix[filt][0]
+            D1 = mod_matrix[filt][1]
+
+            # if correct_rotation:
+
+            #     phi0 = { 
+            #         "517": 3.39 - 3.13,
+            #         "525.02": 3.66 - 3.31,
+            #         "525.06": 4.13 - 3.68,
+            #     }
+
+            #     gamma = -2 * phi0[filt]
+
+            #     R = np.array([
+            #         [1, 0, 0, 0],
+            #         [0, np.cos(gamma), np.sin(gamma), 0],
+            #         [0, -np.sin(gamma), np.cos(gamma), 0],
+            #         [0, 0, 0, 1]
+            #     ])
+
+            #     D1 = R @ D1  
+            
             for wl in range(nlambda):
-                S = demodulate_joint(data[0, wl, :], data[1, wl, :], mod_matrix[filt][0], mod_matrix[filt][1])
+                S = demodulate_joint(data[0, wl, :], data[1, wl, :], D0, D1)
                 dual_beam[wl] = S
 
         if mode == 'separate':
@@ -344,10 +428,8 @@ def demodulate(data, filt, dmod_matrices = "demod_matrices_david_ct", onelambda 
                 demod[0, wl, :] = np.reshape(dm_cam1, (4, size, size))
                 demod[1, wl, :] = np.reshape(dm_cam2, (4, size, size))
 
-    #             scale, gamma = balance(data[0, 0], data[1, 0], roi=roi)#, clip_percentiles=(40,60))
-    #  logging.info(f"Balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
-
                 dual_beam[wl] = (demod[0, wl] + demod[1, wl]) / 2
+
 
     elif lcvr_mode == "longitudinal":
         # Each wavelength independently

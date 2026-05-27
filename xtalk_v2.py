@@ -7,7 +7,7 @@ https://github.com/sajaeggli/adhoc_xtalk/blob/main/Jaeggli_etal_2022ApJ_AdHoc_Xt
 
 """
 import logging
-import numpy as np
+import numpy as np 
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 from scipy.optimize import minimize
@@ -38,55 +38,14 @@ def evaluate_crosstalk(data, verbose=False,
                        use_local=False,          # igual que antes (no extendido a dual)
                        local_order=1,            # 1 -> (X, Ix, Iy); 2 -> añade Laplaciano
                        deriv_sigma=0.0,          # suavizado previo SOLO para derivadas (0 = off)
-                       local_ridge_lambda=0.0    # regularización ridge (0 = off)
+                       local_ridge_lambda=0.0,    # regularización ridge (0 = off)
+                       fit_grad =  False
                        ):
     """
     Evalúa cross-talk en una sub-región usando:
       - Modelo lineal simple:  Y ≈ a + b * X                (xcomp='I' o 'V')
       - Modelo lineal dual:    Y ≈ a + b0*I0 + b1*I1        (xcomp='dualI', dualI=(I0,I1))
       - Modelo local (derivs): Y ≈ a + b*X + c*∂xX + d*∂yX [+ e*∇²X]   (como antes)
-
-    Parámetros
-    ----------
-    data : array (4, H, W)
-        Stokes en orden [I, Q, U, V] para una sola longitud de onda (ya recortado).
-    dualI : None o array (2, H, W)
-        Intensidades del dual-beam (I_cam0, I_cam1). Activa 'xcomp'='dualI'.
-    xcomp : {'I', 'V', 'dualI'}
-        Variable(s) independiente(s) del ajuste.
-        - 'I' original: I->Q,U,V (una sola pendiente).
-        - 'V' original: V->Q,U    (una sola pendiente).
-        - 'dualI' nuevo: (I0, I1)->Q,U,V (dos pendientes b0,b1).
-    dual_labels : tuple(str,str)
-        Nombres a mostrar para los dos haces.
-
-    El resto de parámetros mantiene el comportamiento de tu función original.
-    Cuando xcomp='dualI', la regresión es múltiple y los 'slope_*' del retorno
-    antiguo se devuelven como NaN (usa fit_dict para b0,b1).
-
-    Retorno
-    -------
-    intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
-        Conserva la forma original (NaN donde no aplique).
-    Si return_fit=True, también devuelve:
-        fit_dict : dict por canal {'Q','U','V'} con:
-          {
-            # para 'I'/'V' (un predictor)
-            'a','b',
-            # para 'dualI' (dos predictores)
-            'a','b0','b1',
-            # predictores
-            'predict': f(X2d)->ŷ (modo simple/local),
-            'predict_ct_dual': f(I0,I1)-> a + b0*I0 + b1*I1  (solo dualI),
-            'correct_dual': f(Y,I0,I1)-> Y - (a+b0*I0+b1*I1),
-            # info
-            'xcomp': 'I'|'V'|'dualI',
-            'model': 'linear' | 'local1' | 'local2',
-            'deriv_sigma': float,
-            'lambda': float,
-            # correlaciones (si dualI)
-            'corr': { dual_labels[0]: rYI0, dual_labels[1]: rYI1 }
-          }
     """
     # ---------------- helpers ----------------
     def minimize_rms(source, target):
@@ -169,6 +128,18 @@ def evaluate_crosstalk(data, verbose=False,
     def predictor_dual(a, b0, b1):
         def f(I0_2d, I1_2d):
             return a + b0*I0_2d + b1*I1_2d
+        return f
+
+    def predictor_solograd(c, d, e, order, deriv_sigma):
+        def f(X2d):
+            Xb = gaussian_filter(X2d, sigma=deriv_sigma) if (deriv_sigma and deriv_sigma > 0) else X2d
+            Ix = sobel(Xb, axis=1)
+            Iy = sobel(Xb, axis=0)
+            # CORREGIDO: quitamos X2d ya que a=0, b=0 en el residuo
+            yhat = c*Ix + d*Iy
+            if order >= 2:
+                yhat = yhat + e*laplace(Xb)
+            return yhat
         return f
 
     # --------------- region & máscaras ---------------
@@ -286,8 +257,7 @@ def evaluate_crosstalk(data, verbose=False,
                 dual_labels[0]: r_xy(yv, i0),
                 dual_labels[1]: r_xy(yv, i1)
             }
-
-        else:
+        elif use_local and not fit_grad:
             # === Local (derivadas, como antes; NO dual) ===
             if xcomp == 'dualI':
                 raise NotImplementedError("Modelo local no implementado para dualI (usa lineal múltiple).")
@@ -303,6 +273,30 @@ def evaluate_crosstalk(data, verbose=False,
             a, b, c, d = theta[:4]
             e = theta[4] if (local_order >= 2 and theta.size >= 5) else 0.0
             results[name] = (float(a), float(b), float(c), float(d), float(e))
+        elif use_local and fit_grad:
+            # === Local (derivadas sobre el residuo; NO dual) ===
+            if xcomp == 'dualI':
+                raise NotImplementedError("Modelo local no implementado para dualI (usa lineal múltiple).")
+            # Build feature maps
+            _, Ix, Iy, L = build_derivs(X2d)
+
+            cols = [Ix, Iy]   # quitamos 1 (a) y X2d (b)
+            if local_order >= 2:
+                cols.append(L)
+
+            mats = flatten_mask(sel2d, *cols, Y2d)
+            *Xs, yv = mats
+            A = np.column_stack([x.ravel() for x in Xs])
+            theta = ridge_solve(A, yv, lam=float(local_ridge_lambda))
+
+            # CORREGIDO: Forzamos a y b porque ajustamos sobre residuos
+            a, b = 0.0, 1.0
+            c, d = theta[:2]
+            e = theta[2] if (local_order >= 2 and theta.size >= 3) else 0.0
+            results[name] = (float(a), float(b), float(c), float(d), float(e))
+
+        else:
+            pass
 
     # --------------- tupla retrocompatible ---------------
     aQ,bQ,cQ,dQ,eQ = results.get('Q', (np.nan,)*5)
@@ -363,6 +357,7 @@ def evaluate_crosstalk(data, verbose=False,
                 ax.set_xlabel(f'{name} [DN]'); ax.set_ylabel(f'ŷ_{name} [DN]')
                 ax.set_title(f'{name}: local (order={local_order})')
                 ax.legend()
+
         plt.tight_layout()
         if isinstance(png, str) and len(png) > 0:
             plt.savefig(f"{png}_fit_{xcomp}.png", dpi=150); plt.close()
@@ -377,7 +372,7 @@ def evaluate_crosstalk(data, verbose=False,
                 def correct_dual(Y2d, I0_2d, I1_2d):
                     return Y2d - pred_ct(I0_2d, I1_2d)
                 fit_dict[name] = {
-                    'a': a, 'b0': b, 'b1': c,            # ojo: aquí c es b1
+                    'a': a, 'b0': b, 'b1': c,             # ojo: aquí c es b1
                     'predict_ct_dual': pred_ct,
                     'correct_dual': correct_dual,
                     'xcomp': 'dualI',
@@ -386,7 +381,7 @@ def evaluate_crosstalk(data, verbose=False,
                     'lambda': float(local_ridge_lambda),
                     'corr': corrmap.get(name, {})
                 }
-            elif not use_local:
+            elif not use_local and not fit_grad:
                 pred = predictor_linear(a, b)
                 fit_dict[name] = {
                     'a': a, 'b': b,
@@ -396,7 +391,7 @@ def evaluate_crosstalk(data, verbose=False,
                     'deriv_sigma': float(deriv_sigma),
                     'lambda': float(local_ridge_lambda)
                 }
-            else:
+            elif use_local and not fit_grad:
                 pred = predictor_local(a, b, c, d, e, order=local_order, deriv_sigma=deriv_sigma)
                 fit_dict[name] = {
                     'a': a, 'b': b, 'c': c, 'd': d, 'e': e,
@@ -406,297 +401,22 @@ def evaluate_crosstalk(data, verbose=False,
                     'deriv_sigma': float(deriv_sigma),
                     'lambda': float(local_ridge_lambda)
                 }
+            elif use_local and fit_grad:
+                pred = predictor_solograd(c, d, e, order=local_order, deriv_sigma=deriv_sigma)
+                fit_dict[name] = {
+                    'a': a, 'b': b, 'c': c, 'd': d, 'e': e,
+                    'predict': pred,
+                    'xcomp': xcomp,
+                    'model': f'grad{local_order}',
+                    'deriv_sigma': float(deriv_sigma),
+                    'lambda': float(local_ridge_lambda)
+                }
+            else:
+                pass
         return (intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v), fit_dict
 
     return intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
-
-def evaluate_crosstalk_old(data, verbose=False, 
-                       pthresh=0.05, png=False,
-                       n_sigma=1, ctmethod="linfit",
-                       region=[0,-1,0,-1],
-                       pthresh_intensity=0,
-                       xcomp='I',
-                       return_fit=False,
-                       channels=('Q','U','V'),
-                       # ===== MODO LOCAL CON DERIVADAS (sin Gauss) =====
-                       use_local=False,          # activa modelo con derivadas
-                       local_order=1,            # 1 -> (X, Ix, Iy); 2 -> añade Laplaciano
-                       deriv_sigma=0.0,          # suavizado previo SOLO para derivadas (0 = off)
-                       local_ridge_lambda=0.0    # regularización ridge (0 = off)
-                       ):
-    """
-    Evaluate cross-talk in a sub-region using either:
-      - Linear model:   Y ≈ a + b * X
-      - Local model:    Y ≈ a + b * X + c * ∂xX + d * ∂yX [+ e * ∇²X]   (no Gaussian blur)
-
-    Parameters
-    ----------
-    data : array (4, H, W)
-        Stokes in order [I, Q, U, V] for a single wavelength (already sliced).
-    verbose : bool
-        If True, shows diagnostics (when png=False).
-    pthresh : float or iterable of 3 floats
-        - If xcomp='I' and scalar: select pixels with |V|/I < pthresh.
-        - If xcomp='V' and scalar: select pixels with |V|/I >= pthresh.
-        - If iterable [thr_Q, thr_U, thr_V]:
-            * xcomp='I'  -> |Q|/I < thr_Q, |U|/I < thr_U, |V|/I < thr_V (if thr_* != 0).
-            * xcomp='V'  -> |Q|/I < thr_Q, |U|/I < thr_U, |V|/I >= thr_V (if thr_* != 0).
-    png : str or bool
-        If string, saves plots with this prefix; if False, shows the plots (when verbose=True).
-    n_sigma : float
-        Sigma-clipping threshold in linear fit (ignored for local model).
-        Use np.inf to disable clipping.
-    ctmethod : {'linfit', 'rms'}
-        - 'linfit': robust linear regression (with sigma-clipping) for linear model.
-        - 'rms'   : slope-only minimization (then intercept from means). For local, LS is always used.
-    region : [y1, y2, x1, x2]
-        Sub-region to analyze; negative follows Python slicing.
-    pthresh_intensity : float
-        Minimum intensity I to consider the pixel (0 = ignore).
-    xcomp : {'I', 'V'}
-        Independent variable for the fit:
-        - 'I': estimates I->Q,U,V (original behavior).
-        - 'V': estimates V->Q,U.
-    return_fit : bool
-        If True, returns a dict with per-channel fits and a predictor.
-    channels : tuple of {'Q','U','V'}
-        Channels to process (use e.g. ('Q',) for Q-only).
-    use_local : bool
-        Activates the local model with spatial derivatives (no Gaussian).
-    local_order : {1, 2}
-        1 -> use ∂xX, ∂yX.  2 -> also add Laplacian ∇²X.
-    deriv_sigma : float
-        Optional Gaussian smoothing on X only for building derivatives (0 = off).
-    local_ridge_lambda : float
-        Ridge regularization for the local model (does not penalize intercept).
-
-    Returns
-    -------
-    intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
-        Backward-compatible tuple (NaN where not applicable).
-    If return_fit=True, also returns:
-        fit_dict : dict
-            Keys among {'Q','U','V'} with:
-              {
-                'a','b','c','d','e',
-                'predict': callable f(X2d)-> a + b*X + c*∂xX + d*∂yX [+ e*∇²X],
-                'xcomp': 'I' or 'V',
-                'model': 'linear' | 'local1' | 'local2',
-                'deriv_sigma': float,
-                'lambda': float
-              }
-    """
-    # ---------------- helpers ----------------
-    def minimize_rms(source, target):
-        """Find slope 'a' minimizing std((target - a*source)/norm); intercept from means."""
-        norm = np.mean(np.abs(target)) + 1e-12
-        def objective(a):
-            return np.std((target - a * source) / norm)
-        result = minimize(objective, 0.0, method='BFGS',
-                          options={'maxiter': 100, 'gtol': 1e-8, 'disp': verbose})
-        return result.x[0]
-
-    def linfit_clip(x, y, n_sigma=5):
-        """1-pass sigma-clipped linear fit."""
-        slope, intercept, *_ = linregress(x, y)
-        resid = y - (slope*x + intercept)
-        std = np.std(resid) + 1e-12
-        mask = np.abs(resid) < (n_sigma * std)
-        slope2, intercept2, *_ = linregress(x[mask], y[mask])
-        return intercept2, slope2
-
-    def ridge_solve(A, y, lam=0.0):
-        """Solve (A^T A + lam*L) theta = A^T y, no regularize intercept."""
-        AtA = A.T @ A
-        Aty = A.T @ y
-        if lam > 0:
-            L = np.eye(AtA.shape[0])
-            L[0,0] = 0.0  # do not penalize intercept
-            AtA = AtA + lam * L
-        return np.linalg.solve(AtA, Aty)
-
-    def flatten_mask(M2d, *arrs2d):
-        outs = []
-        idx = np.where(M2d)
-        for A in arrs2d:
-            outs.append(A[idx].ravel())
-        return outs
-
-    def build_derivs(X2d):
-        """Build derivatives of (optionally) smoothed X for local model."""
-        Xb = gaussian_filter(X2d, sigma=deriv_sigma) if (deriv_sigma and deriv_sigma > 0) else X2d
-        Ix = sobel(Xb, axis=1)
-        Iy = sobel(Xb, axis=0)
-        if local_order >= 2:
-            L = laplace(Xb)
-        else:
-            L = None
-        return Xb, Ix, Iy, L
-
-    def predictor_linear(a, b):
-        def f(X2d):
-            return a + b * X2d
-        return f
-
-    def predictor_local(a, b, c, d, e, order, deriv_sigma):
-        def f(X2d):
-            Xb = gaussian_filter(X2d, sigma=deriv_sigma) if (deriv_sigma and deriv_sigma > 0) else X2d
-            Ix = sobel(Xb, axis=1)
-            Iy = sobel(Xb, axis=0)
-            yhat = a + b*X2d + c*Ix + d*Iy
-            if order >= 2:
-                yhat = yhat + e*laplace(Xb)
-            return yhat
-        return f
-
-    # --------------- region & masks ---------------
-    y1, y2, x1, x2 = region
-    sub = data[:, y1:y2, x1:x2].astype(float)
-    I2d, Q2d, U2d, V2d = sub[0], sub[1], sub[2], sub[3]
-
-    eps = 1e-12
-    Q_mc, U_mc, V_mc = Q2d - np.nanmean(Q2d), U2d - np.nanmean(U2d), V2d - np.nanmean(V2d)
-
-    # selection mask (same logic as before)
-    if np.isscalar(pthresh):
-        if xcomp == 'I':
-            pmap = np.abs(V_mc) / (I2d + eps)
-            sel2d = pmap < float(pthresh)
-        elif xcomp == 'V':
-            pmapV = np.abs(V_mc) / (I2d + eps)
-            sel2d = pmapV >= float(pthresh)
-        else:
-            raise ValueError("xcomp must be 'I' or 'V'.")
-    else:
-        thr = np.asarray(pthresh, dtype=float)
-        if thr.size != 3:
-            raise ValueError("pthresh must be scalar or iterable of three numbers (Q,U,V).")
-        pmap_q = np.abs(Q_mc) / (I2d + eps)
-        pmap_u = np.abs(U_mc) / (I2d + eps)
-        pmap_v = np.abs(V_mc) / (I2d + eps)
-        sel2d = np.ones_like(I2d, dtype=bool)
-        if xcomp == 'I':
-            if thr[0] != 0: sel2d &= (pmap_q < thr[0])
-            if thr[1] != 0: sel2d &= (pmap_u < thr[1])
-            if thr[2] != 0: sel2d &= (pmap_v < thr[2])
-        elif xcomp == 'V':
-            if thr[0] != 0: sel2d &= (pmap_q >= thr[0])
-            if thr[1] != 0: sel2d &= (pmap_u >= thr[1])
-            if thr[2] != 0: sel2d &= (pmap_v >= thr[2])
-        else:
-            raise ValueError("xcomp must be 'I' or 'V'.")
-
-    if pthresh_intensity != 0:
-        sel2d &= (I2d > pthresh_intensity)
-
-    # predictor X and channels to process
-    if xcomp == 'I':
-        X2d = I2d
-        all_comps = {'Q': Q2d, 'U': U2d, 'V': V2d}
-    else:
-        X2d = V2d
-        all_comps = {'Q': Q2d, 'U': U2d}
-
-    comps = {k: all_comps[k] for k in channels if k in all_comps}
-    ch_list = list(comps.keys())
-
-    # --------------- fitting ---------------
-    results = {}
-    for name in ch_list:
-        Y2d = comps[name]
-        if not use_local:
-            # === Linear model ===
-            xv, yv = flatten_mask(sel2d, X2d, Y2d)
-            if xv.size < 5:
-                results[name] = (np.nan, np.nan, 0.0, 0.0, 0.0)  # a,b,c,d,e
-                continue
-            if ctmethod == 'linfit':
-                a, b = linfit_clip(xv, yv, n_sigma)
-            elif ctmethod == 'rms':
-                b = minimize_rms(xv, yv); a = np.mean(yv) - b*np.mean(xv)
-            else:
-                raise ValueError("Invalid method. Use 'linfit' or 'rms'.")
-            c = d = e = 0.0
-        else:
-            # === Local (derivatives) ===
-            # Build feature maps
-            Xb, Ix, Iy, L = build_derivs(X2d)
-            cols = [np.ones_like(X2d), X2d, Ix, Iy]
-            if local_order >= 2:
-                cols.append(L)
-            mats = flatten_mask(sel2d, *cols, Y2d)
-            *Xs, yv = mats
-            A = np.column_stack([x.ravel() for x in Xs])
-            theta = ridge_solve(A, yv, lam=float(local_ridge_lambda))
-            a, b, c, d = theta[:4]
-            e = theta[4] if (local_order >= 2 and theta.size >= 5) else 0.0
-
-        results[name] = (float(a), float(b), float(c), float(d), float(e))
-
-    # --------------- backward-compatible tuple ---------------
-    aQ,bQ,cQ,dQ,eQ = results.get('Q', (np.nan,)*5)
-    aU,bU,cU,dU,eU = results.get('U', (np.nan,)*5)
-    aV,bV,cV,dV,eV = results.get('V', (np.nan,)*5)
-    intercept_q, slope_q = aQ, bQ
-    intercept_u, slope_u = aU, bU
-    intercept_v, slope_v = (aV, bV) if xcomp=='I' else (np.nan, np.nan)
-
-    # --------------- diagnostics (optional) ---------------
-    if verbose:
-        import matplotlib.pyplot as plt
-        n = len(ch_list)
-        fig, axes = plt.subplots(1, n, figsize=(6*n, 5))
-        if n == 1:
-            axes = [axes]
-        for ax, name in zip(axes, ch_list):
-            a,b,c,d,e = results[name]
-            if not use_local:
-                xv, yv = flatten_mask(sel2d, X2d, comps[name])
-                xx = np.linspace(np.nanmin(xv), np.nanmax(xv), 200)
-                ax.hexbin(xv, yv, gridsize=60, cmap='inferno', mincnt=1)
-                ax.plot(xx, a + b*xx, 'c-', lw=2, label=f'{name} = a + b·{xcomp}')
-                ax.set_xlabel(f'{xcomp} [DN]'); ax.set_ylabel(f'{name} [DN]')
-                ax.set_title(f'{name} vs {xcomp} (linear)')
-                ax.legend()
-            else:
-                # For local model, plot Y vs Yhat
-                Xb, Ix, Iy, L = build_derivs(X2d)
-                Yhat = a + b*X2d + c*Ix + d*Iy + (e*L if local_order >= 2 else 0.0)
-                M = sel2d & np.isfinite(comps[name]) & np.isfinite(Yhat)
-                ax.hexbin(comps[name][M], Yhat[M], gridsize=60, cmap='inferno', mincnt=1)
-                mn = np.nanmin(comps[name][M]); mx = np.nanmax(comps[name][M])
-                ax.plot([mn, mx], [mn, mx], 'c--', lw=2, label='y = ŷ')
-                ax.set_xlabel(f'{name} [DN]'); ax.set_ylabel(f'ŷ_{name} [DN]')
-                ax.set_title(f'{name}: local (order={local_order})')
-                ax.legend()
-        plt.tight_layout()
-        if isinstance(png, str) and len(png) > 0:
-            plt.savefig(f"{png}_fit_{xcomp}.png", dpi=150); plt.close()
-        else:
-            plt.show()
-
-    if return_fit:
-        fit_dict = {}
-        for name, (a,b,c,d,e) in results.items():
-            if not use_local:
-                pred = predictor_linear(a, b)
-                model_name = 'linear'
-            else:
-                pred = predictor_local(a, b, c, d, e, order=local_order, deriv_sigma=deriv_sigma)
-                model_name = f'local{local_order}'
-            fit_dict[name] = {
-                'a': a, 'b': b, 'c': c, 'd': d, 'e': e,
-                'predict': pred,
-                'xcomp': xcomp,
-                'model': model_name,
-                'deriv_sigma': float(deriv_sigma),
-                'lambda': float(local_ridge_lambda)
-            }
-        return (intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v), fit_dict
-
-    return intercept_q, intercept_u, intercept_v, slope_q, slope_u, slope_v
-
-
+        
 # JAEGGLI STUFF
 # Functions for the diattenuation modeling
 def polmodel1(D,theta,chi):
@@ -737,7 +457,6 @@ def fitfunc1(param, stokesin,wvl='all',method='jaeggli'):
     MM = polmodel1(D, theta, chi)
     iMM = np.linalg.inv(MM)
 
-
     #Computes the merit function
     out = minimize_for_model1(iMM,stokesin,wvl=wvl,method=method)
 
@@ -745,27 +464,6 @@ def fitfunc1(param, stokesin,wvl='all',method='jaeggli'):
 
 #Function that computes the merit function for a given Mueller matrix
 def  minimize_for_model1(iMM,bs,wvl='all',method='jaeggli'):
-    """
-    Function that computes the merit function that considers
-    crosstalk from I to Q, U and V along the spectral profile
-    for a given Mueller matrix
-    Input:
-        iMM: inverse of Mueller matrix of the diattenuator
-        bs: measured Stokes I
-        wvl: 'all' or selected wavelength sample (0,1,2,...).
-            Wavelength to be employed to correct crosstalk.
-        method: 'jaeggli', 'all_wvls' or 'corr'. Merit function
-            ->jaeggli: metric defined in Eq. (16) of Jaeggli et al. (2022)
-            ->all_wvls: modified Jaeggli's metric to compute the
-                correlation between Stokes I at all wavelengths with
-                Q, U and V at each wavelength
-            ->corr: metric that computes the correlation of Stokes
-                I with Q, U and V along the spectral profile as the
-                 "sample correlation coefficient" defined in
-                in https://en.wikipedia.org/wiki/Correlation
-    Output:
-        out: computed merit function            
-    """    
     new_stokes = np.einsum('ij,abj->abi',iMM, np.squeeze(bs))
     Nwaves=new_stokes.shape[1] #Number of wavelenth samples
     
@@ -819,7 +517,6 @@ def  minimize_for_model1(iMM,bs,wvl='all',method='jaeggli'):
     out = np.sum(out)
     return(out)
 
-
 # Function for the retarder modeling
 def polmodel2(theta, delta):
     St = np.sin(theta)
@@ -871,7 +568,6 @@ def minimize_for_model2(iMM,bs):
     
     return(out) 
 
-
 def fit_mueller_matrix(
     data: np.ndarray,
     strategy: str = "simultaneous",
@@ -890,6 +586,7 @@ def fit_mueller_matrix(
     dualI=None,                  # None o array (2,H,W): (I_cam0, I_cam1)
     # --- opciones específicas del flujo STANDARD (crosstalk con evaluate_crosstalk) ---
     use_local: bool = False,                # True -> modelo con derivadas
+    # fit_grad: bool = False,                 # True -> fuerza a=0, b=0 para ajustar solo el gradiente (residuo)
     local_order: int = 1,                   # 1 -> (Ix,Iy), 2 -> (+ Laplaciano)
     deriv_sigma: float = 0.0,               # suavizado previo de derivadas
     local_ridge_lambda: float = 0.0,        # regularización para modelo local
@@ -959,6 +656,7 @@ def fit_mueller_matrix(
                 * MM1a: np.ndarray (matrix or per-wavelength)
                 * optimizer_result: optional (not stored here by default)
     """
+
     # -------------------- Validaciones básicas --------------------
     if data.ndim != 4 or data.shape[1] != 4:
         raise ValueError("Expected data shape (wavelength, 4, x, y) with Stokes=[I,Q,U,V].")
@@ -1039,20 +737,18 @@ def fit_mueller_matrix(
 
     if strategy == 'simultaneous':
         # fit conjunto Q,U,V
-
         # ======================== MÉTODO STANDARD =========================
         if method.lower() == 'standard':
-            # Corrección I->(Q,U,V) usando evaluate_crosstalk (lineal o local)
-            # Parámetros comunes para evaluate_crosstalk:
             ec_kwargs = dict(
                 xcomp='I',
                 ctmethod=ctmethod,
                 n_sigma=3,
                 pthresh=pthresh,
                 pthresh_intensity=0,
-                region=[0, -1, 0, -1],  # dentro de cada recorte por λ o en el mosaico global
+                region=[0, -1, 0, -1],  
                 channels=tuple(channels),
                 return_fit=True,
+                fit_grad=False,
                 use_local=use_local,
                 local_order=local_order,
                 deriv_sigma=deriv_sigma,
@@ -1065,23 +761,21 @@ def fit_mueller_matrix(
             pixel_counts: Any = None
 
             # ---------- Ajuste GLOBAL (apilando λ) ----------
-            if aggregate_wavelengths:  # TODO NO ESTA ACTIVO AUN!!!!!
-                # Estimar coeficientes SOLO en la región
+            if aggregate_wavelengths:
+                logging.warning("aggregate_wavelengths is True.")
+
                 plane = _stack_wavelengths_for_ct(data[:, :, ysl, xsl], wsl, [0, -1, 0, -1])  # (4, h, w*L)
                 (_, fit_glob) = evaluate_crosstalk(plane, **ec_kwargs)
                 coeffs_global = fit_glob
 
-                # APLICAR a TODA la imagen
                 max_w = n_wvl if last_wvl is None else int(last_wvl)
                 for i in range(max_w):
-                    I_full = data[i, 0, :, :]  # toda la imagen
+                    I_full = data[i, 0, :, :] 
                     for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
                         if ch not in channels or ch not in fit_glob:
                             continue
                         Y_full = data[i, idx, :, :]
-                        # predicción en toda la imagen (el predictor gestiona derivadas si use_local=True)
                         Yhat_full = fit_glob[ch]['predict'](I_full)
-                        # aplica corrección solo donde hay datos finitos
                         M = np.isfinite(Y_full) & np.isfinite(Yhat_full)
                         out = data_corrected[i, idx, :, :]
                         out[M] = Y_full[M] - Yhat_full[M]
@@ -1094,15 +788,11 @@ def fit_mueller_matrix(
                 })
                 return data_corrected, info
 
-
             # ---------- Ajuste POR LONGITUD DE ONDA ----------
             coeffs_per_wvl = []
             pixel_counts = []
             for i in range(n_wvl):
                 if last_wvl is not None and i >= last_wvl:
-                    # Si limitaste el ajuste a [:last_wvl], para λ posteriores
-                    # aplicamos esos mismos coeficientes (a elección tuya).
-                    # Aquí, por simplicidad, replicamos los últimos coef. válidos.
                     if len(coeffs_per_wvl) > 0:
                         fit_prev = coeffs_per_wvl[-1]['fit']
                         I_full = data[i, 0, :, :]
@@ -1125,16 +815,7 @@ def fit_mueller_matrix(
                     dual = None
 
                 (coefs, fit) = evaluate_crosstalk(sub, dualI = dual, **ec_kwargs)
-                # Aplica corrección sobre esta λ
-                # I = sub[0]
-                # for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
-                #     if ch not in channels or ch not in fit:
-                #         continue
-                #     Y = sub[idx]
-                #     Yhat = fit[ch]['predict'](I)
-                #     data_corrected[i, idx, ysl, xsl] = Y - Yhat
 
-                # Aplica corrección SOBRE TODA LA IMAGEN (usando coeficientes de la región)
                 I_full = data[i, 0, :, :]
                 for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
                     if ch not in channels or ch not in fit:
@@ -1142,14 +823,13 @@ def fit_mueller_matrix(
                     Y_full = data[i, idx, :, :]
                     Yhat_full = fit[ch]['predict'](I_full)
                     M = np.isfinite(Y_full) & np.isfinite(Yhat_full)
-                    out = data_corrected[i, idx, :, :] # OJO. MODIFICA DATA CORRECETD
+                    out = data_corrected[i, idx, :, :] 
                     out[M] = Y_full[M] - Yhat_full[M]
 
-                # Guarda coeficientes por λ
                 coeffs_per_wvl.append({
                     'wavelength_index': i,
-                    'fit': fit,               # contiene a,b,(c,d,e), modelo y predict
-                    'tuple': coefs            # intercepts/slopes retrocompatibles
+                    'fit': fit,               
+                    'tuple': coefs            
                 })
 
                 pixel_counts.append(int(np.isfinite(sub[0]).sum()))
@@ -1163,11 +843,9 @@ def fit_mueller_matrix(
             return data_corrected, info
 
         # ======================== MÉTODO JAEGGLI / ALL_WVLS / CORR =========================
-        # Nota: aquí mantengo tu lógica original, reorganizando y documentando;
-        # se asume que existen fitfunc1 y polmodel1 en tu entorno.
         elif method.lower() in ('jaeggli', 'all_wvls', 'corr'):
-            # Reordenar a [x,y, wavelength, stokes] para tu flujo original
-            dat = np.moveaxis(np.moveaxis(data, 0, -1), 0, -1)  # (x, y, wl, st)
+            # Optimizamos reordenamiento de ejes de moveaxis a transpose
+            dat = np.transpose(data, (2, 3, 0, 1))  # (x, y, wl, st)
 
             Nwaves = dat.shape[2]
             full_data = dat.copy()
@@ -1178,15 +856,13 @@ def fit_mueller_matrix(
             if last_wvl is not None:
                 dat = dat[:, :, :int(last_wvl), :]
 
-            # mapa de fracción de polarización (como en tu código)
             V_mean_corr = dat[:, :, :, 3] - np.mean(dat[:, :, 0, 3], axis=(0, 1))
             pmap = np.max(np.abs(V_mean_corr) / (dat[:, :, :, 0] + 1e-12), axis=2)
             notpolar = np.argwhere(pmap < pthresh)
             nyidx = notpolar[:, 0]
             nzidx = notpolar[:, 1]
-            weak_region = dat[nyidx, nzidx, :, :]  # píxeles débilmente polarizados
+            weak_region = dat[nyidx, nzidx, :, :] 
 
-            # Plots diagnósticos (opcional)
             if plots:
                 import matplotlib.pyplot as plt
                 fig, ax = plt.subplots(figsize=(6, 6))
@@ -1200,11 +876,10 @@ def fit_mueller_matrix(
                 if MM1a is not None:
                     iMM1a = np.linalg.inv(MM1a)
                     data_inv = np.einsum('ij,abcj->abci', iMM1a, full_data)
-                    data_corrected = np.moveaxis(np.moveaxis(data_inv, -1, 0), -1, 0)
+                    data_corrected = np.transpose(data_inv, (2, 3, 0, 1))
                     info.update({'MM1a': MM1a})
                     return data_corrected, info
                 else:
-                    # Necesita: fitfunc1(params, weak_region, wvl=None, method='jaeggli')
                     D0, theta0, chi0 = 0.5, 0.0, 0.0
                     res = minimize(lambda x: fitfunc1(x, weak_region),
                                 x0=(D0, theta0, chi0),
@@ -1212,7 +887,7 @@ def fit_mueller_matrix(
                     MM1a = polmodel1(res.x[0], res.x[1], res.x[2])
                     iMM1a = np.linalg.inv(MM1a)
                     data_inv = np.einsum('ij,abcj->abci', iMM1a, full_data)
-                    data_corrected = np.moveaxis(np.moveaxis(data_inv, -1, 0), -1, 0)
+                    data_corrected = np.transpose(data_inv, (2, 3, 0, 1))
                     info.update({'MM1a': MM1a, 'optimizer_success': bool(res.success)})
                     return data_corrected, info
 
@@ -1233,7 +908,7 @@ def fit_mueller_matrix(
                     data_inv = np.einsum('ij,abcj->abci', iMM1, full_data)
                     data_corr_xywl[:, :, wvli, :] = data_inv[:, :, wvli, :]
 
-                data_corrected = np.moveaxis(np.moveaxis(data_corr_xywl, -1, 0), -1, 0)
+                data_corrected = np.transpose(data_corr_xywl, (2, 3, 0, 1))
                 info.update({'MM1a': MM1a_arr})
                 return data_corrected, info
 
@@ -1241,217 +916,54 @@ def fit_mueller_matrix(
             raise ValueError(f"Unknown method='{method}'. Use 'standard' | 'jaeggli' | 'all_wvls' | 'corr'.")
 
     elif strategy == 'sequential':
-        # fit paso a paso (Q -> U -> V)
+        # --- PASO 1: Ajuste principal ---
+        # Se ejecutará 'jaeggli' o 'standard' dependiendo de lo que elijas en el parámetro 'method'
+        logging.info(f"Iniciando PASO 1 secuencial: Corrección principal usando método '{method}'...")
+        
+        data_step1, info_step1 = fit_mueller_matrix(
+            data, strategy='simultaneous', pthresh=pthresh, norm=norm,
+            region=region, method=method, last_wvl=last_wvl, plots=plots,
+            roi=roi, norm_wave=norm_wave, verbose=verbose, ctmethod=ctmethod,
+            MM1a=MM1a, dualI=dualI, 
+            use_local=False,           # Forzamos SIN gradientes en este primer paso
+            # fit_grad=False,            # Ajuste completo
+            local_order=local_order,
+            deriv_sigma=deriv_sigma, local_ridge_lambda=local_ridge_lambda,
+            aggregate_wavelengths=aggregate_wavelengths, channels=channels
+        )
 
-        # ======================== MÉTODO STANDARD =========================
-        if method.lower() == 'standard':
-            # Corrección I->(Q,U,V) usando evaluate_crosstalk (lineal o local)
-            # Parámetros comunes para evaluate_crosstalk:
-            ec_kwargs = dict(
-                xcomp='I',
-                ctmethod=ctmethod,
-                n_sigma=3,
-                pthresh=pthresh,
-                pthresh_intensity=0,
-                region=[0, -1, 0, -1],  # dentro de cada recorte por λ o en el mosaico global
-                channels=tuple(channels),
-                return_fit=True,
-                use_local=False,  # AQUI ES CLAVE EN EL SECUENCIAL
-                local_order=local_order,
-                deriv_sigma=deriv_sigma,
-                local_ridge_lambda=local_ridge_lambda,
-                verbose=verbose,
-            )
+        # --- PASO 2: Ajuste de gradientes espaciales sobre el RESIDUO ---
+        # Independientemente del método del Paso 1, el Paso 2 SIEMPRE usa 'standard' con derivadas
+        logging.info("Iniciando PASO 2 secuencial: Corrección de gradientes ('standard' con derivadas)...")
+        
+        data_corrected, info_step2 = fit_mueller_matrix(
+            data_step1, strategy='simultaneous', pthresh=pthresh, norm=False, # No normalizar el residuo
+            region=region, method='standard', last_wvl=last_wvl, plots=False,
+            roi=roi, norm_wave=norm_wave, verbose=verbose, ctmethod=ctmethod,
+            MM1a=None, dualI=dualI, 
+            use_local=True,            # Forzamos USO de gradientes
+            # fit_grad=True,             # Forzamos a=0, b=0 para ajustar solo el residuo
+            local_order=local_order,
+            deriv_sigma=deriv_sigma, local_ridge_lambda=local_ridge_lambda,
+            aggregate_wavelengths=aggregate_wavelengths, channels=channels
+        )
 
-            coeffs_per_wvl: Optional[List[Dict[str, Any]]] = None
-            coeffs_global: Optional[Dict[str, Any]] = None
-            pixel_counts: Any = None
-
-            # ---------- Ajuste GLOBAL (apilando λ) ----------
-            if aggregate_wavelengths:
-                # Estimar coeficientes SOLO en la región
-                plane = _stack_wavelengths_for_ct(data[:, :, ysl, xsl], wsl, [0, -1, 0, -1])  # (4, h, w*L)
-                (_, fit_glob) = evaluate_crosstalk(plane, **ec_kwargs)
-                coeffs_global = fit_glob
-
-                # APLICAR a TODA la imagen
-                max_w = n_wvl if last_wvl is None else int(last_wvl)
-                for i in range(max_w):
-                    I_full = data[i, 0, :, :]  # toda la imagen
-                    for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
-                        if ch not in channels or ch not in fit_glob:
-                            continue
-                        Y_full = data[i, idx, :, :]
-                        # predicción en toda la imagen (el predictor gestiona derivadas si use_local=True)
-                        Yhat_full = fit_glob[ch]['predict'](I_full)
-                        # aplica corrección solo donde hay datos finitos
-                        M = np.isfinite(Y_full) & np.isfinite(Yhat_full)
-                        out = data_corrected[i, idx, :, :]
-                        out[M] = Y_full[M] - Yhat_full[M]
-
-                info.update({
-                    'mode': 'global',
-                    'coeffs_global': coeffs_global,
-                    'coeffs_per_wvl': None,
-                    'pixel_counts': int(np.isfinite(plane[0]).sum())
-                })
-                return data_corrected, info
-
-
-            # ---------- Ajuste POR LONGITUD DE ONDA ----------
-            coeffs_per_wvl = []
-            pixel_counts = []
-            for i in range(n_wvl):
-                if last_wvl is not None and i >= last_wvl:
-                    # Si limitaste el ajuste a [:last_wvl], para λ posteriores
-                    # aplicamos esos mismos coeficientes (a elección tuya).
-                    # Aquí, por simplicidad, replicamos los últimos coef. válidos.
-                    if len(coeffs_per_wvl) > 0:
-                        fit_prev = coeffs_per_wvl[-1]['fit']
-                        I_full = data[i, 0, :, :]
-                        for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
-                            if ch not in channels or ch not in fit_prev:
-                                continue
-                            Y_full = data[i, idx, :, :]
-                            Yhat_full = fit_prev[ch]['predict'](I_full)
-                            M = np.isfinite(Y_full) & np.isfinite(Yhat_full)
-                            out = data_corrected[i, idx, :, :]
-                            out[M] = Y_full[M] - Yhat_full[M]
-                    continue
-
-                sub = data[i, :, ysl, xsl]  # (4, h, w)
-                if dualI is not None:
-                    I0 = dualI[0, i, ysl, xsl].astype(float)
-                    I1 = dualI[1, i, ysl, xsl].astype(float)
-                    dual = np.array([I0,I1])
-                else:
-                    dual = None
-
-#### NUCLEO 
-                (coefs, fit) = evaluate_crosstalk(sub, dualI = dual, **ec_kwargs)
-                # Aplica corrección sobre esta λ
-                # I = sub[0]
-                # for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
-                #     if ch not in channels or ch not in fit:
-                #         continue
-                #     Y = sub[idx]
-                #     Yhat = fit[ch]['predict'](I)
-                #     data_corrected[i, idx, ysl, xsl] = Y - Yhat
-
-                # Aplica corrección SOBRE TODA LA IMAGEN (usando coeficientes de la región)
-                I_full = data[i, 0, :, :]
-                for ch, idx in (('Q', 1), ('U', 2), ('V', 3)):
-                    if ch not in channels or ch not in fit:
-                        continue
-                    Y_full = data[i, idx, :, :]
-                    Yhat_full = fit[ch]['predict'](I_full)
-                    M = np.isfinite(Y_full) & np.isfinite(Yhat_full)
-                    out = data_corrected[i, idx, :, :] # OJO. MODIFICA DATA CORRECETD
-                    out[M] = Y_full[M] - Yhat_full[M]
-
-                Y ahora el gradiente!!!!!!
-                
-##### HASTA AQUI
-                # Guarda coeficientes por λ
-                coeffs_per_wvl.append({
-                    'wavelength_index': i,
-                    'fit': fit,               # contiene a,b,(c,d,e), modelo y predict
-                    'tuple': coefs            # intercepts/slopes retrocompatibles
-                })
-
-                pixel_counts.append(int(np.isfinite(sub[0]).sum()))
-
-            info.update({
-                'mode': 'per_wavelength',
-                'coeffs_global': None,
-                'coeffs_per_wvl': coeffs_per_wvl,
-                'pixel_counts': pixel_counts
-            })
-            return data_corrected, info
-
-        # ======================== MÉTODO JAEGGLI / ALL_WVLS / CORR =========================
-        # Nota: aquí mantengo tu lógica original, reorganizando y documentando;
-        # se asume que existen fitfunc1 y polmodel1 en tu entorno.
-        elif method.lower() in ('jaeggli', 'all_wvls', 'corr'):
-            # Reordenar a [x,y, wavelength, stokes] para tu flujo original
-            dat = np.moveaxis(np.moveaxis(data, 0, -1), 0, -1)  # (x, y, wl, st)
-
-            Nwaves = dat.shape[2]
-            full_data = dat.copy()
-            # recorte espacial
-            dat = dat[reg[0]:reg[1], reg[2]:reg[3], :, :]
-
-            # recorte espectral para métrica
-            if last_wvl is not None:
-                dat = dat[:, :, :int(last_wvl), :]
-
-            # mapa de fracción de polarización (como en tu código)
-            V_mean_corr = dat[:, :, :, 3] - np.mean(dat[:, :, 0, 3], axis=(0, 1))
-            pmap = np.max(np.abs(V_mean_corr) / (dat[:, :, :, 0] + 1e-12), axis=2)
-            notpolar = np.argwhere(pmap < pthresh)
-            nyidx = notpolar[:, 0]
-            nzidx = notpolar[:, 1]
-            weak_region = dat[nyidx, nzidx, :, :]  # píxeles débilmente polarizados
-
-            # Plots diagnósticos (opcional)
-            if plots:
-                import matplotlib.pyplot as plt
-                fig, ax = plt.subplots(figsize=(6, 6))
-                im = ax.imshow(pmap, cmap='viridis')
-                ax.set_title('Fractional polarization map')
-                plt.colorbar(im, ax=ax)
-                plt.show(); plt.close()
-
-            # ------------- Ajuste Jaeggli -------------
-            if method.lower() == 'jaeggli':
-                if MM1a is not None:
-                    iMM1a = np.linalg.inv(MM1a)
-                    data_inv = np.einsum('ij,abcj->abci', iMM1a, full_data)
-                    data_corrected = np.moveaxis(np.moveaxis(data_inv, -1, 0), -1, 0)
-                    info.update({'MM1a': MM1a})
-                    return data_corrected, info
-                else:
-                    # Necesita: fitfunc1(params, weak_region, wvl=None, method='jaeggli')
-                    D0, theta0, chi0 = 0.5, 0.0, 0.0
-                    res = minimize(lambda x: fitfunc1(x, weak_region),
-                                x0=(D0, theta0, chi0),
-                                options={'maxiter': 1000, 'disp': verbose})
-                    MM1a = polmodel1(res.x[0], res.x[1], res.x[2])
-                    iMM1a = np.linalg.inv(MM1a)
-                    data_inv = np.einsum('ij,abcj->abci', iMM1a, full_data)
-                    data_corrected = np.moveaxis(np.moveaxis(data_inv, -1, 0), -1, 0)
-                    info.update({'MM1a': MM1a, 'optimizer_success': bool(res.success)})
-                    return data_corrected, info
-
-            # ------------- Ajuste por todas las λ -------------
-            elif method.lower() in ('all_wvls', 'corr'):
-                MM1a_arr = np.zeros((Nwaves, 4, 4), dtype=float)
-                data_corr_xywl = full_data.copy()
-                D0, theta0, chi0 = 0.5, 0.0, 0.0
-                for wvli in range(Nwaves):
-                    if verbose:
-                        logging.info(f"[Jaeggli] Fitting wave {wvli+1}/{Nwaves}")
-                    fun = lambda x: fitfunc1(x, weak_region, wvl=wvli, method=method)
-                    res = minimize(fun, x0=(D0, theta0, chi0),
-                                options={'maxiter': 1000, 'disp': verbose})
-                    MM1 = polmodel1(res.x[0], res.x[1], res.x[2])
-                    MM1a_arr[wvli, :, :] = MM1
-                    iMM1 = np.linalg.inv(MM1)
-                    data_inv = np.einsum('ij,abcj->abci', iMM1, full_data)
-                    data_corr_xywl[:, :, wvli, :] = data_inv[:, :, wvli, :]
-
-                data_corrected = np.moveaxis(np.moveaxis(data_corr_xywl, -1, 0), -1, 0)
-                info.update({'MM1a': MM1a_arr})
-                return data_corrected, info
-
-        else:
-            raise ValueError(f"Unknown method='{method}'. Use 'standard' | 'jaeggli' | 'all_wvls' | 'corr'.")
+        # Actualizamos la información de salida para saber exactamente qué se ha ejecutado
+        info.update({
+            'mode': 'sequential',
+            'method_step1': method,
+            'method_step2': 'standard_gradients',
+            'step1_info': info_step1,
+            'step2_info': info_step2
+        })
+        
+        return data_corrected, info
 
 def apply_crosstalk_coeffs_standard(
         data,
         coeffs,
         *,
-        per_wavelength=False,        # True -> coeffs[i][ch], False -> coeffs[ch]
+        per_wavelength=False,        
         use_local=False,
         local_order=1,
         deriv_sigma=0.0,
@@ -1460,35 +972,6 @@ def apply_crosstalk_coeffs_standard(
     """
     Aplica corrección de crosstalk I->(Q,U,V) usando COEFICIENTES DADOS por el usuario,
     sin calcular nada. SOLO modo STANDARD (lineal o local).
-
-    Parámetros
-    ----------
-    data : np.ndarray
-        Cubo (wvl, 4, x, y) con Stokes=[I,Q,U,V].
-    coeffs :
-        - Si per_wavelength=False:
-            dict por canal:
-                coeffs['Q'] = {'a':..., 'b':..., 'c':..., 'd':..., 'e':...}
-        - Si per_wavelength=True:
-            lista/array de longitud n_wvl:
-                coeffs[i]['Q'] = {a,b,c,d,e}
-    per_wavelength : bool
-        Si True, usa un conjunto de coeficientes por λ.
-        Si False, usa un único conjunto global para todos los λ.
-    use_local : bool
-        Si True, usa derivadas (Ix,Iy[,L]).
-    local_order : {1,2}
-        1 -> usa Ix, Iy
-        2 -> añade Laplaciano L
-    deriv_sigma : float
-        Suavizado previo de I para derivadas.
-    channels : tuple
-        Canales a corregir ('Q','U','V').
-
-    Retorna
-    -------
-    data_corrected : np.ndarray
-    info : dict resumen
     """
 
     if data.ndim != 4 or data.shape[1] != 4:
@@ -1520,7 +1003,6 @@ def apply_crosstalk_coeffs_standard(
     for i in range(n_wvl):
         I = data[i,0]
 
-        # Obtener coeficientes adecuados
         if per_wavelength:
             coeff_i = coeffs[i]
         else:
@@ -1532,14 +1014,12 @@ def apply_crosstalk_coeffs_standard(
             if ch not in coeff_i:
                 continue
 
-            # Extraer coeficientes
             a = float(coeff_i[ch].get('a',0.0))
             b = float(coeff_i[ch].get('b',0.0))
             c = float(coeff_i[ch].get('c',0.0))
             d = float(coeff_i[ch].get('d',0.0))
             e = float(coeff_i[ch].get('e',0.0))
 
-            # Construcción predictor
             if not use_local:
                 Yhat = a + b * I
             else:
@@ -1561,113 +1041,128 @@ def apply_crosstalk_coeffs_standard(
     )
     return data_corr, info
 
-
 def fit_mueller_matrix_tiled(
     data: np.ndarray,
+    strategy: str = "simultaneous",
     pthresh: float = 0.02,
     norm: bool = False,
     quadrants: int = 8,
-    method: str = 'standard',            # 'standard' | 'jaeggli' | 'all_wvls' | 'corr'
+    overlap_fraction: float = 0.25,          # NUEVO: % de solapamiento para borrar líneas (0.25 = 25%)
+    region: List[int] = [0, -1, 0, -1],      
+    method: str = 'standard',            
     last_wvl: Optional[int] = None,
     plots: bool = False,
+    roi: List[int] = [0, -1, 0, -1],         
+    norm_wave: int = -1,
     verbose: bool = False,
-    # --- opciones que pasan a fit_mueller_matrix (STANDARD) ---
     ctmethod: str = 'linfit',
-    channels: Tuple[str, ...] = ('Q','U','V'),
+    MM1a: Optional[np.ndarray] = None,
+    # ===== NUEVO: Mismas capacidades que la función base =====
+    dualI: Optional[np.ndarray] = None,
     use_local: bool = False,
+    # fit_grad: bool = False,
     local_order: int = 1,
     deriv_sigma: float = 0.0,
     local_ridge_lambda: float = 0.0,
     aggregate_wavelengths: bool = False,
-    # --- control tiles ---
+    channels: Tuple[str, ...] = ('Q','U','V')
 ) -> Tuple[np.ndarray, List[Tuple[int,int,int,int]], List[Dict[str,Any]]]:
     """
-    Divide la imagen en una rejilla n×n de tiles y, en cada tile, llama a
-    fit_mueller_matrix(...) para estimar y aplicar la corrección de crosstalk.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Cubo (wavelength, 4, x, y) con Stokes=[I,Q,U,V].
-    pthresh, norm, region, method, last_wvl, plots, verbose :
-        Parámetros de alto nivel (ver fit_mueller_matrix).
-    ctmethod, channels, use_local, local_order, deriv_sigma, local_ridge_lambda,
-    aggregate_wavelengths :
-        Se pasan a fit_mueller_matrix cuando method='standard'.
-    divisions : int
-        nº de tiles por eje (n×n).
-    min_valid : int
-        nº mínimo de píxeles finitos por tile para intentar ajuste.
-    show_grid : bool
-        Si True, dibuja la rejilla sobre I (λ=0) antes de procesar.
-
-    Returns
-    -------
-    data_corr : np.ndarray
-        Cubo corregido (misma forma que data).
-    tiles : list[tuple]
-        Lista de tiles (y1,y2,x1,x2) en orden fila-columna.
-    infos : list[dict]
-        Lista de metadatos devueltos por fit_mueller_matrix(...) por tile.
-        (coeficientes por λ, modelo, etc.)
+    Divide la imagen en una rejilla con solapamiento (feathering) para evitar líneas 
+    de costura, y aplica fit_mueller_matrix en cada zona.
     """
-
-    def _generar_cuadrantes_nx_n(H, W, n):
-        """
-        Divide una imagen en una cuadrícula n×n de cuadrados del mismo tamaño.
-
-        Parámetros:
-            H, W : int
-                Alto (H) y ancho (W) de la imagen.
-            n : int
-                Número de cuadrados por eje (n=2 -> 2x2, n=3 -> 3x3, etc.)
-
-        Retorna:
-            Lista de tuplas (y1, y2, x1, x2) que representan las coordenadas
-            de cada cuadrado en formato (fila_superior, fila_inferior, col_izquierda, col_derecha).
-        """
-        # tamaño ideal de cada cuadrado
-        base_h = H / n
-        base_w = W / n
-
-        rois = []
-        for i in range(n):
-            for j in range(n):
-                y1 = int(round(i * base_h))
-                y2 = int(round((i + 1) * base_h))
-                x1 = int(round(j * base_w))
-                x2 = int(round((j + 1) * base_w))
-                rois.append((y1, y2, x1, x2))
-
-        return rois
     
     if data.ndim != 4 or data.shape[1] != 4:
         raise ValueError("Expected data shape (wavelength, 4, x, y) with Stokes=[I,Q,U,V].")
 
-    H, W = data.shape[-1], data.shape[-1]   # dimensiones de la imagen
-    quadrants_roi = _generar_cuadrantes_nx_n(H, W, quadrants)
+    H, W = data.shape[-2], data.shape[-1]
+    data_float = data.astype(float, copy=False)
 
-    data_corr = np.copy(data)
+    # --- 1. Normalización GLOBAL (Para evitar saltos de brillo entre tiles) ---
+    if norm:
+        y1_roi, y2_roi, x1_roi, x2_roi = roi
+        y2_roi = H if y2_roi < 0 else y2_roi
+        x2_roi = W if x2_roi < 0 else x2_roi
+        I0 = data_float[norm_wave, 0, y1_roi:y2_roi, x1_roi:x2_roi]
+        nf = float(np.nanmedian(I0))
+        if nf > 0 and np.isfinite(nf):
+            data_float = data_float / nf
+    
+    # --- 2. Generador de cuadrantes con solapamiento ---
+    def _generate_tiles_with_overlap(H, W, n, overlap_frac):
+        base_h = H / n
+        base_w = W / n
+        pad_h = int(round(base_h * overlap_frac))
+        pad_w = int(round(base_w * overlap_frac))
+        
+        tiles = []
+        for i in range(n):
+            for j in range(n):
+                # Expandimos el tile por el pad, sin salirnos de la imagen
+                y1 = max(0, int(round(i * base_h)) - pad_h)
+                y2 = min(H, int(round((i + 1) * base_h)) + pad_h)
+                x1 = max(0, int(round(j * base_w)) - pad_w)
+                x2 = min(W, int(round((j + 1) * base_w)) + pad_w)
+                
+                if y2 > y1 and x2 > x1:
+                    tiles.append((y1, y2, x1, x2, pad_h, pad_w))
+        return tiles
+
+    # --- 3. Ventana de atenuación lineal (Bilinear Tapering) ---
+    def _make_taper_window(y1, y2, x1, x2, H, W, pad_h, pad_w):
+        """Crea una ventana 2D que cae a 0 en los bordes solapados para un fundido perfecto."""
+        h, w = y2 - y1, x2 - x1
+        wy = np.ones(h, dtype=float)
+        wx = np.ones(w, dtype=float)
+        
+        # Atenuar borde superior (solo si no es el borde absoluto de la imagen)
+        if y1 > 0 and pad_h > 0:
+            wy[:pad_h] = np.linspace(0, 1, pad_h)
+        # Atenuar borde inferior
+        if y2 < H and pad_h > 0:
+            wy[-pad_h:] = np.linspace(1, 0, pad_h)
+        # Atenuar borde izquierdo
+        if x1 > 0 and pad_w > 0:
+            wx[:pad_w] = np.linspace(0, 1, pad_w)
+        # Atenuar borde derecho
+        if x2 < W and pad_w > 0:
+            wx[-pad_w:] = np.linspace(1, 0, pad_w)
+            
+        return wy[:, None] * wx[None, :]
+
+    tiles_info = _generate_tiles_with_overlap(H, W, quadrants, overlap_fraction)
+    
+    # Acumuladores para la reconstrucción suave
+    data_corr_accum = np.zeros_like(data_float)
+    weight_accum = np.zeros((H, W), dtype=float)
     infos: List[Dict[str, Any]] = []
 
+    # --- 4. Bucle principal de procesado por Tile ---
+    for q, (y1, y2, x1, x2, pad_h, pad_w) in enumerate(tiles_info):
+        sub_data = data_float[:, :, y1:y2, x1:x2]
+        
+        # Trocear también el haz dual si existe
+        if dualI is not None:
+            sub_dualI = dualI[..., y1:y2, x1:x2]
+        else:
+            sub_dualI = None
 
-    for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
-
-        sub = data[:,:,y1:y2, x1:x2]
-
-        # Llamada por tile a tu fit_mueller_matrix (usa TODO lo que ya integraste)
+        # Llamada al núcleo matemático (Forzamos norm=False porque ya se hizo globalmente)
         data_corr_tile, info = fit_mueller_matrix(
-            sub,
+            sub_data,
+            strategy=strategy,
             pthresh=pthresh,
-            norm=norm,
-            region=[0, -1, 0, -1],     # el tile se procesa completo
+            norm=False,                
+            region=[0, -1, 0, -1],     
             method=method,
             last_wvl=last_wvl,
             plots=plots,
             verbose=verbose,
             ctmethod=ctmethod,
-            # STANDARD advanced opts:
+            MM1a=MM1a,
+            dualI=sub_dualI,
             use_local=use_local,
+            # fit_grad=fit_grad,
             local_order=local_order,
             deriv_sigma=deriv_sigma,
             local_ridge_lambda=local_ridge_lambda,
@@ -1675,33 +1170,28 @@ def fit_mueller_matrix_tiled(
             channels=channels
         )
 
-        # Volcar resultado al mosaico
-        data_corr[:, :, y1:y2, x1:x2] = data_corr_tile
+        # Crear máscara de fundido y acumular
+        window = _make_taper_window(y1, y2, x1, x2, H, W, pad_h, pad_w)
+        
+        data_corr_accum[:, :, y1:y2, x1:x2] += data_corr_tile * window[None, None, :, :]
+        weight_accum[y1:y2, x1:x2] += window
 
-        # Guarda info del tile
-        info = dict(info)  # copia
-        info['tile'] = (y1, y2, x1, x2)
+        info = dict(info)  
+        info['tile_bounds'] = (y1, y2, x1, x2)
         infos.append(info)
 
-        logging.info(f"[tile {q+1}/{len(quadrants_roi)}] OK -> region=({y1}:{y2},{x1}:{x2})")
+        if verbose:
+            logging.info(f"[Tile {q+1}/{len(tiles_info)}] OK -> bounds=({y1}:{y2}, {x1}:{x2})")
 
-    return data_corr, infos
+    # --- 5. Promediado final ponderado ---
+    # Dividimos entre la suma de pesos para normalizar el fundido (evitando div/0)
+    weight_accum = np.maximum(weight_accum, 1e-12)
+    data_corr_final = data_corr_accum / weight_accum[None, None, :, :]
 
-import numpy as np
-import matplotlib.pyplot as plt
+    return data_corr_final, [(t[0], t[1], t[2], t[3]) for t in tiles_info], infos
 
 def ver_planos_ajuste(planes, samples):
-    """
-    Muestra por canal/término:
-      - coeficientes del plano (A,B,C)
-      - puntos usados (cx,cy,z)
-      - y dibuja el plano si hay >=3 puntos
-    planes[ch][t] = (A,B,C)
-    samples[ch][t] = [(cx,cy,z), ...]  o ndarray (N,3)  o (cx,cy,z)
-    """
-
     def _pts(pts):
-        # Normaliza a lista de (x,y,z)
         if pts is None:
             return []
         if isinstance(pts, (list, tuple)):
@@ -1769,25 +1259,16 @@ def ver_planos_ajuste(planes, samples):
         print("\nNo se ha dibujado ninguna superficie (faltan términos con >=3 puntos).")
 
 def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw):
-    """
-    Minimal:
-    - Extrae a,b,c,d,e desde info['coeffs_per_wvl'][λ]['fit'][ch]
-    - Ajusta planos por término
-    - Aplica corrección
-    """
-
     L, _, Y, X = data.shape
     name2idx = {'I':0,'Q':1,'U':2,'V':3}
     TERMS = ('a','b','c','d','e')
 
-    # --- cortar ROI ---
     def recorte(cx,cy,lado):
         h = lado//2
         x1=max(0,cx-h); x2=min(X,cx+h+(lado%2))
         y1=max(0,cy-h); y2=min(Y,cy+h+(lado%2))
         return x1,x2,y1,y2
 
-    # --- extraer a,b,c,d,e (promedio en λ) ---
     def extraer_coef(info):
         out={ch:{} for ch in channels}
         per = info.get('coeffs_per_wvl',[])
@@ -1801,7 +1282,6 @@ def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw)
             out[ch] = {t: np.nanmean(acc[t]) for t in TERMS if acc[t]}
         return out
 
-    # --- recolectar puntos ---
     samples = {ch:{t:[] for t in TERMS} for ch in channels}
     infos=[]
 
@@ -1819,7 +1299,7 @@ def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw)
                 if t in coefs.get(ch,{}):
                     samples[ch][t].append((cx,cy,float(coefs[ch][t])))
         logging.info(f"ROI ({cx},{cy}) -> coeficientes extraídos: {coefs}")
-    # --- planos ---
+
     planes={ch:{} for ch in channels}
     maps  ={ch:{} for ch in channels}
 
@@ -1834,10 +1314,9 @@ def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw)
             P = np.array([[x, y, x*y, 1.0] for (x,y,_) in pts], float)
             z = np.array([v for (_,_,v) in pts], float)
             A, B, Dxy, C = np.linalg.lstsq(P, z, rcond=None)[0]
-            planes[ch][t] = (A, B, C, Dxy)             # guardamos 4 coef.
-            maps[ch][t]   = A*xs + B*ys + C + Dxy*(ys*xs)  # (Y,X) por broadcasting
+            planes[ch][t] = (A, B, C, Dxy)             
+            maps[ch][t]   = A*xs + B*ys + C + Dxy*(ys*xs)  
 
-    # --- corrección ---
     data_corr = data.copy()
     for l in range(L):
         I = data_corr[l,0]
@@ -1852,52 +1331,20 @@ def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw)
                 if t=='b': CT += arr * I
                 if t=='c': CT += arr * dIx
                 if t=='d': CT += arr * dIy
-                # if t=='e': CT += arr * lap
             data_corr[l,j] -= CT
 
-    # ✅ DEVUELVE LOS PUNTOS ORIGINALES (SIN SOBREESCRIBIRLOS)
     return data_corr, planes, maps, infos, samples
 
 def write_crosstalk_header(
     header: "Header",
     info: dict,
     channels=('Q','U','V'),
-    index_width: int = 3,   # ancho del índice de λ: 3 -> 000, 001, ...
+    index_width: int = 3,   
 ):
-    """
-    Escribe en la cabecera FITS (header) los coeficientes de crosstalk
-    del modo 'standard' (sin tiles), directamente como keywords por λ.
-
-    Claves por λ (formato per_wavelength):
-        - S<ch>_<idx> : slope b       (p.ej. SQ_000)
-        - C<ch>_<idx> : intercept a   (p.ej. CQ_000)
-        - DX<ch>_<idx>: coef ∂x (c)   (p.ej. DXQ_000)
-        - DY<ch>_<idx>: coef ∂y (d)   (p.ej. DYQ_000)
-        - DL<ch>_<idx>: coef ∇² (e)   (p.ej. DLQ_000)
-
-    Claves globales (aggregate_wavelengths=True):
-        - S<ch>_G, C<ch>_G, DX<ch>_G, DY<ch>_G, DL<ch>_G
-
-    Siempre se escriben c,d,e (derivadas); si el modelo es lineal, se ponen a 0.0.
-
-    Parameters
-    ----------
-    header : astropy.io.fits.Header
-        Cabecera a actualizar.
-    info : dict
-        Salida 'info' de fit_mueller_matrix(...).
-    channels : tuple
-        Canales a escribir: subset de ('Q','U','V').
-    index_width : int
-        Ancho mínimo del índice de λ con ceros a la izquierda.
-    """
-    # --- banderas básicas ---
     header.set('CROSTALK', 1, 'Was crosstalk correction applied?')
     header.set('CROSMETH', str(info.get('method','standard')), 'Crosstalk method')
     header.set('CROSMODE', str(info.get('mode','per_wavelength')), 'Fit mode: per_wavelength or global')
 
-    # Metadatos del modelo (si existen)
-    # En per-wavelength pueden variar por λ; para cabecera simple, registramos lo que haya en el primer fit o global
     local_flag = 0
     local_order = 0
     deriv_sigma = 0.0
@@ -1905,11 +1352,9 @@ def write_crosstalk_header(
 
     if info.get('mode') == 'global':
         fitG = info.get('coeffs_global', {})
-        # Intenta extraer banderas/valores de un canal presente
         for ch in channels:
             if ch in fitG:
                 local_flag = 1 if fitG[ch].get('model','linear').startswith('local') else 0
-                # 'local1' o 'local2' -> order = último char
                 if local_flag:
                     try:
                         local_order = int(fitG[ch].get('model','linear')[-1])
@@ -1939,18 +1384,11 @@ def write_crosstalk_header(
     header.set('CROSDSIG', float(deriv_sigma), 'Derivative pre-smoothing sigma')
     header.set('CROSRIDG', float(ridge_lambda), 'Ridge lambda (local model)')
 
-    # --- escritura de coeficientes ---
     mode = info.get('mode','per_wavelength')
 
     def _write_coeffs_for_channel(prefix: str, a: float, b: float, c: float, d: float, e: float, suffix: str):
-        """
-        Escribe claves compactas por canal con un sufijo (_NNN o _G).
-        prefix = 'Q','U','V'
-        """
-        # slope (S<ch>_<suffix>) y constant/intercept (C<ch>_<suffix>)
         header.set(f'S{prefix}_{suffix}', float(b), f'slope b for {prefix}')
         header.set(f'C{prefix}_{suffix}', float(a), f'intercept a for {prefix}')
-        # derivadas (siempre se graban; 0.0 si no aplica)
         header.set(f'DX{prefix}_{suffix}', float(c), f'd/dx coeff c for {prefix}')
         header.set(f'DY{prefix}_{suffix}', float(d), f'd/dy coeff d for {prefix}')
         header.set(f'DL{prefix}_{suffix}', float(e), f'laplacian coeff e for {prefix}')
@@ -1966,7 +1404,6 @@ def write_crosstalk_header(
             e = float(fd.get('e', 0.0))
             _write_coeffs_for_channel(ch, a, b, c, d, e, 'G')
     else:
-        # per_wavelength
         per = info.get('coeffs_per_wvl', [])
         if not per:
             return header
@@ -1985,9 +1422,7 @@ def write_crosstalk_header(
 
     return header
 
-# ------------------------- helpers rejilla -------------------------
 def _grid_tiles(H: int, W: int, y1: int, y2: int, x1: int, x2: int, divisions: int) -> List[Tuple[int,int,int,int]]:
-    """Rejilla n×n no solapada dentro de [y1:y2, x1:x2]. Devuelve [(yt1,yt2,xt1,xt2), ...]."""
     h = max(0, y2 - y1); w = max(0, x2 - x1)
     if h <= 0 or w <= 0:
         raise ValueError("Region must have positive area.")
@@ -2004,7 +1439,6 @@ def _grid_tiles(H: int, W: int, y1: int, y2: int, x1: int, x2: int, divisions: i
     return tiles
 
 def _pearson(u, v):
-    """Correlación de Pearson segura (ignora NaNs)."""
     u = np.asarray(u).ravel(); v = np.asarray(v).ravel()
     m = np.isfinite(u) & np.isfinite(v)
     if m.sum() < 3:
@@ -2016,13 +1450,11 @@ def _pearson(u, v):
     return float(np.corrcoef(u, v)[0,1])
 
 def _linfit_clip(x, y, n_sigma=3):
-    """Ajuste lineal con un paso de sigma-clipping: devuelve (a,b)."""
     x = x.ravel(); y = y.ravel()
     m = np.isfinite(x) & np.isfinite(y)
     if m.sum() < 3:
         return np.nan, np.nan
     xv = x[m]; yv = y[m]
-    # fit inicial
     b1, a1 = np.polyfit(xv, yv, 1)
     res = yv - (a1 + b1*xv)
     s = np.std(res) + 1e-12
@@ -2033,7 +1465,6 @@ def _linfit_clip(x, y, n_sigma=3):
     return float(a2), float(b2)
 
 def _ridge_solve(A, y, lam=0.0):
-    """Resuelve (A^T A + lam L) theta = A^T y, sin penalizar intercepto."""
     AtA = A.T @ A
     Aty = A.T @ y
     if lam > 0:
@@ -2042,59 +1473,44 @@ def _ridge_solve(A, y, lam=0.0):
         AtA = AtA + lam * L
     return np.linalg.solve(AtA, Aty)
 
-# ------------------ función principal: tiles Iref→Q ------------------
 def fit_interference_Iref_to_Q_tiled(
-    data: np.ndarray,                      # (wvl, 4, x, y) Stokes=[I,Q,U,V]
-    ref_wvl: Optional[int] = -1,           # índice de λ para I_ref (p.ej., -1 = última)
+    data: np.ndarray,                      
+    ref_wvl: Optional[int] = -1,           
     divisions: int = 8,
-    region: List[int] = [0,-1,0,-1],       # [y1,y2,x1,x2] para DEFINIR la malla
-    ctmethod: str = 'linfit',              # 'linfit' | 'rms'
-    n_sigma: float = 3,                    # para linfit clipping
-    pthresh_intensity: float = 0.0,        # I_ref > pthresh_intensity (opcional)
-    use_local: bool = False,               # True -> añade derivadas (Ix,Iy[,L]) de I_ref
-    local_order: int = 1,                  # 1: Ix,Iy ; 2: + Laplaciano
-    deriv_sigma: float = 0.0,              # suavizado de I_ref para derivadas
-    local_ridge_lambda: float = 0.0,       # regularización ridge en local
-    apply: bool = True,                    # aplicar corrección a data → data_corr
+    region: List[int] = [0,-1,0,-1],       
+    ctmethod: str = 'linfit',              
+    n_sigma: float = 3,                    
+    pthresh_intensity: float = 0.0,        
+    use_local: bool = False,               
+    local_order: int = 1,                  
+    deriv_sigma: float = 0.0,              
+    local_ridge_lambda: float = 0.0,       
+    apply: bool = True,                    
     show_grid: bool = False,
     verbose: bool = False
 ) -> Tuple[np.ndarray, List[Tuple[int,int,int,int]], Dict[str, Any]]:
-    """
-    Ajusta por tiles la interferencia I(λ_ref) -> Q(λ) para TODAS las longitudes de onda.
-
-    Devuelve:
-      - data_corr: cubo corregido (Q corregido por tiles; U,V intactos).
-      - tiles: lista de tiles [(y1,y2,x1,x2), ...].
-      - out: dict con:
-          * 'a','b','c','d','e'   : arrays (n_wvl, n_tiles)
-          * 'corr'                : Pearson(I_ref, Q_λ) por (n_wvl, n_tiles)
-          * 'ref_wvl','divisions','region','use_local','local_order','deriv_sigma','ridge'
-    """
+    
     if data.ndim != 4 or data.shape[1] != 4:
         raise ValueError("Expected data shape (wavelength, 4, x, y) with Stokes=[I,Q,U,V].")
 
     n_wvl, _, H, W = data.shape
-    # normaliza ref_wvl
     if ref_wvl is None:
         ref_wvl = -1
     if ref_wvl < 0:
-        ref_wvl = n_wvl + ref_wvl  # -1 -> última
+        ref_wvl = n_wvl + ref_wvl  
     ref_wvl = int(np.clip(ref_wvl, 0, n_wvl-1))
 
-    # define tiles dentro de 'region'
     y1, y2, x1, x2 = region
     if y2 < 0: y2 = H
     if x2 < 0: x2 = W
     tiles = _grid_tiles(H, W, y1, y2, x1, x2, divisions)
 
-    # predictor I_ref (2D) y sus derivadas si procede (constantes para todas las λ)
     Iref = data[ref_wvl, 0, :, :].astype(float)
     Iref_b = gaussian_filter(Iref, sigma=deriv_sigma) if (use_local and deriv_sigma > 0) else Iref
     Ix_ref = sobel(Iref_b, axis=1) if use_local else None
     Iy_ref = sobel(Iref_b, axis=0) if use_local else None
     L_ref  = laplace(Iref_b)       if (use_local and local_order >= 2) else None
 
-    # preparar salidas
     n_tiles = len(tiles)
     a = np.full((n_wvl, n_tiles), np.nan, float)
     b = np.full((n_wvl, n_tiles), np.nan, float)
@@ -2105,7 +1521,6 @@ def fit_interference_Iref_to_Q_tiled(
 
     data_corr = np.copy(data)
 
-    # opcional: mostrar rejilla
     if show_grid:
         I0 = data[0, 0]
         fig, ax = plt.subplots(figsize=(7,7))
@@ -2116,7 +1531,6 @@ def fit_interference_Iref_to_Q_tiled(
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout(); plt.show()
 
-    # bucle por tiles
     for t_idx, (yt1, yt2, xt1, xt2) in enumerate(tiles):
         X  = Iref[yt1:yt2, xt1:xt2]
         if use_local:
@@ -2124,27 +1538,22 @@ def fit_interference_Iref_to_Q_tiled(
             Xy = Iy_ref[yt1:yt2, xt1:xt2]
             Lx = L_ref[yt1:yt2, xt1:xt2] if local_order >= 2 else None
 
-        # máscara base
         M0 = np.isfinite(X)
         if pthresh_intensity > 0:
             M0 &= (X > pthresh_intensity)
 
-        # bucle por λ para Q(λ)
         for w in range(n_wvl):
-            Y = data[w, 1, yt1:yt2, xt1:xt2].astype(float)  # Q_λ
+            Y = data[w, 1, yt1:yt2, xt1:xt2].astype(float)  
             M = M0 & np.isfinite(Y)
             if M.sum() < 5:
                 continue
 
-            # correlación (I_ref, Q_λ) en el tile
             corr[w, t_idx] = _pearson(X[M], Y[M])
 
             if not use_local:
-                # --- ajuste lineal ---
                 if ctmethod == 'linfit':
                     a_w, b_w = _linfit_clip(X[M], Y[M], n_sigma=n_sigma)
                 elif ctmethod == 'rms':
-                    # b que minimiza RMS(Y - bX), a = mean(Y) - b mean(X)
                     xv = X[M].ravel(); yv = Y[M].ravel()
                     denom = (xv**2).sum()
                     b_w = float((xv @ yv) / denom) if denom > 0 else np.nan
@@ -2152,23 +1561,18 @@ def fit_interference_Iref_to_Q_tiled(
                 else:
                     raise ValueError("ctmethod must be 'linfit' or 'rms'.")
                 a[w, t_idx], b[w, t_idx] = a_w, b_w
-                # c,d,e ya están a 0.0
                 if apply and np.isfinite(a_w) and np.isfinite(b_w):
-                    # aplicar en el tile
                     Yhat = a_w + b_w * X
                     Mf = np.isfinite(Yhat) & np.isfinite(Y)
                     data_corr[w, 1, yt1:yt2, xt1:xt2][Mf] = Y[Mf] - Yhat[Mf]
 
             else:
-                # --- modelo local: a + b*X + c*Xx + d*Xy [+ e*Lx] ---
                 cols = [np.ones_like(X), X, Xx, Xy]
                 if local_order >= 2:
                     cols.append(Lx)
-                # apilar en máscara M
                 mats = [col[M].ravel() for col in cols]
                 A = np.column_stack(mats)
                 yv = Y[M].ravel()
-                # ridge
                 theta = _ridge_solve(A, yv, lam=float(local_ridge_lambda))
                 a_w, b_w, c_w, d_w = theta[:4]
                 e_w = float(theta[4]) if (local_order >= 2 and theta.size >= 5) else 0.0
@@ -2192,42 +1596,29 @@ def fit_interference_Iref_to_Q_tiled(
         'deriv_sigma': float(deriv_sigma),
         'ridge': float(local_ridge_lambda),
         'a': a, 'b': b, 'c': c, 'd': d, 'e': e,
-        'corr': corr,                       # corr(I_ref, Q_λ) por (λ, tile)
+        'corr': corr,                       
         'tiles': tiles
     }
     return data_corr, tiles, out
 
 def write_interference_Iref_to_Q_header(
     header: "Header",
-    a: np.ndarray,        # shape (n_wvl, n_tiles)
-    b: np.ndarray,        # shape (n_wvl, n_tiles)
-    c: np.ndarray = None, # shape (n_wvl, n_tiles)  (∂x term, or None)
-    d: np.ndarray = None, # shape (n_wvl, n_tiles)  (∂y term, or None)
-    e: np.ndarray = None, # shape (n_wvl, n_tiles)  (laplacian term, or None)
+    a: np.ndarray,        
+    b: np.ndarray,        
+    c: np.ndarray = None, 
+    d: np.ndarray = None, 
+    e: np.ndarray = None, 
     *,
     ref_wvl: int,
     divisions: int,
-    tiles: list,                   # list[(y1,y2,x1,x2)] just to record n_tiles
+    tiles: list,                   
     use_local: bool = False,
     local_order: int = 1,
     deriv_sigma: float = 0.0,
     ridge_lambda: float = 0.0,
-    index_width: int = 3,          # zero-padding per index; 3 -> 000..999
+    index_width: int = 3,          
     after_keyword: str = 'ALIGMETH'
 ):
-    """
-    Escribe coeficientes de interferencia I(ref_wvl)->Q para todas las λ y tiles
-    directamente en el header FITS, sin tablas.
-
-    Claves:
-      IAiiijjj = intercept a,  IBiiijjj = slope b,
-      ICiiijjj = d/dx c,       IDiiijjj = d/dy d,       ILiiijjj = laplacian e
-
-    Donde 'iiijjj' es el índice de λ y tile empaquetado con cero padding.
-    También se escriben metadatos: CROSTALK, XK_MODE, XK_REF, XK_DIV, XK_NTIL,
-    XK_LCL, XK_ORD, XK_DSIG, XK_RIDG.
-    """
-    # --------- Metadatos generales ---------
     header.set('CROSTALK', 1, 'Was crosstalk correction applied?', after=after_keyword if after_keyword in header else None)
     header.set('XK_MODE', 'IREF2Q', 'Interference mode: I(ref) -> Q')
     header.set('XK_REF', int(ref_wvl), 'Reference wavelength index used for I')
@@ -2238,13 +1629,11 @@ def write_interference_Iref_to_Q_header(
     header.set('XK_DSIG', float(deriv_sigma), 'Derivative pre-smoothing sigma')
     header.set('XK_RIDG', float(ridge_lambda), 'Ridge lambda (local model)')
 
-    # --------- Preparar arrays y dimensiones ---------
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     n_wvl, n_tiles = a.shape
 
     def _nz(x, shape):
-        # Devuelve array (n_wvl, n_tiles) lleno de 0.0 si x es None
         if x is None:
             return np.zeros(shape, dtype=float)
         xx = np.asarray(x, dtype=float)
@@ -2256,14 +1645,11 @@ def write_interference_Iref_to_Q_header(
     d = _nz(d, a.shape)
     e = _nz(e, a.shape)
 
-    # --------- Escritura por wave,tile ---------
     for iw in range(n_wvl):
         for it in range(n_tiles):
-            suf = f"{iw:0{index_width}d}{it:0{index_width}d}"   # iiijjj
-            # Intercepto (a) y slope (b)
+            suf = f"{iw:0{index_width}d}{it:0{index_width}d}"   
             header[f'IA{suf}'] = (float(a[iw, it]), f'Interference I->Q: intercept a (w={iw},t={it})')
             header[f'IB{suf}'] = (float(b[iw, it]), f'Interference I->Q: slope b (w={iw},t={it})')
-            # Derivadas (guardar siempre; 0.0 si lineal)
             header[f'IC{suf}'] = (float(c[iw, it]), f'Interference I->Q: d/dx c (w={iw},t={it})')
             header[f'ID{suf}'] = (float(d[iw, it]), f'Interference I->Q: d/dy d (w={iw},t={it})')
             header[f'IL{suf}'] = (float(e[iw, it]), f'Interference I->Q: laplacian e (w={iw},t={it})')
@@ -2299,11 +1685,6 @@ def load_polynomial_coeffs_csv(csv_path):
             "b": surfB
         }
     return coeffs
-
-
-# ==========================================================
-# 8) APLICAR A UN DATASET
-# ==========================================================
 
 def normalize_pixel(x, y, nx, ny):
     xn = 2*(x+0.5)/nx - 1.0

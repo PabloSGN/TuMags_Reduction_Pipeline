@@ -43,7 +43,7 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 force_redo:
   redo_flat: false                # Recalculate flats
   redo_dark: false                # Recalculate darks
-  level0_5: true
+  level0_5: false
   level0_6: false
   level0_7: true
   level1_0: true
@@ -120,7 +120,7 @@ level_07:
   destretch_ngrid: 4
   destretch_lr: 0.1
   destretch_lambda_tt: 0.02
-  demod_matrix: 'demod_matrices_david' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
+  demod_matrix: 'demod_matrices_david_v2' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
   demod_mode: 'separate' # 'join'
   add_level_07_label: '' #'dt'  special
   manual_shift: [0.5, 0.02] # [shift_y, shift_x] to apply to cam2 (only if align_sequence == 2)

@@ -54,11 +54,12 @@ from demodulation import demodulate
 from destretch import destretch
 import pd_functions_v22 as phased
 
-from xtalk_new import (
+from xtalk_v2 import (
     fit_mueller_matrix,fit_mueller_matrix_rois_with_plane,
     write_crosstalk_header, fit_interference_Iref_to_Q_tiled,
     write_interference_Iref_to_Q_header, apply_crosstalk_coeffs_standard,
-    load_polynomial_coeffs_csv,apply_polynomial_Iref2Q,ver_planos_ajuste
+    load_polynomial_coeffs_csv,apply_polynomial_Iref2Q,ver_planos_ajuste,
+    fit_mueller_matrix_tiled
 )
 
 from process_data_utils import (
@@ -554,8 +555,215 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         hdu_list[0].header = header
         hdu_list.writeto(out_file, overwrite=True)
 
-# =======================  reduce_image_1_0   ======================= #
+
 def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV_1.0"):
+    """Nivel LV_1.0: normalización, corrección de crosstalk (global, ROI o interferencia) y escritura FITS."""
+    process_name = multiprocessing.current_process().name
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f'%(asctime)s [{process_name}] %(levelname)s: %(message)s',
+        force=True
+    )
+
+    logging.info(f'  >> processing file: {input_data_filename} ')
+    filename = Path(input_data_filename.replace(from_label, to_label)).stem
+    obs_ID = cfg['obs_ID']
+
+    with fits.open(input_data_filename) as hdul:
+        data = hdul[0].data
+        header = hdul[0].header
+
+    if cfg['level_10']['crosst_dual']:
+        filename_dual = Path(input_data_filename.replace('0.7', '0.7_stokesI')).with_suffix('')
+        with fits.open(str(filename_dual) + '.fits') as hdul:
+            dualI = hdul[0].data
+    else:
+        dualI = None
+
+    roi = cfg['level_10']['crosst_roi']
+
+    # --- 1. Normalización de datos ---
+    if cfg['level_10']['normalization'] == 0:
+        norm_factor = np.median(data[-1, 0, roi[0]:roi[1], roi[2]:roi[3]])
+        logging.info(f'  >> Normalization factor: {norm_factor} ')
+    else:
+        norm_factor = cfg['level_10']['normalization']
+        
+    data = data / norm_factor # <- ATENCIÓN: El cubo ya está normalizado a partir de aquí
+
+    mode = cfg['level_10']['crosst_mode']
+    strategy = cfg['level_10'].get('crosst_strategy', 'simultaneous')
+    params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
+
+    if params['use_local']:
+        if mode == 'jaeggli' and strategy == 'simultaneous':
+            raise ValueError("crosst_strategy='simultaneous' is NOT compatible with crosst_mode='jaeggli' with use_local: True")
+
+
+    # =========================================================================
+    # 2A. MODO GLOBAL (Sin cuadrantes)
+    # =========================================================================
+    if cfg['level_10']['crosst_quadrants'] == 0:
+        
+        if params['apply_only']:
+            logging.info(f"[crosstalk] APPLYING ONLY. per_wavelength={per_wv}")
+            data, info = apply_crosstalk_coeffs_standard(
+                data, coeffs, per_wavelength=per_wv,
+                use_local=params['use_local'], local_order=params['local_order'],
+                deriv_sigma=params['deriv_sigma'], channels=params['channels']
+            )
+            info['mode'] = 'global' 
+            if mode == 'standard':
+                 header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+
+        else:
+            logging.info(f'  >> fitting cross-talk factors (GLOBAL):')
+            data, info = fit_mueller_matrix(
+                data,
+                method=mode,
+                strategy=strategy,
+                pthresh=cfg['level_10']['crosst_threshold'],
+                ctmethod='linfit',
+                last_wvl=cfg['level_10']['crosst_last_wave'],
+                region=cfg['level_10']['crosst_region'],
+                norm=False, # <-- MUY IMPORTANTE: ya se normalizó arriba
+                use_local=params['use_local'],
+                local_order=cfg['crosstalk'].get('local_order', 1),
+                deriv_sigma=params.get('deriv_sigma', 0.0),
+                local_ridge_lambda=0.0,
+                aggregate_wavelengths=params.get('aggregate_wavelengths', False),
+                channels=('Q', 'U', 'V'),
+                verbose=cfg['level_10']['crosst_verbose'],
+                dualI=dualI,
+            )
+
+            # Escribir cabeceras FITS según el método
+            if mode == 'standard':
+                header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+                
+            elif mode == 'jaeggli':
+                matrix = info.get('MM1a', {})
+                # Si es array de (4,4) lo escribimos
+                if isinstance(matrix, np.ndarray) and matrix.ndim == 2:
+                    update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
+                    for i in range(4):
+                        for j in range(4):
+                            key = f'MMAT_{i}{j}'
+                            header[key] = (float(matrix[i, j]), f'Mueller matrix element [{i},{j}]')
+
+    # =========================================================================
+    # 2B. MODO TILED (Cuadrantes con Feathering suave)
+    # =========================================================================
+    elif isinstance(cfg['level_10']['crosst_quadrants'], int):
+        logging.info(f"  >> fitting cross-talk using TILED seamless approach ({cfg['level_10']['crosst_quadrants']}x{cfg['level_10']['crosst_quadrants']})")
+        data, tiles_info, infos = fit_mueller_matrix_tiled(
+            data,
+            strategy=strategy,
+            pthresh=cfg['level_10']['crosst_threshold'],
+            norm=False, # <-- Ya se normalizó arriba
+            quadrants=cfg['level_10']['crosst_quadrants'],
+            overlap_fraction=0.25,  # <-- ESTO BORRA LAS LÍNEAS ENTRE CUADRANTES
+            method=mode,
+            last_wvl=cfg['level_10']['crosst_last_wave'],
+            use_local=params['use_local'],
+            local_order=cfg['crosstalk'].get('local_order', 1),
+            deriv_sigma=params.get('deriv_sigma', 0.0),
+            ctmethod='linfit',
+            channels=('Q', 'U', 'V'),
+            verbose=cfg['level_10']['crosst_verbose'],
+            dualI=dualI,
+            aggregate_wavelengths=params.get('aggregate_wavelengths', False),
+        )
+
+    # =========================================================================
+    # 2C. MODO ROIs Fijos (Generación de plano)
+    # =========================================================================
+    elif isinstance(cfg['level_10']['crosst_quadrants'], list):
+        logging.info(f'  >> fitting cross-talk using Fixed ROIs approach')
+        rois = cfg['level_10']['crosst_quadrants'] # Ej: [(100, 100, 400), (1500, 100, 400), ...]
+
+        data, planes, maps, infos, samples = fit_mueller_matrix_rois_with_plane(
+            data,
+            rois=rois,
+            method=mode,
+            pthresh=cfg['level_10']['crosst_threshold'],
+            last_wvl=cfg['level_10']['crosst_last_wave'],
+            use_local=params['use_local'],
+            local_order=1,
+            ctmethod='linfit',
+            channels=('Q','U','V'),
+            verbose=cfg['level_10']['crosst_verbose'],
+            aggregate_wavelengths=params.get('aggregate_wavelengths', False),
+        )
+        if cfg['level_10']['crosst_verbose']:
+            ver_planos_ajuste(planes, samples)
+
+
+    # =========================================================================
+    # 3. INTERFERENCIA (I -> Q)
+    # =========================================================================
+    if cfg['level_10']['crosst_interference']:
+        if not isinstance(cfg['level_10']['crosst_interference'], int):
+            logging.info(f"  >> using interference cross-talk factors from CSV: {cfg['level_10']['crosst_interference']}")
+            coeffs = load_polynomial_coeffs_csv(cfg['level_10']['crosst_interference'])
+            
+            wn, pn, _, _ = data.shape
+            
+            # CORRECCIÓN BUG TQDM: total=wn, ya que iteramos wn veces y actualizamos de 1 en 1
+            with tqdm(total=wn, desc="Applying Interference") as pbar:
+               for wl in range(wn):
+                    # Aplicamos solo a Stokes Q (idx 1)
+                    data[wl, 1] = apply_polynomial_Iref2Q(data[wl, 1], data[-1, 0], coeffs, wavelength=wl)
+                    pbar.update(1)
+
+        else:
+            logging.info(f"  >> fitting interference cross-talk factors dynamically")
+            ref_wvl = -1
+            data, tiles, out = fit_interference_Iref_to_Q_tiled(
+                data,
+                ref_wvl=ref_wvl,
+                divisions=int(cfg['level_10']['crosst_interference']),
+                region=[0, -1, 0, -1],
+                ctmethod='linfit',
+                n_sigma=3,
+                pthresh_intensity=0.0,
+                use_local=False,
+                local_order=1,
+                deriv_sigma=0.0,
+                local_ridge_lambda=0.0,
+                apply=True,
+                show_grid=False,
+                verbose=False
+            )
+
+            header = write_interference_Iref_to_Q_header(
+                header,
+                a=out['a'], b=out['b'], c=out['c'], d=out['d'], e=out['e'],
+                ref_wvl=out['ref_wvl'], divisions=out['divisions'], tiles=tiles,
+                use_local=out['use_local'], local_order=out['local_order'],
+                deriv_sigma=out['deriv_sigma'], ridge_lambda=out['ridge'],
+                index_width=3, after_keyword='ALIGMETH'
+            )
+
+    # =========================================================================
+    # 4. ESCRITURA Y PLOTS
+    # =========================================================================
+    if cfg['plots']['plot_level1_0']:
+        plt_level(
+            data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
+            filename, '1.0', 'demod' + cfg['level_10']['add_level_10_label']
+        )
+
+    out_file = input_data_filename.replace(from_label, to_label + cfg['level_10']['add_level_10_label'])
+    logging.info(f' Saving filename: {out_file}')
+    
+    with fits.open(input_data_filename) as hdu_list:
+        hdu_list[0].data = data
+        hdu_list[0].header = header
+        hdu_list.writeto(out_file, overwrite=True)
+        
+
+def reduce_image_1_0_old(input_data_filename, cfg, from_label="LV_0.7", to_label="LV_1.0"):
     """Nivel LV_1.0: normalización, corrección de crosstalk (global, ROI o interferencia) y escritura FITS."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
@@ -588,9 +796,17 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
         norm_factor = cfg['level_10']['normalization']
     data = data / norm_factor
 
-    if cfg['level_10']['crosst_quadrants'] == 0:
-        params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
 
+    mode = cfg['level_10']['crosst_mode']
+    strategy = cfg['level_10'].get('crosst_strategy', 'simultaneous')
+    params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
+
+    if params['use_local']:
+        if mode == 'jaeggli' and strategy == 'simultaneous':
+            raise ValueError("crosst_strategy='simultaneous' is NOT compatible with crosst_mode='jaeggli' with use_local: True")
+
+    if cfg['level_10']['crosst_quadrants'] == 0:
+        
         if params['apply_only']:
             data, info = apply_crosstalk_coeffs_standard(
                 data, coeffs, per_wavelength=per_wv,
@@ -612,12 +828,13 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                data, info = fit_mueller_matrix(
                     data,
                     method=cfg['level_10']['crosst_mode'],
+                    strategy=strategy,
                     pthresh=cfg['level_10']['crosst_threshold'],
                     ctmethod='linfit',
                     last_wvl=cfg['level_10']['crosst_last_wave'],
                     region=cfg['level_10']['crosst_region'],
-                    use_local=cfg['level_10']['use_local'],
-                    local_order=1,
+                    use_local=params['use_local'],
+                    local_order=cfg['crosstalk']['local_order'],
                     deriv_sigma=0.0,
                     local_ridge_lambda=0.0,
                     aggregate_wavelengths=False,
@@ -625,17 +842,34 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                     verbose=cfg['level_10']['crosst_verbose'],
                     dualI=dualI,
                )
-               if cfg['level_10']['crosst_mode'] == 'standard':
-                    header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
-               logging.info("cross-talk parameters:")
 
-               coeffs = ["a", "b", "c","d", "e"]
-               for entry in info["coeffs_per_wvl"]:
-                    print("λ =", entry["wavelength_index"])
-                    for stokes in ["Q", "U", "V"]:
-                        f = entry["fit"][stokes]
-                        vals = "  ".join(f"{f[k]:.5f}" for k in coeffs)
-                        print(stokes, vals)
+    #            data, info = fit_mueller_matrix(
+    #                 data,
+    #                 method=cfg['level_10']['crosst_mode'],
+    #                 pthresh=cfg['level_10']['crosst_threshold'],
+    #                 ctmethod='linfit',
+    #                 last_wvl=cfg['level_10']['crosst_last_wave'],
+    #                 region=cfg['level_10']['crosst_region'],
+    #                 use_local=cfg['level_10']['use_local'],
+    #                 local_order=1,
+    #                 deriv_sigma=0.0,
+    #                 local_ridge_lambda=0.0,
+    #                 aggregate_wavelengths=False,
+    #                 channels=('Q', 'U', 'V'),
+    #                 verbose=cfg['level_10']['crosst_verbose'],
+    #                 dualI=dualI,
+    #            )
+            #    if cfg['level_10']['crosst_mode'] == 'standard':
+            #         header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+            #    logging.info("cross-talk parameters:")
+
+    #            coeffs = ["a", "b", "c","d", "e"]
+    #            for entry in info["coeffs_per_wvl"]:
+    #                 print("λ =", entry["wavelength_index"])
+    #                 for stokes in ["Q", "U", "V"]:
+    #                     f = entry["fit"][stokes]
+    #                     vals = "  ".join(f"{f[k]:.5f}" for k in coeffs)
+    #                     print(stokes, vals)
                 
         if cfg['level_10']['crosst_mode'] == 'jaeggli':
             matrix = info.get('MM1a', {})
@@ -645,6 +879,9 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                     key = f'MMAT_{i}{j}'
                     val = float(matrix[i, j])
                     header[key] = (val, f'Mueller matrix element [{i},{j}]')
+
+
+
 
     else:
         # data, info = fit_mueller_matrix_tiled(
@@ -672,7 +909,7 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
             method=cfg['level_10']['crosst_mode'],
             pthresh=cfg['level_10']['crosst_threshold'],
             last_wvl=cfg['level_10']['crosst_last_wave'],
-            use_local=cfg['level_10']['use_local'],
+            use_local=params['use_local'],
             local_order=1,
             ctmethod='linfit',
             channels=('Q','U','V'),

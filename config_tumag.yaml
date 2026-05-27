@@ -6,7 +6,7 @@
 #       -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
 #
 # Notas:
-# - Los nombres de parámetros deben ser únicos.
+# - Los nombres de parámetros deben ser únicos. 
 # - Boolean y None en minúscula: true, false, none
 # - Puedes validar con visor.py el FITS generado.
 # ==========================================================
@@ -40,7 +40,8 @@ force_redo:
   level1_0: true                              # Ejecutar nivel 1.0 (crosstalk)
   level1_1: false                             # Ejecutar nivel 1.1 (restauración PD sobre 1.0)
   use_pd: false                               # Requiere level0_6: true previamente o correr antes
-
+  # IF use_pd is True, level0_7 produces level 0_8 and level 1_0 produces level1_2. No level 0_7 or 1_0 is generated.
+  # Also, use_pd has priority. If it is true, the other mode is not used (no pd -> o level 07 or 1.0 and 1.1)
 # ----------------------------------------------------------
 # PLOTTING OPTIONS
 # ----------------------------------------------------------
@@ -115,7 +116,8 @@ level_07:
 # LEVEL 1.0 OPTIONS (normalización y corrección de crosstalk)
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "jaeggli"                       # "jaeggli" (avanzado) | "standard"
+  crosst_mode: "standard"                       # "jaeggli" (avanzado) | "standard"
+  crosst_strategy: "simultaneous"   # "sequential" | "simultaneous"
   crosst_roi: [200, -200, 200, -200]           # ROI para normalización de intensidad
   crosst_region: [1, -1, 1, -1]                # ROI para cálculo de crosstalk
   crosst_threshold: 0.01                       # Umbral detección (float o [Q,U,V])

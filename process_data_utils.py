@@ -141,12 +141,13 @@ DEFAULT_CONFIG = {
     # ----------------------------------------------------------
     "level_10": {
         "crosst_mode": "standard",              # "jaeggli" or "standard"
+        "crosst_strategy": "sequential",
         "crosst_roi": [0, -1, 0, -1],    # Normalization region
         "crosst_region": [0, -1, 0, -1], # Crosstalk calculation region
         "crosst_threshold": 0.01,               # puede ser 1 float o lista para Q,U,V
         "crosst_intensity_threshold": 0.1,      # 0 evita usar umbra; 0 => no usar
         "crosst_last_wave": None,               # usar -1 para standard y -2 para jaeggli (según nota)
-        "use_local": True,
+        # "use_local": True,
         "crosst_quadrants": 0,
         "crosst_dual": False,
         "crosst_interference": 0,               # o fichero 'comm1_cal.npz'
@@ -168,7 +169,8 @@ DEFAULT_CONFIG = {
             "V": {"a":  0.0, "b": 0.0,    "c":  0.0,    "d": 0.0,    "e": 0.0},
         },
         "channels": ["Q", "U", "V"],
-    },
+        "aggregate_wavelengths": False,
+        },
 
     # ----------------------------------------------------------
     # LEVEL 1.1 OPTIONS
@@ -1145,6 +1147,7 @@ def extract_crosstalk_coeffs(cfg_crosstalk: dict):
     use_local   = bool(cfg_crosstalk.get('use_local', False))
     local_order = int(cfg_crosstalk.get('local_order', 1))
     deriv_sigma = float(cfg_crosstalk.get('deriv_sigma', 0.0))
+    aggregate_wavelengths = bool(cfg_crosstalk.get('aggregate_wavelengths', False))
     channels    = _normalize_channels(cfg_crosstalk.get('channels', ('Q','U','V')))
 
     # ---- coeficientes ----
@@ -1178,6 +1181,7 @@ def extract_crosstalk_coeffs(cfg_crosstalk: dict):
         use_local=use_local,
         local_order=local_order,
         deriv_sigma=deriv_sigma,
+        aggregate_wavelengths=aggregate_wavelengths,
         channels=channels
     )
     return params, coeffs, per_wavelength
