@@ -17,14 +17,14 @@
 # ----------------------------------------------------------
 
 obs_ID: "06_SPOT_AR1"                   # Observation ID 
-proc_version: "0.3" # con cross-talk standard
+proc_version: "0.4" # con cross-talk standard
 
 process_line: "2.02"              # Observation mode to process
 # process_line: "1"              # Observation mode to process
 
 # process_files: 2
 process_ocs: ":"                  # ":" -> all, or range, or single ID
-process_files: "0:4"                # ":" -> all, or range, or single ID
+process_files: ":"                # ":" -> all, or range, or single ID
 
 parallel: false
 max_workers: 12
@@ -45,8 +45,8 @@ force_redo:
   redo_dark: false                # Recalculate darks
   level0_5: false
   level0_6: false
-  level0_7: true
-  level1_0: true
+  level0_7: false
+  level1_0: false
   level1_1: true
   use_pd: false
 
@@ -121,7 +121,7 @@ level_07:
   destretch_lr: 0.1
   destretch_lambda_tt: 0.02
   demod_matrix: 'demod_matrices_david_v2' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
-  demod_mode: 'separate' # 'join'
+  demod_mode: 'join' # 'join'
   add_level_07_label: '' #'dt'  special
   manual_shift: [0.5, 0.02] # [shift_y, shift_x] to apply to cam2 (only if align_sequence == 2)
 
@@ -130,12 +130,12 @@ level_07:
 # ----------------------------------------------------------
 level_10:
   crosst_mode: "standard"         # "jaeggli" or "standard"
+  crosst_strategy: "simultaneous"   # "sequential" | "simultaneous"
   crosst_roi: [600,1100,100,600]      # Normalization region
   crosst_region: [600,1100,100,600]   # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: None #used -1 for standard and -2 for jaeggli
-  use_local: true
   crosst_quadrants: 0
   crosst_interference: 0 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
   crosst_dual: false #8          # or 'comm1_cal.npz' file

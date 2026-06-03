@@ -16,15 +16,15 @@
 # GLOBAL PARAMETERS
 # ----------------------------------------------------------
 
-obs_ID: "06_SPOT_AR1"                   # Observation ID
-proc_version: "0.3" # con cross-talk standard
+obs_ID: "06_SPOT_AR1"                   # Observation ID 
+proc_version: "0.4" # con cross-talk standard
 
-# process_line: "2.02"              # Observation mode to process
-process_line: "1"              # Observation mode to process
+process_line: "2.02"              # Observation mode to process
+# process_line: "1"              # Observation mode to process
 
 # process_files: 2
 process_ocs: ":"                  # ":" -> all, or range, or single ID
-process_files: "0:4"                # ":" -> all, or range, or single ID
+process_files: ":"                # ":" -> all, or range, or single ID
 
 parallel: false
 max_workers: 12
@@ -43,13 +43,12 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 force_redo:
   redo_flat: false                # Recalculate flats
   redo_dark: false                # Recalculate darks
-  level0_5: true
+  level0_5: false
   level0_6: false
-  level0_7: true
-  level1_0: true
+  level0_7: false
+  level1_0: false
   level1_1: true
-  use_pd: false             # needs level0_6: true before (or run before)
-
+  use_pd: false
 
 # ----------------------------------------------------------
 # PLOTTING OPTIONS
@@ -61,7 +60,7 @@ plots:
   plot_level0_6: false
   plot_level0_7: false
   plot_level1_0: true
-  plot_level1_1: true
+  plot_level1_1: false
   roi_plots: [200, -200, 200, -200]
 
 
@@ -101,6 +100,7 @@ level_07:
   align_sequence: 1          
   # "0" = Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI or quadrants)
   # "1" = Align cam 1 respect cam 0 first, then modulations. Assumes same jitter cam0 and 2. (global ROI or quadrants)
+  # "2" = manual. Requires manual_shift
   align_roi: [600,1100,100,600]
   align_accuracy: 0.001
   align_rot_data_filter: "alignment_results.csv"   # e.g. "pinholes_Fe2.02.csv"
@@ -108,7 +108,7 @@ level_07:
   align_verbose: false
   align_modulations: false
   aligment_level: "dataset"
-  advanced_alignment: false
+  advanced_alignment: true
   advanced_wave: 0
   advanced_save: true
   advanced_overwrite: true
@@ -120,30 +120,29 @@ level_07:
   destretch_ngrid: 4
   destretch_lr: 0.1
   destretch_lambda_tt: 0.02
-  demod_matrix: 'demod_matrices_david' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
-  demod_mode: 'separate' # 'join'
+  demod_matrix: 'demod_matrices_david_v2' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
+  demod_mode: 'join' # 'join'
   add_level_07_label: '' #'dt'  special
   manual_shift: [0.5, 0.02] # [shift_y, shift_x] to apply to cam2 (only if align_sequence == 2)
 
- 
 # ----------------------------------------------------------
 # LEVEL 1.0 OPTIONS
 # ----------------------------------------------------------
 level_10:
   crosst_mode: "standard"         # "jaeggli" or "standard"
-  crosst_roi:  [600,1100,100,600]      # Normalization region
+  crosst_strategy: "simultaneous"   # "sequential" | "simultaneous"
+  crosst_roi: [600,1100,100,600]      # Normalization region
   crosst_region: [600,1100,100,600]   # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: None #used -1 for standard and -2 for jaeggli
-  use_local: true
   crosst_quadrants: 0
-  crosst_interference: 0 #8          # or 'comm1_cal.npz' file
+  crosst_interference: 0 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
   crosst_dual: false #8          # or 'comm1_cal.npz' file
   normalization: 0
   plot_crosst_method: false
   crosst_verbose: false
-  add_level_10_label: '' #_calib
+  add_level_10_label: '' #_inter8'
 
 crosstalk:
   apply_only: false     # activa el modo "aplicar sin estimar"
@@ -152,15 +151,15 @@ crosstalk:
   deriv_sigma: 0.0     # suavizado de I para derivadas
   # coeficientes globales por canal
   coeffs_global:
-    Q: {a: -0.000797, b: -0.076198, c: 0.007560, d:  0.003589, e: 0.0}
-    U: {a: -0.000054, b:  0.002689, c: 0.000483, d: -0.002075, e: 0.0}
-    V: {a: -0.000233, b:  0.000440, c: 0.002028, d: -0.004903, e: 0.0}
+    Q: {a: -0.001489, b: -0.079376, c: 0.009570, d: 0.002892, e: 0.0}
+    U: {a:  0.000223, b: 0.006636, c:  0.000642,     d: -0.002877,     e: 0.0}
+    V: {a:  -0.000466, b: -0.000242,     c:  0.004103,     d: -0.008473,     e: 0.0}
   channels: ["Q","U","V"]
 
 # ----------------------------------------------------------
 # LEVEL 1.1 OPTIONS
 # ----------------------------------------------------------
-zernike_id: "06_SPOT_Mg1_0" #"06_SPOT_Fe2.02_0" #"06_SPOT_Fe2.02_0"
+zernike_id: "06_SPOT_Fe2.02_0" #"06_SPOT_Fe2.02_0"
 
 #----- DEBUGGING OPTIONS
 debug:
@@ -168,6 +167,7 @@ debug:
   zoom_center: [600,600]
   zoom_size: 600
   filter_test: false
+
 
 # ----------------------------------------------------------
 # OBSERVATION MODES (REFERENCE)

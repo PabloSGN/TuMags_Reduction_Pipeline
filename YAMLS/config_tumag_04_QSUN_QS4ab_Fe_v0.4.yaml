@@ -1,0 +1,190 @@
+# ==========================================================
+# TuMags Reduction Pipeline Configuration (YAML)
+# ==========================================================
+# Example:
+#   python3 ../../TuMags_Reduction_Pipeline/process_data_main.py \
+#       -f ../../TuMags_Reduction_Pipeline/config_tumag.yaml
+#
+# IMPORTANT:
+# - Parameter names must be unique (no duplicates across levels).
+# - Boolean and None keywords are lowercase: false, true, none
+# - results can be checked using python3 visor.py /Volumes/TuMag_d1/reduccion/.../file.fits
+# ==========================================================
+
+
+# ----------------------------------------------------------
+# GLOBAL PARAMETERS
+# ----------------------------------------------------------
+
+obs_ID: "04_QSUN_QS4ab"                   # Observation ID
+proc_version: "0.4" # con cross-talk standard
+
+process_line: "2.02"              # Observation mode to process
+# process_line: "1"              # Observation mode to process
+
+# process_ocs: "0:2"                  # ":" -> all, or range, or single ID
+# process_files: "0"                # ":" -> all, or range, or single ID
+# process_files: 2
+process_ocs: ":"                  # ":" -> all, or range, or single ID
+process_files: ":"                # ":" -> all, or range, or single ID
+
+parallel: true 
+max_workers: 12
+
+tumag_data_location: "./"         # Path to Organized_files_local folder
+# Organized_files_local_folder_name: "Organized_files_TuMag_d2"
+Organized_files_local_folder_name: "Organized_files_local"
+
+output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
+
+
+# ----------------------------------------------------------
+# REPROCESSING OPTIONS
+# ----------------------------------------------------------
+force_redo:
+  redo_flat: true                # Recalculate flats
+  redo_dark: false                # Recalculate darks
+  level0_5: true
+  level0_6: false
+  level0_7: true
+  level1_0: true
+  level1_1: false
+  use_pd: false             # needs level0_6: true before (or run before)
+
+
+# ----------------------------------------------------------
+# PLOTTING OPTIONS
+# ----------------------------------------------------------
+plots:
+  plot_darks: false
+  plot_flats: false
+  plot_level0_5: false
+  plot_level0_6: false
+  plot_level0_7: true
+  plot_level1_0: true
+  plot_level1_1: true
+  roi_plots: [200, -200, 200, -200]
+
+
+# ----------------------------------------------------------
+# DARK AND FLAT OPTIONS
+# ----------------------------------------------------------
+darks_indexes:
+  dark_from:
+  dark_to: 
+
+dark_file: false # npy with the dark (optinonal) 
+flat_file: false # npy with the flat (optinonal)
+flat_norm_roi: [250, -250, 250, -250]  # sugerido por Fbailen (toda la imagen, pero sin mascara)
+import_blueshift_guess: True
+norm_method: "blueshift" # "blueshift"
+remove_prefilter: True
+pref_model: True
+
+# ----------------------------------------------------------
+# LEVEL 0.5 OPTIONS
+# ----------------------------------------------------------
+level_05:
+  filtering: true                 # Remove high-frequency content
+  save_level_05: true             # Save processed level 0.5 data
+
+size: 2016
+centro: [973, 996]               # [size // 2 - 35, size // 2 - 12]
+corte: 800
+
+
+# ----------------------------------------------------------
+# LEVEL 0.7 OPTIONS
+# ----------------------------------------------------------
+level_07:
+  align_mode: "fourier"           # "fourier" or "destretch"
+  align_sequence: 1          
+  # "0" = Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI or quadrants)
+  # "1" = Align cam 1 respect cam 0 first, then modulations. Assumes same jitter cam0 and 2. (global ROI or quadrants)
+  align_roi: [100,-100,100,-100]
+  align_accuracy: 0.001
+  # align_rot_data_filter: "pinholes_results.csv"   # e.g. "pinholes_Fe2.02.csv"
+  align_rot_data_filter: "alignment_results.csv"   # e.g. "pinholes_Fe2.02.csv"
+  align_quadrants: 0 #-8 #-16
+  align_verbose: false
+  align_modulations: false
+  aligment_level: "dataset"
+  advanced_alignment: true
+  advanced_wave: 0
+  advanced_save: true
+  advanced_overwrite: true
+  destretch_aling_cam: 'same'
+  # 'all' = all images (2x4) simultaneously
+  # 'full' = first cams then mods
+  # 'same' = equivalent to align_sequence: 1 but using destretch
+  destretch_n_iterations: 100
+  destretch_ngrid: 4
+  destretch_lr: 0.1
+  destretch_lambda_tt: 0.02
+  demod_matrix: 'demod_matrices_david_v2' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
+  demod_mode: 'join' # 'join'
+  add_level_07_label: '' #'dt'  special
+
+# ----------------------------------------------------------
+# LEVEL 1.0 OPTIONS
+# ----------------------------------------------------------
+level_10:
+  crosst_mode: "standard"         # "jaeggli" or "standard"
+  crosst_strategy: "sequential"   # "sequential" | "simultaneous"
+  crosst_roi: [200,-200,200,-200]      # Normalization region
+  crosst_region: [200,-200,200,-200]   # Crosstalk calculation region
+  crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
+  crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
+  crosst_last_wave: None #used -1 for standard and -2 for jaeggli
+  crosst_quadrants: 8
+  crosst_interference: 8 #8          # or 'comm1_cal.npz' file
+  crosst_dual: false #8          # or 'comm1_cal.npz' file
+  normalization: 0
+  plot_crosst_method: false
+  crosst_verbose: false
+  add_level_10_label: '' # '_inter8' _calib
+
+crosstalk:
+  apply_only: false     # activa el modo "aplicar sin estimar"
+  use_local: true      # usa derivadas (Ix,Iy[,L]) al aplicar
+  local_order: 1       # 1 -> Ix,Iy; 2 -> + Laplaciano
+  deriv_sigma: 0.0     # suavizado de I para derivadas
+  # coeficientes globales por canal
+  coeffs_global:
+    Q: {a: 10.5, b: 2.1e-3, c: -1.2e-4, d: 9.5e-5, e: 0.0}
+    U: {a:  0.0, b: 1.8e-3, c:  0.0,     d: 0.0,     e: 0.0}
+    V: {a:  0.0, b: 0.0,     c:  0.0,     d: 0.0,     e: 0.0}
+  channels: ["Q","U","V"]
+
+
+# ----------------------------------------------------------
+# LEVEL 1.1 OPTIONS
+# ----------------------------------------------------------
+zernike_id: "04_QSUN_Fe2.02_1" #"06_SPOT_Fe2.02_0"
+
+ #----- DEBUGGING OPTIONS
+debug:
+  activate: false
+  zoom_center: [600,600]
+  zoom_size: 600
+  filter_test: false
+
+# ----------------------------------------------------------
+# OBSERVATION MODES (REFERENCE)
+# ----------------------------------------------------------
+# observation_modes = {
+#     0   : "0s",
+#     1   : "0p",
+#     2   : "1",
+#     3   : "2.02",
+#     4   : "2.06",
+#     5   : "3.02",
+#     6   : "3.06",
+#     7   : "4",
+#     8   : "5.02",
+#     9   : "5.06",
+#     64  : "PD_calibration",
+#     65  : "Spectral_calibration",
+#     66  : "Polarimetric_calibration",
+#     128 : "Test"
+# }

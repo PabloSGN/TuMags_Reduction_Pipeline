@@ -1,11 +1,13 @@
-timeline_names = ['comm1','02_EMEF_AR1','02_EMEF_AR2','06_SPOT_AR1','06_SPOT_AR2',
+timeline_names = ['comm1','02_EMEF_AR1','02_EMEF_AR2',"03_SPOT_SP6","04_QSUN_QS12a",
+                  "04_QSUN_QS4ab","04_QSUN_QS8","05_QSUN-FS1","06_SPOT_AR1",
+                  "06_SPOT_AR2",
                 "10_SPOT_SP12","10_SPOT_SP4ab","10_SPOT_SP9","12_FLAR_FL1",
-                "16_LIMB_PL1","16_LIMB_PL4","04_QSUN_QS12a","04_QSUN_QS4ab","04_QSUN_QS8","35_CHOL_QS5a",
+                "16_LIMB_PL1","16_LIMB_PL4","35_CHOL_QS5a",
                 "27_EMEF_AR1",
                 ]
 
 obs_dict = {
-    "comm1": {
+    "comm1": { # Tiene YALM
         "lines": ['517','525.02'],
         "obs_is": ['1','2.02'],
         "obs_size": [10*4*2,8*4*2],
@@ -13,7 +15,7 @@ obs_dict = {
         "flats": ["D10-2740-4339","D10-4340-5619"],
         "obsdata": ["D10-304-2739"],
     },
-    "02_EMEF_AR1": {  #06_SPOT / AR1
+    "02_EMEF_AR1": {  # Tiene YALM
         "lines": ['517','525.02'],
         "obs_is": ['1','2.02'],
         "obs_size": [10*4*2,8*4*2],
@@ -21,15 +23,59 @@ obs_dict = {
         "flats": ["D10-7398-9637","D10-9638-11429"],
         "obsdata": ["D10-11998-23661"],
     },
-    "02_EMEF_AR2": {  #06_SPOT / AR2
+    "02_EMEF_AR2": {  
         "lines": ['517','525.02'],
         "obs_is": ['1','2.02'],
         "obs_size": [10*4*2,8*4*2],
         "darks": ["D10-6844-6943"],
-        "flats": ["D10-7398-9637","D10-9638-11429"], #USA OTROS QUE ESTAN TOMADOS MAS TARDE
+        "flats": ["D10-7398-9637","D11-1656-3447"], #USA OTROS QUE ESTAN TOMADOS MAS TARDE
+        # "flats": [["D10-36653-37236","D11-0-1655"],"D11-1656-3447"], #USA OTROS QUE ESTAN TOMADOS MAS TARDE
         "obsdata": ["D10-23675-36096"],
     },
-    "06_SPOT_AR1": {  #06_SPOT / AR1
+    "03_SPOT_SP6": {  
+        "lines": ['517','525.02'],
+        "obs_is": ['1','2.02'],
+        "obs_size": [10*4*2,8*4*2],
+        "darks": ["D11-4557-4656"],
+        "flats": ["D10-7398-9637","D10-9638-11429"], # coge el flat de la anterior!!!!! FALTA FLAT de !
+        # "flats": ["D11-5105-7238","D11-1656-3447"], # coge el flat de la anterior!!!!! FALTA FLAT de !
+        "obsdata": ["D11-3545-4272"],
+    },
+    "04_QSUN_QS12a": {  
+        "lines": ['517','525.02'],
+        "obs_is": ['1','2.02'],
+        "obs_size": [10*4*2,8*4*2],
+        "darks": ["D11-4557-4656"],
+        "flats": ["D11-5105-7238","D11-7237-9028"],
+        "obsdata": ["D11-9351-18270"],
+    },
+    "04_QSUN_QS4ab": {  
+        "lines": ['517','525.02'],
+        "obs_is": ['1','2.02'],
+        "obs_size": [10*4*2,8*4*2],
+        "darks": ["D11-41608-41707"],
+        "flats": ["D11-42170-44409","D11-44410-46201"],
+        "obsdata": ["D11-18997-30945"],
+    },
+    "04_QSUN_QS8": {  
+        "lines": ['517','525.02'],
+        "obs_is": ['1','2.02'],
+        "obs_size": [10*4*2,8*4*2],
+        "darks": ["D11-41608-41707"],
+        "flats": ["D11-42170-44409","D11-7237-9028"],
+        "obsdata": ["D11-30968-41605"],
+    },
+    "05_QSUN-FS1": {   # Tiene YALM
+        "lines": ['525.02'],
+        "obs_is": ['2.02'],
+        "obs_size": [8*4*2],
+        "darks": ["D11-47517-47616"],
+        "flats": ["D11-53367-56182"],
+        "obsdata": ["D11-60894-115613"],
+    },
+
+    # VOY POR AQUI
+    "06_SPOT_AR1": {   # Tiene YALM
         "lines": ['517','525.02'],
         "obs_is": ['1','2.02'],
         "obs_size": [10*4*2,8*4*2],
@@ -37,7 +83,7 @@ obs_dict = {
         "flats": ["D12-13543-15782","D12-15783-17574"],
         "obsdata": ["D12-18435-29810"],
     },
-    "06_SPOT_AR2": {  #06_SPOT / AR2
+    "06_SPOT_AR2": {  
         "lines": ['517','525.02'],
         "obs_is": ['1','2.02'],
         "obs_size": [10*4*2,8*4*2],
@@ -45,7 +91,7 @@ obs_dict = {
         "flats": ["D12-13543-15782","D12-15783-17574"],
         "obsdata": ["D12-29885-42056"],
     },
-    "10_SPOT_SP12": {  #06_SPOT / AR1
+    "10_SPOT_SP12": {  
         "lines": ['517','525.06'],
         "obs_is": ['1','2.06'],
         "obs_size": [10*4*2,8*4*2],
@@ -100,30 +146,6 @@ obs_dict = {
         "darks": ["D14-3766-3865"],
         "flats": ["D13-85813-88052","D13-88053-89844"],
         "obsdata": ["D13-103373-107868","D14-0-1029"],
-    },
-    "04_QSUN_QS12a": {  
-        "lines": ['517','525.02'],
-        "obs_is": ['1','2.02'],
-        "obs_size": [10*4*2,8*4*2],
-        "darks": ["D11-4557-4656"],
-        "flats": ["D11-5105-7238","D11-7237-9028"],
-        "obsdata": ["D11-9351-18270"],
-    },
-    "04_QSUN_QS4ab": {  
-        "lines": ['517','525.02'],
-        "obs_is": ['1','2.02'],
-        "obs_size": [10*4*2,8*4*2],
-        "darks": ["D11-41608-41707"],
-        "flats": ["D11-42170-44409","D11-44410-46201"],
-        "obsdata": ["D11-18997-30945"],
-    },
-    "04_QSUN_QS8": {  
-        "lines": ['517','525.02'],
-        "obs_is": ['1','2.02'],
-        "obs_size": [10*4*2,8*4*2],
-        "darks": ["D11-41608-41707"],
-        "flats": ["D11-42170-44409","D11-7237-9028"],
-        "obsdata": ["D11-30968-41605"],
     },
     "35_CHOL_QS5a": {  #OBA SAN DATA
         "lines": ['517','525.02'],

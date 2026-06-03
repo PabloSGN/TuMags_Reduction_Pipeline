@@ -183,6 +183,7 @@ DEFAULT_CONFIG = {
         "zoom_center": [600, 600],
         "zoom_size": 600,
         "filter_test": False,
+        "allow_99": False,
     },
     "pd": 0,
     "low_f": 0.2,

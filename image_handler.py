@@ -113,9 +113,74 @@ def read(image_path: str):
     return img, head.get_info()
 
 # Class to process the observation mode -> headers and array 
+
+
+def _completar_bloque(bloque_actual, historial, tamaño_esperado):
+    """
+    Rellena un bloque de imágenes faltantes usando historial válido.
+
+    bloque_actual: lista con las imágenes actuales (puede ser incompleta)
+    historial: lista de imágenes válidas previas
+    tamaño_esperado: número de imágenes que debería tener el bloque
+    """
+    faltan = tamaño_esperado - len(bloque_actual)
+    if faltan <= 0:
+        return bloque_actual
+    resultado = bloque_actual.copy()
+    for i in range(faltan):
+        # Reglas según cuántas faltan
+        if faltan <= 4:
+            fuente = -1  # última
+        elif faltan <= 8:
+            fuente = -2  # penúltima
+        elif faltan <= 12:
+            fuente = -3
+        else:
+            # fallback general
+            fuente = -(i % len(historial) + 1)
+
+        # Seguridad si no hay suficiente historial
+        if len(historial) == 0:
+            raise ValueError("No hay historial válido para rellenar")
+        if abs(fuente) > len(historial):
+            fuente = -1
+
+        resultado.append(historial[fuente])
+
+    return resultado
+
+def _procesar_imagenes(imagenes, nlambda, nmods):
+    """
+    Procesa lista de imágenes asegurando bloques completos por lambda.
+
+    imagenes: lista de imágenes
+    nlambda: número de longitudes de onda
+    nmods: número de modulaciones (antes de *2)
+    """
+    tamaño_bloque = nmods * 2
+    resultado = []
+    historial = []
+
+    idx = 0
+
+    for _ in range(nlambda):
+        bloque = imagenes[idx:idx + tamaño_bloque]
+        idx += tamaño_bloque
+
+        bloque_completo = _completar_bloque(
+            bloque,
+            historial,
+            tamaño_bloque
+        )
+
+        resultado.extend(bloque_completo)
+        historial.extend(bloque_completo)
+
+    return resultado
+
 class nominal_observation:
 
-    def __init__(self, om, images_path, dc, modify_linearity=(None, None)):
+    def __init__(self, om, images_path, dc, modify_linearity=(None, None), allow_99 = False):
 
         self.info = {"ObservationMode": om,
                      "Images_headers": {}}
@@ -128,6 +193,14 @@ class nominal_observation:
         nmods   = cf.om_config[om]["Nmods"]     # N mods from config file
         nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
         
+        if allow_99:
+            # print(images_path)
+            if len(images_path) != nlambda * nmods * 2:
+                print(f"Warning: jump_99 enabled but number of images provided ({len(images_path)}) does not match expected ({nlambda * nmods * 2}). Proceeding with processing but check results carefully.")
+                images_path = _procesar_imagenes(images_path, nlambda, nmods)
+            # print(images_path)
+        else:
+            print(allow_99,'******')
         images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
         _, h1 = read(images_path_reshaped[0, 0, 0])  # read first image to get acc

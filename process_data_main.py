@@ -160,9 +160,12 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
         logging.info(f' processing ocs: {ocs} which corresponds to {om_value} with {len(OCs[ocs]["ims"])} total images')
         if len(OCs[ocs]['ims']) != obs_dict[obs_ID]['obs_size'][process_line_index]:
             logging.error(f"  >> Error. The ocs: {ocs} number of images {len(OCs[ocs]['ims'])} does not coincide with the timeline info: {obs_dict[obs_ID]['obs_size'][process_line_index]}")
-            return
+            if cfg['debug']['allow_99']:
+                logging.warning("  >> Debug mode: allowing mismatch in number of images (proceeding with processing).")
+            else:
+                return
 
-        obs_data = ih.nominal_observation(cfg['process_line'], OCs[ocs]["ims"], dc_real, modify_linearity=cam_linearity)
+        obs_data = ih.nominal_observation(cfg['process_line'], OCs[ocs]["ims"], dc_real, modify_linearity=cam_linearity,allow_99=cfg['debug']['allow_99'])
         data = obs_data.get_data()
         om_info = obs_data.get_info()
 
@@ -1004,20 +1007,21 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
         for wl in range(wn):
             for pl in range(pn):
                 if pl == 0:
+
                     data[wl, pl], noise_filter = phased.restore_ima(
                         data[wl, pl], zk,
-                        cfg['pd'], cfg['low_f'], 
-                        cfg['reg1'], cfg['reg2'],
-                        cfg['cobs'], cfg['epsilon'],
-                        cfg['sigma'], cfg['stray'],
+                        pd = cfg['pd'], low_f = cfg['low_f'], 
+                        reg1 = cfg['reg1'], reg2 = cfg['reg2'],
+                        cobs = cfg['cobs'], epsilon = cfg['epsilon'],
+                        sigma = cfg['sigma'], stray = cfg['stray'],
                     )
                 else:
                     data[wl, pl], _ = phased.restore_ima(
                         data[wl, pl], zk,
-                        cfg['pd'], cfg['low_f'], 
-                        cfg['reg1'], cfg['reg2'],
-                        cfg['cobs'], cfg['epsilon'],
-                        cfg['sigma'], cfg['stray'],
+                        pd = cfg['pd'], low_f = cfg['low_f'],
+                        reg1 = cfg['reg1'], reg2 = cfg['reg2'],
+                        cobs = cfg['cobs'], epsilon = cfg['epsilon'],
+                        sigma = cfg['sigma'], stray = cfg['stray'],
                         noise=noise_filter,
                     )
             pbar.update(1)
@@ -1065,18 +1069,19 @@ def reduce_image_0_6(input_data_filename, cfg, zk=None, from_label="LV_0.5", to_
                     if pl == 0:
                         data[cm, wl, pl], noise_filter = phased.restore_ima(
                             data[cm, wl, pl], zknew[cm],
-                            cfg['pd'], cfg['low_f'], 
-                            cfg['reg1'], cfg['reg2'],
-                            cfg['cobs'], cfg['epsilon'],
-                            cfg['sigma'], cfg['stray'],
+                            pd = cfg['pd'], low_f = cfg['low_f'], 
+                            reg1 = cfg['reg1'], reg2 = cfg['reg2'],
+                            cobs = cfg['cobs'], epsilon = cfg['epsilon'],
+                            sigma = cfg['sigma'], stray = cfg['stray'],
                     )                        
                     else:
                         data[cm, wl, pl], _ = phased.restore_ima(
                             data[cm, wl, pl], zknew[cm],
-                            cfg['pd'], cfg['low_f'], 
-                            cfg['reg1'], cfg['reg2'],
-                            cfg['cobs'], cfg['epsilon'],
-                            cfg['sigma'], cfg['stray'],
+                            pd = cfg['pd'], low_f = cfg['low_f'],
+                            reg1 = cfg['reg1'], reg2 = cfg['reg2'],
+                            cobs = cfg['cobs'], epsilon = cfg['epsilon'],
+                            sigma = cfg['sigma'], stray = cfg['stray'],
+                            noise=noise_filter,
                     )                        
                     pbar.update(1)
 
