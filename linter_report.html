@@ -1,0 +1,1624 @@
+<html><body>
+<h1>Informe Global — NumPy View Super-Linter</h1>
+<h2>alignment.py</h2><pre>
+    1: # ---------------------------- DESCRIPTION --------------------------------------- #
+    2: &quot;&quot;&quot;
+    3: 
+    4: Module with all the functions related to the alignment of the observation modes. 
+    5: 
+    6: Instituto de Astrofísica de Andalucía (IAA-CSIC) 
+    7: &quot;&quot;&quot;
+    8: 
+    9: # ------------------------------ IMPORTS ----------------------------------------- #
+   10: 
+   11: import numpy as np
+   12: import time
+   13: import logging
+   14: from matplotlib import pyplot as plt
+   15: from matplotlib.ticker import MultipleLocator
+   16: from scipy.fftpack import fftshift, ifftshift, fft2, ifft2
+   17: 
+   18: # Own functions
+   19: from demodulation import demodulate
+   20: from demodulation import mod_matrices_david_ct as mod_matrices
+   21: from process_data_utils import balance, calculate_power_spectrum_with_apodization,calculate_inverse_fourier_transform
+   22: 
+   23: # ------------------------------  AUX FUNCTIONS  --------------------------------- # 
+   24: 
+   25: def plot_maps(dy, dx, title=&quot;&quot;):
+   26:     vmax = max(np.abs(dy).max(), np.abs(dx).max())
+   27:     vmin = -vmax
+   28: 
+   29:     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+   30: 
+   31:     im0 = axs[0].imshow(dy, cmap=&#x27;coolwarm&#x27;, vmin=vmin, vmax=vmax)
+   32:     axs[0].set_title(title + &quot; dy&quot;)
+   33:     plt.colorbar(im0, ax=axs[0])
+   34: 
+   35:     im1 = axs[1].imshow(dx, cmap=&#x27;coolwarm&#x27;, vmin=vmin, vmax=vmax)
+   36:     axs[1].set_title(title + &quot; dx&quot;)
+   37:     plt.colorbar(im1, ax=axs[1])
+   38: 
+   39:     plt.tight_layout()
+   40:     plt.show()
+   41: 
+   42: def build_displacement_maps_simple(H, W, quadrants_roi, shifts_q):
+   43:     &quot;&quot;&quot;
+   44:     Crea mapas dy y dx por píxel asignando el desplazamiento de cada cuadrante
+   45:     a todo su ROI, sin suavizado ni mezcla.
+   46:     &quot;&quot;&quot;
+   47:     dy_map = np.zeros((H, W), dtype=float)
+   48:     dx_map = np.zeros((H, W), dtype=float)
+   49: 
+   50:     for (y1, y2, x1, x2), (dy, dx) in zip(quadrants_roi, shifts_q):
+   51:         dy_map[y1:y2, x1:x2] = dy
+   52:         dx_map[y1:y2, x1:x2] = dx
+   53: 
+   54:     return dy_map, dx_map
+   55: 
+   56: def _percentile_limits(img, plow=1, phigh=99):
+   57:     vmin = np.percentile(img, plow) if img.size else 0.0
+   58:     vmax = np.percentile(img, phigh) if img.size else 1.0
+   59:     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+   60:         vmin, vmax = float(np.nanmin(img)), float(np.nanmax(img)) if img.size else (0.0, 1.0)
+   61:         if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+   62:             vmin, vmax = 0.0, 1.0
+   63:     return vmin, vmax
+   64: 
+   65: def _apply_grid(ax, step=10, grid_color=&quot;cyan&quot;, lw=0.5, alpha=0.7):
+   66:     &quot;&quot;&quot;Configura una rejilla visible sin mostrar etiquetas.&quot;&quot;&quot;
+   67:     ax.xaxis.set_major_locator(MultipleLocator(step))
+   68:     ax.yaxis.set_major_locator(MultipleLocator(step))
+   69:     ax.grid(True, which=&#x27;major&#x27;, color=grid_color, linewidth=lw, alpha=alpha)
+   70:     # Oculta etiquetas y marcas, pero conserva las posiciones de ticks
+   71:     ax.tick_params(axis=&#x27;both&#x27;, which=&#x27;both&#x27;,
+   72:                    labelbottom=False, labelleft=False,
+   73:                    bottom=False, left=False, length=0)
+   74: 
+   75: def _cosine_ramp(n):
+   76:     # rampa coseno de 0-&gt;1 en n muestras (n&gt;=1)
+   77:     if n &lt;= 0:
+   78:         return np.array([], dtype=np.float64)
+   79:     t = np.linspace(0, np.pi, n, endpoint=True)
+   80:     return 0.5 - 0.5*np.cos(t)  # 0..1
+   81: 
+   82: def _feather_mask_from_core(h, w, core, margin_y, margin_x):
+   83:     &quot;&quot;&quot;
+   84:     Crea una máscara 2D con plateau=1 en &#x27;core&#x27; (en coords del parche)
+   85:     y rampas coseno en los márgenes hacia fuera (hasta &#x27;margin_*&#x27;).
+   86:     Fuera de core + rampas -&gt; 0.
+   87:     &quot;&quot;&quot;
+   88:     y0, y1, x0, x1 = core
+   89:     y0 = max(0, min(h, y0)); y1 = max(0, min(h, y1))
+   90:     x0 = max(0, min(w, x0)); x1 = max(0, min(w, x1))
+   91: 
+   92:     wy = np.zeros(h, dtype=np.float64)
+   93:     wx = np.zeros(w, dtype=np.float64)
+   94: 
+   95:     # Eje Y
+   96:     mY_top = min(margin_y, y0)              # espacio para rampa arriba
+   97:     mY_bot = min(margin_y, h - y1)          # espacio para rampa abajo
+   98:     if y0 - mY_top &lt; y1 + mY_bot:
+   99:         # tramo superior: 0 -&gt; 1
+  100:         if mY_top &gt; 0:
+  101:             wy[y0 - mY_top:y0] = _cosine_ramp(mY_top)
+  102:         # plateau
+  103:         wy[y0:y1] = 1.0
+  104:         # tramo inferior: 1 -&gt; 0
+  105:         if mY_bot &gt; 0:
+  106:             wy[y1:y1 + mY_bot] = _cosine_ramp(mY_bot)[::-1]
+  107: 
+  108:     # Eje X
+  109:     mX_left  = min(margin_x, x0)
+  110:     mX_right = min(margin_x, w - x1)
+  111:     if x0 - mX_left &lt; x1 + mX_right:
+  112:         if mX_left &gt; 0:
+  113:             wx[x0 - mX_left:x0] = _cosine_ramp(mX_left)
+  114:         wx[x0:x1] = 1.0
+  115:         if mX_right &gt; 0:
+  116:             wx[x1:x1 + mX_right] = _cosine_ramp(mX_right)[::-1]
+  117: 
+  118:     mask = np.outer(wy, wx)
+  119:     return mask
+  120: 
+  121: def _cosine_taper_2d(h, w, margin_y, margin_x):
+  122:     # Hann 2D sobre los bordes del parche (pre-apodización, pequeña)
+  123:     my = int(max(0, margin_y)); mx = int(max(0, margin_x))
+  124:     wy = np.ones(h, dtype=np.float64)
+  125:     wx = np.ones(w, dtype=np.float64)
+  126:     if my &gt; 0:
+  127:         r = _cosine_ramp(my)
+  128:         wy[:my] = r
+  129:         wy[-my:] = r[::-1]
+  130:     if mx &gt; 0:
+  131:         r = _cosine_ramp(mx)
+  132:         wx[:mx] = r
+  133:         wx[-mx:] = r[::-1]
+  134:     return np.outer(wy, wx)
+  135: 
+  136: def apply_quadrant_shifts_with_feather(
+  137:     img2d,                       # imagen 2D (X,Y)
+  138:     quadrants_roi,               # lista de (y1,y2,x1,x2)
+  139:     shifts_q,                    # lista de (dy,dx) por cuadrante (en mismo orden)
+  140:     margin=10,                   # px de margen para feather (solape)
+  141:     shift_func=None,             # callable(patch, shift=[dy,dx], wrap=False, fill=0)
+  142:     wrap=False, fill=0,
+  143:     pre_apod=3                   # apodización pequeña pre-shift (px)
+  144: ):
+  145:     &quot;&quot;&quot;
+  146:     - Expande cada ROI en margin + |shift| (por eje) para garantizar cobertura tras el desplazamiento.
+  147:     - Aplica ventana coseno suave en los bordes del parche (pre_apod) antes del shift (reduce ringing).
+  148:     - Construye una máscara de escritura con plateau=1 exactamente en el ROI original y rampas en el solape.
+  149:     - Mezcla y normaliza (suma ponderada); partición de unidad en solapes -&gt; sin “cruz” en el centro.
+  150:     &quot;&quot;&quot;
+  151:     H, W = img2d.shape
+  152:     num = np.zeros_like(img2d, dtype=np.float64)
+  153:     den = np.zeros_like(img2d, dtype=np.float64)
+  154: 
+  155:     for (y1, y2, x1, x2), (dy, dx) in zip(quadrants_roi, shifts_q):
+  156:         # expansión dependiente del shift (garantiza cobertura post-shift)
+  157:         pad_y = margin + int(np.ceil(abs(dy)))
+  158:         pad_x = margin + int(np.ceil(abs(dx)))
+  159: 
+  160:         ye1 = max(0, y1 - pad_y)
+  161:         ye2 = min(H, y2 + pad_y)
+  162:         xe1 = max(0, x1 - pad_x)
+  163:         xe2 = min(W, x2 + pad_x)
+  164:         if ye2 &lt;= ye1 or xe2 &lt;= xe1:
+  165:             continue
+  166: 
+<span style="background:#ffcccc">  167:         patch = img2d[ye1:ye2, xe1:xe2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch&#x27; es VISTA (slicing/indexación)</span>
+  168:         h, w = patch.shape
+  169: 
+  170:         # 1) Apodización pre-shift (pequeña, sobre bordes del parche)
+  171:         apy = min(pre_apod, h//2 - 1) if h &gt;= 3 else 0
+  172:         apx = min(pre_apod, w//2 - 1) if w &gt;= 3 else 0
+  173:         pre_w = _cosine_taper_2d(h, w, apy, apx)
+  174:         patch_win = patch * pre_w
+  175: 
+  176:         # 2) Desplaza el parche
+  177:         shifted = shift_func(patch_win, shift=[dy, dx], wrap=wrap, fill=fill)
+  178: 
+  179:         # 3) Máscara de escritura basada en el núcleo (ROI original)
+  180:         core_y0 = y1 - ye1
+  181:         core_y1 = y2 - ye1
+  182:         core_x0 = x1 - xe1
+  183:         core_x1 = x2 - xe1
+  184: 
+  185:         # márgenes efectivos (no más grandes que el espacio disponible)
+  186:         my = min(margin, h//2)
+  187:         mx = min(margin, w//2)
+  188:         write_w = _feather_mask_from_core(
+  189:             h, w,
+  190:             core=(core_y0, core_y1, core_x0, core_x1),
+  191:             margin_y=my, margin_x=mx
+  192:         )
+  193: 
+  194:         # 4) Acumulación
+  195:         num[ye1:ye2, xe1:xe2] += shifted * write_w
+  196:         den[ye1:ye2, xe1:xe2] += write_w
+  197: 
+  198:     out = img2d.copy()
+  199:     m = den &gt; 1e-12
+  200:     out[m] = num[m] / den[m]
+  201:     return out
+  202: 
+  203: def apply_quadrant_shifts_with_feather_stack(
+  204:     stack4, quadrants_roi, shifts_q_per_mod, margin=10, shift_func=None, wrap=False, fill=0
+  205: ):
+  206:     &quot;&quot;&quot;
+  207:     Aplica shifts por cuadrante a un stack (4,X,Y).
+  208:     shifts_q_per_mod: lista (por mod j) de listas (por cuadrante q) de tuples (dy,dx),
+  209:                       es decir: longitud 4, cada elemento longitud Q.
+  210:     &quot;&quot;&quot;
+  211:     out = stack4.copy()
+  212:     nmods, H, W = stack4.shape
+  213:     assert len(shifts_q_per_mod) == nmods, &quot;Se espera una lista de shifts por mod (len=4).&quot;
+  214: 
+  215:     for j in range(nmods):
+<span style="background:#ffcccc">  216:         shifts_q = shifts_q_per_mod[j]  # lista de (dy,dx) por cuadrante</span>
+<span style="color:orange; font-weight:bold">    → &#x27;shifts_q&#x27; es VISTA (slicing/indexación)</span>
+  217:         out[j] = apply_quadrant_shifts_with_feather(
+  218:             out[j], quadrants_roi, shifts_q, margin=margin,
+  219:             shift_func=shift_func, wrap=wrap, fill=fill
+  220:         )
+  221:     return out
+  222: 
+  223: def plot_alignment_comparison_with_diff(
+  224:     imgs_before_cam1, imgs_before_cam2,
+  225:     imgs_after_cam1, imgs_after_cam2,
+  226:     srow, scol,
+  227:     zoom_center=None,
+  228:     zoom_size=100,
+  229:     title_prefix=&quot;Camera Alignment&quot;,
+  230:     cmap_img=&quot;gray&quot;,
+  231:     cmap_diff=&quot;seismic&quot;,
+  232:     grid_color=&quot;cyan&quot;,
+  233:     grid_step=24
+  234: ):
+  235:     &quot;&quot;&quot;
+  236:     Muestra, para cada modulación (0..3):
+  237:       - CAM1 Before (zoom)
+  238:       - CAM2 Before (zoom)
+  239:       - CAM2 - CAM1 Before (zoom)
+  240:       - CAM1 After (zoom)
+  241:       - CAM2 After (zoom)
+  242:       - CAM2 - CAM1 After (zoom)
+  243:     &quot;&quot;&quot;
+<span style="background:#ffcccc">  244:     nmods = imgs_before_cam1.shape[0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;nmods&#x27; es VISTA (slicing/indexación)</span>
+  245:     X, Y = imgs_before_cam1.shape[1:]
+  246: 
+  247:     # Centro de zoom
+  248:     cx, cy = (X // 2, Y // 2) if zoom_center is None else zoom_center
+  249: 
+  250:     # Ventana de recorte (clamp por seguridad)
+  251:     half = zoom_size // 2
+  252:     x0, x1 = max(0, cx - half), min(X, cx + half)
+  253:     y0, y1 = max(0, cy - half), min(Y, cy + half)
+  254: 
+  255:     for j in range(nmods):
+  256:         # Recortes antes
+<span style="background:#ffcccc">  257:         b1 = imgs_before_cam1[j, x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;b1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  258:         b2 = imgs_before_cam2[j, x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;b2&#x27; es VISTA (slicing/indexación)</span>
+  259:         bdiff = b2 - b1
+  260: 
+  261:         # Recortes después
+<span style="background:#ffcccc">  262:         a1 = imgs_after_cam1[j, x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;a1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  263:         a2 = imgs_after_cam2[j, x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;a2&#x27; es VISTA (slicing/indexación)</span>
+  264:         adiff = a2 - a1
+  265: 
+  266:         # Límites de visualización
+  267:         vmin_b1, vmax_b1 = _percentile_limits(b1)
+  268:         vmin_b2, vmax_b2 = _percentile_limits(b2)
+  269:         vmin_a1, vmax_a1 = _percentile_limits(a1)
+  270:         vmin_a2, vmax_a2 = _percentile_limits(a2)
+  271: 
+  272:         maxabs_b = np.percentile(np.abs(bdiff), 99) if bdiff.size else 1.0
+  273:         maxabs_a = np.percentile(np.abs(adiff), 99) if adiff.size else 1.0
+  274:         vmax_db = max(maxabs_b, 1e-8)
+  275:         vmax_da = max(maxabs_a, 1e-8)
+  276: 
+  277:         fig, axes = plt.subplots(2, 3, figsize=(13, 8))
+  278:         fig.suptitle(f&quot;{title_prefix} – Mod {j} | shift (row, col) = ({srow:.3f}, {scol:.3f})&quot;)
+  279: 
+  280:         # BEFORE: CAM1
+  281:         im00 = axes[0, 0].imshow(b1, cmap=cmap_img, vmin=vmin_b1, vmax=vmax_b1)
+  282:         axes[0, 0].set_title(&quot;CAM 1 – Before&quot;)
+  283:         _apply_grid(axes[0, 0], step=grid_step, grid_color=grid_color)
+  284:         fig.colorbar(im00, ax=axes[0, 0], fraction=0.046, pad=0.04)
+  285: 
+  286:         # BEFORE: CAM2
+  287:         im01 = axes[0, 1].imshow(b2, cmap=cmap_img, vmin=vmin_b2, vmax=vmax_b2)
+  288:         axes[0, 1].set_title(&quot;CAM 2 – Before&quot;)
+  289:         _apply_grid(axes[0, 1], step=grid_step, grid_color=grid_color)
+  290:         fig.colorbar(im01, ax=axes[0, 1], fraction=0.046, pad=0.04)
+  291: 
+  292:         # BEFORE: DIFF
+  293:         im02 = axes[0, 2].imshow(bdiff, cmap=cmap_diff, vmin=-vmax_db, vmax=vmax_db)
+  294:         axes[0, 2].set_title(&quot;DIFF Before (CAM2 - CAM1)&quot;)
+  295:         _apply_grid(axes[0, 2], step=grid_step, grid_color=grid_color)
+  296:         fig.colorbar(im02, ax=axes[0, 2], fraction=0.046, pad=0.04)
+  297: 
+  298:         # AFTER: CAM1
+  299:         im10 = axes[1, 0].imshow(a1, cmap=cmap_img, vmin=vmin_a1, vmax=vmax_a1)
+  300:         axes[1, 0].set_title(&quot;CAM 1 – After&quot;)
+  301:         _apply_grid(axes[1, 0], step=grid_step, grid_color=grid_color)
+  302:         fig.colorbar(im10, ax=axes[1, 0], fraction=0.046, pad=0.04)
+  303: 
+  304:         # AFTER: CAM2
+  305:         im11 = axes[1, 1].imshow(a2, cmap=cmap_img, vmin=vmin_a2, vmax=vmax_a2)
+  306:         axes[1, 1].set_title(&quot;CAM 2 – After&quot;)
+  307:         _apply_grid(axes[1, 1], step=grid_step, grid_color=grid_color)
+  308:         fig.colorbar(im11, ax=axes[1, 1], fraction=0.046, pad=0.04)
+  309: 
+  310:         # AFTER: DIFF
+  311:         im12 = axes[1, 2].imshow(adiff, cmap=cmap_diff, vmin=-vmax_da, vmax=vmax_da)
+  312:         axes[1, 2].set_title(&quot;DIFF After (CAM2 - CAM1)&quot;)
+  313:         _apply_grid(axes[1, 2], step=grid_step, grid_color=grid_color)
+  314:         fig.colorbar(im12, ax=axes[1, 2], fraction=0.046, pad=0.04)
+  315: 
+  316:         # Métricas
+  317:         diff_before_rms = float(np.sqrt(np.mean(np.square(bdiff)))) if bdiff.size else float(&#x27;nan&#x27;)
+  318:         diff_after_rms  = float(np.sqrt(np.mean(np.square(adiff)))) if adiff.size else float(&#x27;nan&#x27;)
+  319:         diff_before_mean = float(np.mean(bdiff)) if bdiff.size else float(&#x27;nan&#x27;)
+  320:         diff_after_mean  = float(np.mean(adiff)) if adiff.size else float(&#x27;nan&#x27;)
+  321: 
+  322:         print(f&quot;[Mod {j}] shift(row,col)=({srow:.3f}, {scol:.3f}) &quot;
+  323:               f&quot;| diff BEFORE: mean={diff_before_mean:.4g}, RMS={diff_before_rms:.4g} &quot;
+  324:               f&quot;| diff AFTER: mean={diff_after_mean:.4g}, RMS={diff_after_rms:.4g}&quot;)
+  325: 
+  326:         plt.tight_layout()
+  327:         plt.show()
+  328: 
+  329: def plot_two_intensity_alignment_with_diff(
+  330:     I_cam1, I_cam2_before, I_cam2_after,
+  331:     srow=0.0, scol=0.0,
+  332:     zoom_center=None, zoom_size=100,
+  333:     title_prefix=&quot;Camera alignment (demodulated I)&quot;,
+  334:     cmap_img=&quot;gray&quot;, cmap_diff=&quot;seismic&quot;,
+  335:     grid_color=&quot;cyan&quot;
+  336: ):
+  337:     &quot;&quot;&quot;
+  338:     Compara I_cam2 antes vs después frente a I_cam1 (referencia), con zoom y diferencias.
+  339: 
+  340:     Parámetros
+  341:     ----------
+  342:     I_cam1 : np.ndarray (X, Y)
+  343:         Intensidad demodulada de cámara 1 (referencia).
+  344:     I_cam2_before : np.ndarray (X, Y)
+  345:         Intensidad demodulada de cámara 2 ANTES de alinear.
+  346:     I_cam2_after : np.ndarray (X, Y)
+  347:         Intensidad demodulada de cámara 2 DESPUÉS de alinear.
+  348:     srow, scol : float
+  349:         Shift aplicado (fila, columna) a cam2.
+  350:     zoom_center : (int,int) o None
+  351:         Centro (x,y) del recorte a mostrar. Si None, usa el centro de la imagen.
+  352:     zoom_size : int
+  353:         Tamaño del recorte cuadrado (px).
+  354:     title_prefix : str
+  355:         Título principal.
+  356:     cmap_img, cmap_diff : str
+  357:         Colormaps para intensidades y diferencias.
+  358:     grid_color : str
+  359:         Color de la rejilla.
+  360:     &quot;&quot;&quot;
+  361:     assert I_cam1.ndim == 2 and I_cam2_before.ndim == 2 and I_cam2_after.ndim == 2, \
+  362:         &quot;Las imágenes deben ser 2D.&quot;
+  363: 
+  364:     X, Y = I_cam1.shape
+  365: 
+  366:     # Definir ventana de zoom
+  367:     if zoom_center is None:
+  368:         cx, cy = X // 2, Y // 2
+  369:     else:
+  370:         cx, cy = zoom_center
+  371: 
+  372:     half = zoom_size // 2
+  373:     x0, x1 = max(0, cx - half), min(X, cx + half)
+  374:     y0, y1 = max(0, cy - half), min(Y, cy + half)
+  375: 
+  376:     # Recortes
+<span style="background:#ffcccc">  377:     ref = I_cam1[x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;ref&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  378:     b2  = I_cam2_before[x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;b2&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  379:     a2  = I_cam2_after[x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;a2&#x27; es VISTA (slicing/indexación)</span>
+  380: 
+  381:     # Diferencias
+  382:     diff_before = b2 - ref
+  383:     diff_after  = a2 - ref
+  384: 
+  385:     # Escalado robusto
+  386:     vmin_ref, vmax_ref = _percentile_limits(ref)
+  387:     vmin_b2,  vmax_b2  = _percentile_limits(b2)
+  388:     vmin_a2,  vmax_a2  = _percentile_limits(a2)
+  389: 
+  390:     vmax_db = np.percentile(np.abs(diff_before), 99)
+  391:     vmax_da = np.percentile(np.abs(diff_after),  99)
+  392:     vmax_d  = max(vmax_db, vmax_da, 1e-8)
+  393: 
+  394:     fig, axes = plt.subplots(2, 3, figsize=(13, 8))
+  395:     fig.suptitle(f&quot;{title_prefix}  |  shift = ({srow:.3f}, {scol:.3f})&quot;)
+  396: 
+  397:     # Row 0: BEFORE
+  398:     im00 = axes[0, 0].imshow(ref, cmap=cmap_img, vmin=vmin_ref, vmax=vmax_ref)
+  399:     axes[0, 0].set_title(&quot;CAM1 (I) – REF&quot;)
+  400:     axes[0, 0].grid(True, color=grid_color, linewidth=0.5, alpha=0.7)
+  401:     fig.colorbar(im00, ax=axes[0, 0], fraction=0.046, pad=0.04)
+  402: 
+  403:     im01 = axes[0, 1].imshow(b2, cmap=cmap_img, vmin=vmin_b2, vmax=vmax_b2)
+  404:     axes[0, 1].set_title(&quot;CAM2 (I) – BEFORE&quot;)
+  405:     axes[0, 1].grid(True, color=grid_color, linewidth=0.5, alpha=0.7)
+  406:     fig.colorbar(im01, ax=axes[0, 1], fraction=0.046, pad=0.04)
+  407: 
+  408:     im02 = axes[0, 2].imshow(diff_before, cmap=cmap_diff, vmin=-vmax_d, vmax=vmax_d)
+  409:     axes[0, 2].set_title(&quot;DIFF BEFORE (CAM2 - CAM1)&quot;)
+  410:     axes[0, 2].grid(True, color=grid_color, linewidth=0.5, alpha=0.7)
+  411:     fig.colorbar(im02, ax=axes[0, 2], fraction=0.046, pad=0.04)
+  412: 
+  413:     # Row 1: AFTER
+  414:     im10 = axes[1, 0].imshow(ref, cmap=cmap_img, vmin=vmin_ref, vmax=vmax_ref)
+  415:     axes[1, 0].set_title(&quot;CAM1 (I) – REF&quot;)
+  416:     axes[1, 0].grid(True, color=grid_color, linewidth=0.5, alpha=0.7)
+  417:     fig.colorbar(im10, ax=axes[1, 0], fraction=0.046, pad=0.04)
+  418: 
+  419:     im11 = axes[1, 1].imshow(a2, cmap=cmap_img, vmin=vmin_a2, vmax=vmax_a2)
+  420:     axes[1, 1].set_title(&quot;CAM2 (I) – AFTER&quot;)
+  421:     axes[1, 1].grid(True, color=grid_color, linewidth=0.5, alpha=0.7)
+  422:     fig.colorbar(im11, ax=axes[1, 1], fraction=0.046, pad=0.04)
+  423: 
+  424:     im12 = axes[1, 2].imshow(diff_after, cmap=cmap_diff, vmin=-vmax_d, vmax=vmax_d)
+  425:     axes[1, 2].set_title(&quot;DIFF AFTER (CAM2 - CAM1)&quot;)
+  426:     axes[1, 2].grid(True, color=grid_color, linewidth=0.5, alpha=0.7)
+  427:     fig.colorbar(im12, ax=axes[1, 2], fraction=0.046, pad=0.04)
+  428: 
+  429:     for ax in axes.ravel():
+  430:         ax.set_xticks([])
+  431:         ax.set_yticks([])
+  432: 
+  433:     plt.tight_layout()
+  434:     plt.show()
+  435: 
+  436:     # Métricas útiles
+  437:     def _rms(x): return float(np.sqrt(np.mean(np.square(x))))
+  438:     print(f&quot;[Camera I alignment] shift(row,col)=({srow:.3f}, {scol:.3f}) | &quot;
+  439:           f&quot;diff BEFORE: mean={diff_before.mean():.4g}, RMS={_rms(diff_before):.4g} | &quot;
+  440:           f&quot;diff AFTER:  mean={diff_after.mean():.4g},  RMS={_rms(diff_after):.4g}&quot;)
+  441:     
+  442: def compute_pseudo_images_leastsq(imgs_cam1, imgs_cam2, M1, M2, roi=None, eps=1e-12):
+  443:     &quot;&quot;&quot;
+  444:     Construye pseudo‑imágenes &#x27;tipo I&#x27; por modulación j, combinando CAM1 y CAM2
+  445:     con pesos α,β que:
+  446:        (i) preservan I  (α+β = 1)
+  447:       (ii) minimizan la fuga de QUV  (|| α m1 + β m2 ||)
+  448: 
+  449:     Además aplica una normalización fotométrica por estado (opcional) para
+  450:     equiparar las escalas de ambas cámaras antes de combinar.
+  451: 
+  452:     Parámetros
+  453:     ----------
+  454:     imgs_cam1, imgs_cam2 : (4, X, Y)
+  455:         Imágenes moduladas, ya alineadas entre cámaras.
+  456:     M1, M2 : (4,4)
+  457:         Matrices de modulación de cam1 y cam2. Cada fila j: [1, a, b, c].
+  458:     roi : tuple o None
+  459:         (x0, x1, y0, y1) para estimar la normalización fotométrica por estado.
+  460:         Si None, usa toda la imagen con percentiles robustos.
+  461:     eps : float
+  462:         Tolerancia numérica para evitar divisiones por cero.
+  463: 
+  464:     Devuelve
+  465:     --------
+  466:     pseudo : (4, X, Y)
+  467:         Pseudo‑imágenes por modulación (aprox. &#x27;I&#x27;).
+  468:     alphas, betas : (4,)
+  469:         Pesos por estado j.
+  470:     gammas : (4,)
+  471:         Factores de normalización aplicados a cam2 por estado j.
+  472:     residual_norms : (4,)
+  473:         Norma de la fuga residual || α m1 + β m2 || por estado j.
+  474:     &quot;&quot;&quot;
+  475:     nmods, X, Y = imgs_cam1.shape
+  476:     pseudo = np.zeros_like(imgs_cam1, dtype=np.float64)
+  477:     alphas = np.zeros(nmods)
+  478:     betas  = np.zeros(nmods)
+  479:     gammas = np.ones(nmods)
+  480:     residual_norms = np.zeros(nmods)
+  481: 
+  482:     for j in range(nmods):
+  483:         I1 = imgs_cam1[j].astype(np.float64)
+  484:         I2 = imgs_cam2[j].astype(np.float64)
+  485: 
+  486:         # --- Normalización fotométrica por estado j (cam2 -&gt; cam1) ---
+  487:         if roi is not None:
+  488:             x0, x1, y0, y1 = roi
+<span style="background:#ffcccc">  489:             ref1 = I1[x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;ref1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  490:             ref2 = I2[x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;ref2&#x27; es VISTA (slicing/indexación)</span>
+  491:         else:
+  492:             # Percentiles robustos en toda la imagen
+  493:             ref1 = I1
+  494:             ref2 = I2
+  495: 
+  496:         # Evitar outliers (usar median de ratios donde I1 no es casi cero)
+  497:         mask = np.abs(ref1) &gt; np.percentile(np.abs(ref1), 5) + eps
+  498:         if np.any(mask):
+  499:             ratio = ref2[mask] / (ref1[mask] + eps)
+  500:             gamma = np.median(ratio)
+  501:         else:
+  502:             gamma = 1.0
+  503: 
+  504:         I2n = I2 / (gamma + eps)
+  505:         gammas[j] = gamma
+  506: 
+  507:         # --- Pesos óptimos por mínimos cuadrados con α+β=1 ---
+  508:         m1 = M1[j, 1:].astype(np.float64)  # (a,b,c)
+  509:         m2 = M2[j, 1:].astype(np.float64)  # (a&#x27;,b&#x27;,c&#x27;)
+  510: 
+  511:         diff = m1 - m2
+  512:         denom = np.dot(diff, diff)
+  513:         if denom &lt; eps:
+  514:             # Caso degenerado: m1 ≈ m2 → cualquier α con α+β=1 sirve; usa α=β=0.5
+  515:             alpha = 0.5
+  516:         else:
+  517:             alpha = (np.dot(m2, m2) - np.dot(m1, m2)) / denom
+  518:         beta = 1.0 - alpha
+  519: 
+  520:         alphas[j] = alpha
+  521:         betas[j]  = beta
+  522: 
+  523:         # Fuga residual teórica (diagnóstico)
+  524:         residual = alpha * m1 + beta * m2
+  525:         residual_norms[j] = np.linalg.norm(residual)
+  526: 
+  527:         # --- Pseudo‑imagen ---
+  528:         pseudo[j] = alpha * I1 + beta * I2n
+  529: 
+  530:         # (Opcional) Re‑escala para visualizar comparables
+  531:         # pseudo[j] *= 1.0  # mantener unidad de I por construcción (α+β=1)
+  532: 
+  533:     return pseudo, alphas, betas, gammas, residual_norms
+  534: 
+  535: def plot_pseudo_mod_alignment(
+  536:     pseudo_before, pseudo_after,
+  537:     srow_mod, scol_mod,
+  538:     zoom_center=None,
+  539:     zoom_size=100,
+  540:     title_prefix=&quot;Pseudo‑I modulation alignment&quot;,
+  541:     cmap_img=&quot;gray&quot;,
+  542:     cmap_diff=&quot;seismic&quot;,
+  543:     grid_color=&quot;yellow&quot;
+  544: ):
+  545:     &quot;&quot;&quot;
+  546:     Compara pseudo‑imágenes de cada modulación j (1,2,3) frente a la mod 0,
+  547:     mostrando imágenes y diferencias antes y después del alineamiento.
+  548: 
+  549:     pseudo_before : (4, X, Y)
+  550:     pseudo_after  : (4, X, Y)
+  551:     &quot;&quot;&quot;
+  552:     X, Y = pseudo_before.shape[1:]
+  553: 
+  554:     # --- ZOOM window ---
+  555:     if zoom_center is None:
+  556:         cx, cy = X//2, Y//2
+  557:     else:
+  558:         cx, cy = zoom_center
+  559:     half = zoom_size//2
+  560:     x0, x1 = max(0, cx-half), min(X, cx+half)
+  561:     y0, y1 = max(0, cy-half), min(Y, cy+half)
+  562: 
+  563:     # --- Referencia mod 0 ---
+<span style="background:#ffcccc">  564:     ref_b = pseudo_before[0, x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;ref_b&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  565:     ref_a = pseudo_after[0,  x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;ref_a&#x27; es VISTA (slicing/indexación)</span>
+  566: 
+  567:     for j in [1, 2, 3]:
+<span style="background:#ffcccc">  568:         img_b = pseudo_before[j, x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;img_b&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  569:         img_a = pseudo_after[j,  x0:x1, y0:y1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;img_a&#x27; es VISTA (slicing/indexación)</span>
+  570: 
+  571:         diff_b = img_b - ref_b
+  572:         diff_a = img_a - ref_a
+  573: 
+  574:         # Límites
+  575:         vmin_r, vmax_r = np.percentile(ref_b, 1), np.percentile(ref_b, 99)
+  576:         vmin_j, vmax_j = np.percentile(img_b, 1), np.percentile(img_b, 99)
+  577: 
+  578:         vmax_diff_b = np.percentile(np.abs(diff_b), 99)
+  579:         vmax_diff_a = np.percentile(np.abs(diff_a), 99)
+  580: 
+  581:         fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+  582:         fig.suptitle(f&quot;{title_prefix} – Compare mod 0 vs mod {j} &quot;
+  583:                      f&quot; | shift({j})=({srow_mod[j]:.3f}, {scol_mod[j]:.3f})&quot;)
+  584: 
+  585:         # BEFORE: ref mod 0
+  586:         im00 = axes[0, 0].imshow(ref_b, cmap=cmap_img, vmin=vmin_r, vmax=vmax_r)
+  587:         axes[0, 0].set_title(&quot;Mod 0 BEFORE&quot;)
+  588:         axes[0, 0].grid(True, color=grid_color, linewidth=0.5)
+  589:         fig.colorbar(im00, ax=axes[0, 0])
+  590: 
+  591:         # BEFORE: mod j
+  592:         im01 = axes[0, 1].imshow(img_b, cmap=cmap_img, vmin=vmin_j, vmax=vmax_j)
+  593:         axes[0, 1].set_title(f&quot;Mod {j} BEFORE&quot;)
+  594:         axes[0, 1].grid(True, color=grid_color, linewidth=0.5)
+  595:         fig.colorbar(im01, ax=axes[0, 1])
+  596: 
+  597:         # BEFORE: difference
+  598:         im02 = axes[0, 2].imshow(diff_b, cmap=cmap_diff, vmin=-vmax_diff_b, vmax=vmax_diff_b)
+  599:         axes[0, 2].set_title(f&quot;Diff BEFORE (mod {j} - mod 0)&quot;)
+  600:         axes[0, 2].grid(True, color=grid_color, linewidth=0.5)
+  601:         fig.colorbar(im02, ax=axes[0, 2])
+  602: 
+  603:         # AFTER: ref mod 0
+  604:         im10 = axes[1, 0].imshow(ref_a, cmap=cmap_img, vmin=vmin_r, vmax=vmax_r)
+  605:         axes[1, 0].set_title(&quot;Mod 0 AFTER&quot;)
+  606:         axes[1, 0].grid(True, color=grid_color, linewidth=0.5)
+  607:         fig.colorbar(im10, ax=axes[1, 0])
+  608: 
+  609:         # AFTER: mod j
+  610:         im11 = axes[1, 1].imshow(img_a, cmap=cmap_img, vmin=vmin_j, vmax=vmax_j)
+  611:         axes[1, 1].set_title(f&quot;Mod {j} AFTER&quot;)
+  612:         axes[1, 1].grid(True, color=grid_color, linewidth=0.5)
+  613:         fig.colorbar(im11, ax=axes[1, 1])
+  614: 
+  615:         # AFTER: difference
+  616:         im12 = axes[1, 2].imshow(diff_a, cmap=cmap_diff, vmin=-vmax_diff_a, vmax=vmax_diff_a)
+  617:         axes[1, 2].set_title(f&quot;Diff AFTER (mod {j} - mod 0)&quot;)
+  618:         axes[1, 2].grid(True, color=grid_color, linewidth=0.5)
+  619:         fig.colorbar(im12, ax=axes[1, 2])
+  620: 
+  621:         plt.tight_layout()
+  622:         plt.show()
+  623: 
+  624:         # Métricas
+  625:         print(f&quot;[Pseudo] mod 0 vs mod {j}:&quot;)
+  626:         print(f&quot;    BEFORE diff RMS = {np.sqrt(np.mean(diff_b**2)):.4g}&quot;)
+  627:         print(f&quot;    AFTER  diff RMS = {np.sqrt(np.mean(diff_a**2)):.4g}&quot;)
+  628: 
+  629: def dftreg(F,G,kappa):
+  630:     &quot;&quot;&quot;
+  631:     Calculates the shift between a couple of images &#x27;f&#x27; and &#x27;g&#x27; with subpixel
+  632:     accuracy following the second method presented in
+  633:     Sicairos 2008, Efficient subpixel image registration algorithm.
+  634:     Input:
+  635:         F,G: ffts of images &#x27;f&#x27; and &#x27;g&#x27; without applying any fftshift
+  636:         kappa: inverse of subpixel precision (kappa=20 -&gt; 0.05 pixel precision)
+  637:     Output:
+  638: 
+  639:     &quot;&quot;&quot;
+  640:     nr,nc=np.shape(F)
+  641:     Nr = ifftshift(np.arange(-np.fix(nr/2),np.ceil(nr/2)))
+  642:     Nc = ifftshift(np.arange(-np.fix(nc/2),np.ceil(nc/2)))
+  643:     Nout = 2 * max(nr, nc)
+  644:     CC=ifft2(FTpad(F*np.conj(G), Nout))
+  645:     CCabs=np.abs(CC)
+  646:     ind = np.unravel_index(np.argmax(CCabs, axis=None), CCabs.shape)
+  647: 
+  648:     CCmax=CC[ind]*nr*nc
+  649:     Nr2 = ifftshift(np.arange(-np.fix(nr),np.ceil(nr)))
+  650:     Nc2 = ifftshift(np.arange(-np.fix(nc),np.ceil(nc)))
+  651: 
+  652:     row_shift=Nr2[ind[0]]/2
+  653:     col_shift=Nc2[ind[1]]/2
+  654: 
+  655:     #Initial shift estimate in upsampled grid
+  656:     row_shift=round(row_shift*kappa)/kappa
+  657:     col_shift=round(col_shift*kappa)/kappa
+  658:     dftshift=np.fix(np.ceil(kappa*1.5)/2)
+  659: 
+  660:     #DFT by matrix multiplication
+  661:     CC=np.conj(dftups(G*np.conj(F),np.ceil(kappa*1.5),kappa,\
+  662:     dftshift-row_shift*kappa,dftshift-col_shift*kappa))
+  663:     CCabs=np.abs(CC)
+  664:     ind = np.unravel_index(np.argmax(CCabs, axis=None), CCabs.shape)
+<span style="background:#ffcccc">  665:     CCmax=CC[ind]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;CCmax&#x27; es VISTA (slicing/indexación)</span>
+  666:     rloc,cloc=ind-dftshift
+  667:     row_shift=row_shift+rloc/kappa
+  668:     col_shift=col_shift+cloc/kappa
+  669:     rg00=np.sum(np.abs(F)**2)
+  670:     rf00=np.sum(np.abs(G)**2)
+  671:     error=np.sqrt(1-np.abs(CCmax)**2/(rg00*rf00))
+  672:     Nc,Nr=np.meshgrid(Nc,Nr)
+  673:     Gshift=G*np.exp(1j*2*np.pi*(-row_shift*Nr/nr-col_shift*Nc/nc))
+  674:     return error,row_shift,col_shift,Gshift
+  675: 
+  676: def dftups(M,n_out,kappa,roff,coff):
+  677:     &quot;&quot;&quot;
+  678:     Upsampled cross-correlation obtained by matrix multiplication
+  679:     Inputs:
+  680:         M: input image for calculation of the DFT
+  681:         n_out: number of pixels in the output upsampled DFT
+  682:         kappa: inverse of subpixel precision (kappa=20 -&gt; 0.005 pixel precision)
+  683:         roff, coff: row and column offsets to shift the output array to a
+  684:             region of interest
+  685:     &quot;&quot;&quot;
+  686:     nr,nc=M.shape
+  687:     kernc=np.exp((-1j*2*np.pi/(nc*kappa))*np.outer(\
+  688:     ifftshift(np.arange(0,nc).T-np.floor(nc/2)),np.arange(0,n_out)-coff))
+  689: 
+  690:     kernr=np.exp((-1j*2*np.pi/(nr*kappa))*np.outer(\
+  691:     np.arange(0,n_out)-roff,ifftshift(np.arange(0,nr).T-np.floor(nr/2))))
+  692:     return kernr @ M @ kernc
+  693: 
+  694: def FTpad(IM,Nout):
+  695:     &quot;&quot;&quot;
+  696:     Carries out zero-padding to upsample an image IM in Fourier domain
+  697:     Input:
+  698:         IM: Numpy array in Fourier domain
+  699:         outsize: size of the new array
+  700: 
+  701:     &quot;&quot;&quot;
+<span style="background:#ffcccc">  702:     Nin=IM.shape[0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;Nin&#x27; es VISTA (slicing/indexación)</span>
+  703:     pd=int((Nout-Nin)/2)
+  704:     IM=fftshift(IM)
+  705:     IMout=np.pad(IM,((pd,pd),(pd,pd)),&#x27;constant&#x27;)
+  706:     IMout=ifftshift(IMout)*Nout*Nout/(Nin*Nin)
+  707:     return IMout
+  708: 
+  709: # ------------------------------  MAIN FUNCTS  --------------------------------- # 
+  710: 
+  711: def realign_subpixel(ima, accu=0.01, verbose = True, return_shift = False):
+  712:     &quot;&quot;&quot;
+  713:     This function aligns a series of images with subpixel images using the Sicairos
+  714:     method.
+  715:     Input:
+  716:      ima: 3D array of the type (Nima, Nx, Ny). First dimension corresponds to the
+  717:         index of the image through the series
+  718:      accu: accuracy of the alignment in pixel units
+  719:     Output: returns the aligned 3D array
+  720:     &quot;&quot;&quot;
+  721:     kappa = 1 / accu #Kappa factor defined in Sicairos method (1/fraction of pixel)
+  722:     Gshift = fft2(ima[0, :, :]) # FFT of the first image of the series
+  723:     if verbose:
+  724:         print(&#x27;Re-aligning images ...&#x27;)  
+  725:     ima_aligned = np.zeros(np.shape(ima))
+  726:     
+  727:     row_shifts = []
+  728:     col_shifts = []
+  729:     for j in range(ima.shape[0]):
+  730:         
+  731:         F0=np.copy(Gshift)
+  732: 
+  733:         F_comp = fft2(ima[j])
+  734:         error, row_shift, col_shift, Gshift2 = dftreg(F0, F_comp, kappa)
+  735:         row_shifts.append(row_shift)
+  736:         col_shifts.append(col_shift)
+  737:         if verbose:
+  738:             print(f&quot;Shift of image: {j} -&gt; row : {round(row_shift, 4)} col : {round(col_shift, 4)}&quot;)
+  739:         if j != 0:
+  740:             ima_aligned[j] = np.real(ifft2(Gshift2))
+  741:         else:
+  742:             ima_aligned[j] = ima[0]
+  743:     
+  744:     if return_shift:
+  745:         return ima_aligned, row_shifts, col_shifts, error
+  746:     else:
+  747:         return ima_aligned, error
+  748: 
+  749: def find_fieldstop(cam1 = None, verbose = False, plot_flag = False, margin = 10):
+  750:     &quot;&quot;&quot;
+  751:     Module to find the fieldstop of images. 
+  752: 
+  753:     Inputs:
+  754:         - cam1 (np.array): A single image to find the fieldstop.
+  755:         - verbose (Boolean, default : False): Print info on terminal. 
+  756:         - plot_flag (Boolean, default : False): Plot the fieldstop calculation. 
+  757:         - margin (int, default : 10) : Number of pixels of margin from the detected field-stop       
+  758:     Outputs:
+  759:         - Fieldstop (list). 
+  760:     &quot;&quot;&quot;
+  761: 
+  762:     tic = time.time()
+  763: 
+  764:     if verbose:
+  765:         print(&quot;Finding fieldstop field stop...&quot;)
+  766:     
+  767:     if plot_flag:
+  768:         fig, axs  = plt.subplots(1, 2,figsize = (10, 5))
+  769:         axs[0].imshow(cam1, origin = &#x27;lower&#x27;, cmap = &#x27;gray&#x27;)
+  770:     
+<span style="background:#ffcccc">  771:     size = np.shape(cam1)[0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;size&#x27; es VISTA (slicing/indexación)</span>
+  772: 
+  773:     # Position to find cuts
+  774:     lines = np.linspace(0, size, 7)
+  775:     lines = [int(x) for x in lines[1:-1]]
+  776:     
+  777:     # Looking for cuts
+  778:     hcuts_left_c1 = []
+  779:     hcuts_right_c1 = []
+  780:     vcuts_top_c1 = []
+  781:     vcuts_bottom_c1 = []
+  782:     for l in lines:
+  783:         # Camera 1
+  784:         hcut1 = np.argmax(np.gradient(cam1[l, :]))
+  785:         hcut2 = np.argmin(np.gradient(cam1[l, :]))
+  786:         vcut1 = np.argmax(np.gradient(cam1[:, l]))
+  787:         vcut2 = np.argmin(np.gradient(cam1[:, l]))
+  788:         hcuts_right_c1.append(hcut1)
+  789:         hcuts_left_c1.append(hcut2)                                    
+  790:         vcuts_top_c1.append(vcut1)
+  791:         vcuts_bottom_c1.append(vcut2)
+  792: 
+  793:         if plot_flag:
+  794:             axs[0].plot([l, l], [0, size], color = &#x27;crimson&#x27; , lw = 1)
+  795:             axs[0].plot([0, size], [l, l], color = &#x27;crimson&#x27; , lw = 1)
+  796:             axs[0].scatter(l, vcut1, marker = &#x27;x&#x27;, c = &#x27;dodgerblue&#x27;)
+  797:             axs[0].scatter(l, vcut2, marker = &#x27;x&#x27;, c = &#x27;darkorange&#x27;)
+  798:             axs[0].scatter(hcut1, l, marker = &#x27;x&#x27;, c = &#x27;dodgerblue&#x27;)
+  799:             axs[0].scatter(hcut2, l, marker = &#x27;x&#x27;, c = &#x27;darkorange&#x27;)
+  800: 
+  801:     # Selecting the innermost points (in case border is tilted)
+  802: 
+  803:     vcut_right_c1 = np.min(hcuts_left_c1) - margin 
+  804:     vcut_left_c1 = np.max(hcuts_right_c1) + margin
+  805:     hcut_top_c1 = np.min(vcuts_bottom_c1) - margin
+  806:     hcut_bottom_c1 = np.max(vcuts_top_c1) + margin
+  807: 
+  808:     cam1_fieldstop = np.array([[hcut_bottom_c1, hcut_top_c1], [vcut_left_c1, vcut_right_c1]])
+  809: 
+  810:     if plot_flag:
+  811:         axs[0].plot([vcut_right_c1, vcut_right_c1], [0, size], c = &#x27;deeppink&#x27;)
+  812:         axs[0].plot([vcut_left_c1, vcut_left_c1], [0, size], c = &#x27;deeppink&#x27;)
+  813:         axs[0].plot([0, size], [hcut_top_c1, hcut_top_c1], c = &#x27;deeppink&#x27;)
+  814:         axs[0].plot([0, size], [hcut_bottom_c1, hcut_bottom_c1], c = &#x27;deeppink&#x27;)
+  815:         axs[1].imshow(cam1[hcut_bottom_c1:hcut_top_c1, vcut_left_c1:vcut_right_c1], origin = &#x27;lower&#x27;, cmap = &#x27;gray&#x27;)
+  816:         axs[0].set_xlim(0, size)
+  817:         axs[0].set_ylim(0, size)
+  818:         axs[0].set_ylabel(&quot;Cam 1&quot;)
+  819:         plt.tight_layout()
+  820:         plt.show()
+  821: 
+  822:     print(f&quot;Field stop computation finished in {round(time.time() - tic, 3)}s.&quot;)
+  823: 
+  824:     return cam1_fieldstop
+  825:   
+  826: def shift_subp(im: np.ndarray, shift=None, wrap=True, fill=0):
+  827:     &#x27;&#x27;&#x27;define shift operator (subpixel)
+  828:         Input is y and x shifts (defined negative towards (0,0)
+  829:         new center = center + (x,y)
+  830:         Note that image is defined as [sy,sx] so shifts = [sy (rows),sx (columns)]
+  831:     &#x27;&#x27;&#x27;
+  832:     import math
+  833:     nr, nc = im.shape
+  834:     Nr = ifftshift(np.arange(-np.fix(nr / 2), np.ceil(nr / 2)))
+  835:     Nc = ifftshift(np.arange(-np.fix(nc / 2), np.ceil(nc / 2)))
+  836:     Nc, Nr = np.meshgrid(Nc, Nr)
+  837:     G = fft2(im)
+  838:     Gshift = G * np.exp(1j * 2 * np.pi * (-shift[0] * Nr / nr - shift[1] * Nc / nc))
+  839:     im_shift = np.real(ifft2(Gshift))
+  840: 
+  841:     if wrap is False:
+  842:         dy, dx = shift
+  843:         if dx &gt; 0:
+  844:             im_shift[:, 0:math.ceil(dx)] = fill
+  845:         elif dx &lt; 0:
+  846:             im_shift[:, math.floor(dx):] = fill
+  847:         if dy &gt; 0:
+  848:             im_shift[0:math.ceil(dy), :] = fill
+  849:         elif dy &lt; 0:
+  850:             im_shift[math.floor(dy):, :] = fill
+  851: 
+  852:     return im_shift
+  853: 
+  854: def align_obsmode(data, acc = 0.01, verbose = False, filter = filter, 
+  855:                   onelambda = False, returnshifts = True,roi = [0,-1,0,-1], quadrants = 0,
+  856:                   align_sequence = 0, debug = False, align_modulations = True):
+  857:     &quot;&quot;&quot;
+  858:     Function to filter, rotate camera 2 and align an obs mode. 
+  859: 
+  860:     Inputs:
+  861:         - data (np.array) : Array contaning the obs mode. (Ncams x Nlambda x Nmods x Nx x Ny)
+  862:         - acc (float,default : 0.01) : Accuracy for the alignemnt routine.
+  863:         - theta (float, default : 0.0655): Angle of rotation
+  864:         - verbose (Boolean, ddefault : False) : Print info on terminal.
+  865:         - filterflag (Boolean, default : True) : Set to False to skip Fourier filtration 
+  866:         - onelambda (Boolean, default : False): Set to true if only one lambda is used (array of shape Ncam x Nmod x Nx x Ny) 
+  867:         - zkes (np.array, default : np.zeros(21)): Zernike&#x27;s array to use for the filtration. 
+  868:     Outputs:
+  869:         - Filtered, Rotated  and aligned (np.array) : Same array as data filtrated and with cam2 rotated  
+  870:         - shifts (list) : shifts performed to each camera, modulation and wavelength
+  871: 
+  872:     Notas: Sobre la opción modo = 1. Solo activa si se activa. Jaja
+  873: 
+  874:     Procesamiento para alineación en TuMag con dos cámaras y modulaciones ortogonales.
+  875:     =================================================================================
+  876: 
+  877:     Esta opción implementa el pipeline de alineación suponiendo (en primer orden)
+  878:     que las dos cámaras de TuMag registran *el mismo jitter temporal*. Sin embargo,
+  879:     las cámaras miden modulaciones *ortogonales*, de modo que las imágenes moduladas
+  880:     de una cámara y de la otra no son directamente comparables entre sí. Tampoco lo
+  881:     son dentro de una misma cámara, ya que cada imagen corresponde a una modulación
+  882:     distinta.
+  883: 
+  884:     Descripción del problema
+  885:     ------------------------
+  886:     Cada cámara registra cuatro estados de modulación distintos:
+  887: 
+  888:         I_j^(cam1) = I + M^(1)_{1j} Q + M^(1)_{2j} U + M^(1)_{3j} V
+  889:         I_j^(cam2) = I + M^(2)_{1j} Q + M^(2)_{2j} U + M^(2)_{3j} V
+  890: 
+  891:     donde cada conjunto M^(1) y M^(2) corresponde a modulaciones ortogonales, y
+  892:     el índice j identifica el estado de modulación.
+  893: 
+  894:     Aunque ambas cámaras sufren exactamente el mismo jitter temporal, sus imágenes
+  895:     no pueden alinearse estado a estado, ya que cada una es una combinación lineal
+  896:     distinta de los parámetros de Stokes.
+  897: 
+  898:     Objetivo
+  899:     --------
+  900:     Obtener los parámetros de Stokes (I, Q, U, V) correctamente alineados entre
+  901:     cámaras, eliminando los efectos del jitter y garantizando coherencia geométrica
+  902:     tanto a nivel de las modulaciones como en los Stokes finales demodulados.
+  903: 
+  904:     Método
+  905:     ------
+  906:     El procedimiento (idealizado) implementado es el siguiente:
+  907: 
+  908:     1. **Demodulación independiente por cámara.**
+  909:     Se calculan (I, Q, U, V) de cada cámara por separado sin intentar alinear
+  910:     aún las modulaciones crudas.
+  911: 
+  912:     2. **Alineación utilizando únicamente Stokes I.**
+  913:     Puesto que Stokes I debe ser idéntico en ambas cámaras salvo el desplazamiento
+  914:     relativo entre ellas, se calcula la transformación geométrica (desplazamientos)
+  915:     que satisface:
+  916:         I_cam1 → I_cam2
+  917:         I_cam2 → I_cam1
+  918:     Para evitar sesgos, se promedian ambas transformaciones, obteniendo una
+  919:     transformación común, apropiada para aplicarse a las modulaciones crudas.
+  920: 
+  921:     3. **Aplicación de la transformación obtenida a las modulaciones crudas.**
+  922:     La transformación geométrica derivada de Stokes I se aplica ahora a las
+  923:     imágenes moduladas originales, antes de la demodulación final. Es suficiente
+  924:     aplicarla a una sola cámara; por comodidad se aplica a la cámara 2.
+  925: 
+  926:     4. **Alineación fina de las modulaciones.**
+  927:     Debido a que cada estado de modulación es una combinación lineal distinta de
+  928:     (I, Q, U, V), para poder alinear los estados correctamente se generan
+  929:     combinaciones que atenúan Q, U y V, obteniendo pseudo‑intensidades comparables
+  930:     entre pseudo‑modulaciones. Estas señales permiten determinar con mayor
+  931:     precisión el jitter relativo entre modulaciones, bajo la suposición inicial
+  932:     de que dicho jitter es idéntico en ambas cámaras.
+  933: 
+  934:     5. **Corrección final de modulaciones.**
+  935:     Una vez obtenidos los desplazamientos entre modulaciones, se corrigen todos
+  936:     los estados en ambas cámaras utilizando el mismo jitter. Es necesario tener
+  937:     en cuenta la orientación relativa de las cámaras para aplicar correctamente
+  938:     estas correcciones.
+  939: 
+  940:     Consideraciones adicionales
+  941:     ---------------------------
+  942:     - En principio, la alineación debería ser casi constante con la longitud de
+  943:     onda, pero efectos ópticos (rotaciones, distorsiones, filtros, etc.)
+  944:     introducen pequeñas variaciones con longitud de, por lo que no se fija una
+  945:     transformación global entre cámaras. Se evalúa por cada landa.
+  946: 
+  947:     &quot;&quot;&quot;
+  948: 
+  949:     def _generar_cuadrantes_nx_n(H, W, n):
+  950:         &quot;&quot;&quot;
+  951:         Divide una imagen en una cuadrícula n×n de cuadrados del mismo tamaño.
+  952: 
+  953:         Parámetros:
+  954:             H, W : int
+  955:                 Alto (H) y ancho (W) de la imagen.
+  956:             n : int
+  957:                 Número de cuadrados por eje (n=2 -&gt; 2x2, n=3 -&gt; 3x3, etc.)
+  958: 
+  959:         Retorna:
+  960:             Lista de tuplas (y1, y2, x1, x2) que representan las coordenadas
+  961:             de cada cuadrado en formato (fila_superior, fila_inferior, col_izquierda, col_derecha).
+  962:         &quot;&quot;&quot;
+  963:         # tamaño ideal de cada cuadrado
+  964:         base_h = H / n
+  965:         base_w = W / n
+  966: 
+  967:         rois = []
+  968:         for i in range(n):
+  969:             for j in range(n):
+  970:                 y1 = int(round(i * base_h))
+  971:                 y2 = int(round((i + 1) * base_h))
+  972:                 x1 = int(round(j * base_w))
+  973:                 x2 = int(round((j + 1) * base_w))
+  974:                 rois.append((y1, y2, x1, x2))
+  975: 
+  976:         return rois
+  977: 
+  978:     tic = time.time() # Get the time to measure execution time.
+  979: 
+  980:     if onelambda:
+<span style="background:#ffcccc">  981:         data = data[:, np.newaxis] # To allow for only one lamdba.</span>
+<span style="color:orange; font-weight:bold">    → &#x27;data&#x27; es VISTA (slicing/indexación)</span>
+  982: 
+  983:     shape = np.shape(data)
+<span style="background:#ffcccc">  984:     nlambda = shape[1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;nlambda&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc">  985:     nmods = shape[2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;nmods&#x27; es VISTA (slicing/indexación)</span>
+  986: 
+  987:     aligned =  np.copy(data)
+  988: 
+  989:     if quadrants != 0:
+  990:         shifts = np.zeros((nlambda, abs(quadrants*quadrants), 2, 2, nmods), dtype=float)
+  991:         # ojo, el ROI tiene que coincidir con la imagen así que lo fuerzo
+  992:         roi[0] = 0
+  993:         roi[1] = data.shape[-2]
+  994:         roi[2] = 0
+  995:         roi[3] = data.shape[-1]
+  996: 
+  997:         if quadrants &gt; 0:
+  998:             H, W = data.shape[-1], data.shape[-1]   # dimensiones de la imagen
+  999:             quadrants_roi = _generar_cuadrantes_nx_n(H, W, quadrants)
+ 1000:             # for idx, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+ 1001:             #     print(f&quot;ROI {idx}: y={y1}:{y2}, x={x1}:{x2}&quot;)
+ 1002:     else:
+ 1003:         shifts = np.zeros((nlambda, 2, 2, nmods))
+ 1004: 
+ 1005:     if verbose:
+ 1006:         plt.imshow(data[0,0,0,roi[0]:roi[1],roi[2]:roi[3]])
+ 1007:         plt.show()
+ 1008:     err = []
+ 1009: 
+ 1010:     logging.info(f&quot;quadrants 0: {quadrants}&quot;)
+ 1011:     for lambd in range(nlambda):
+ 1012:         logging.info(f&quot;Aligning wavelength: {lambd + 1}/{nlambda}&quot;)
+ 1013: 
+ 1014:         if quadrants == 0:
+ 1015:             if align_sequence == 0:
+ 1016:                 logging.info(f&quot;Shifts for cam 1 - modulation alignment&quot;)
+ 1017: 
+ 1018:                 _, srow, scol, error = realign_subpixel(data[0, lambd,:,roi[0]:roi[1],roi[2]:roi[3]], verbose = verbose, accu = acc, return_shift=True)
+ 1019:                 err.append(error)
+ 1020: 
+ 1021:                 shifts[lambd, 0, 0] = srow
+ 1022:                 shifts[lambd, 0, 1] = scol
+ 1023: 
+ 1024:                 for nm in range(nmods-1):
+ 1025:                     aligned[0, lambd,nm + 1] = shift_subp(data[0, lambd,nm+1], shift=[srow[nm + 1], scol[nm + 1]], wrap=True, fill=0)
+ 1026: 
+ 1027:                 logging.info(&quot;Shifts of camera 2 alignment&quot;)
+ 1028:                 for mod in range(nmods):
+ 1029: 
+ 1030:                     _, srow, scol,error = realign_subpixel(np.array([aligned[0,lambd,mod,roi[0]:roi[1],roi[2]:roi[3]], data[1, lambd, mod,roi[0]:roi[1],roi[2]:roi[3]]]), verbose = verbose, accu = acc, return_shift=True)
+ 1031:                     err.append(error)
+ 1032: 
+ 1033:                     shifts[lambd, 1, 0, mod] = srow[1]
+ 1034:                     shifts[lambd, 1, 1, mod] = scol[1]
+ 1035: 
+ 1036:                     aligned[1, lambd,mod] = shift_subp(data[1, lambd,mod], shift=[srow[1], scol[1]], wrap=True, fill=0)
+ 1037: 
+ 1038:             elif align_sequence == 1:
+ 1039: 
+ 1040:                 # =============================
+ 1041:                 # (1) DEMODULACIÓN DE LAS CAMARAS
+ 1042:                 # =============================
+<span style="background:#ffcccc"> 1043:                 _, demod = demodulate(data[:, lambd], </span>
+<span style="color:orange; font-weight:bold">    → Vista/alias &#x27;data&#x27; pasada a función MODIFICADORA &#x27;demodulate&#x27;</span>
+ 1044:                                     filt=filter, 
+ 1045:                                     # dmod_matrices=&#x27;demod_matrices_david&#x27;,
+ 1046:                                     onelambda=True, 
+ 1047:                                     BothCams=True)
+ 1048: 
+ 1049:                 # demod tiene shape (2, 4, x, y)
+<span style="background:#ffcccc"> 1050:                 I_cam1 = demod[0, 0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;I_cam1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1051:                 I_cam2 = demod[1, 0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;I_cam2&#x27; es VISTA (slicing/indexación)</span>
+ 1052: 
+<span style="background:#ffcccc"> 1053:                 scale, gamma = balance(I_cam1, I_cam2, roi=roi)</span>
+<span style="color:orange; font-weight:bold">    → Vista/alias &#x27;I_cam1&#x27; pasada a función MODIFICADORA &#x27;balance&#x27;</span>
+<span style="color:orange; font-weight:bold">    → Vista/alias &#x27;I_cam2&#x27; pasada a función MODIFICADORA &#x27;balance&#x27;</span>
+ 1054:                 I_cam2 = I_cam2 * scale
+ 1055:                 logging.info(f&quot;Balance (2D): scale={scale:.6f}, gamma={gamma:.6f}&quot;)
+ 1056: 
+ 1057:                 # def __bin_2x2(image):
+ 1058:                 #     h, w = image.shape
+ 1059:                 #     # Si el tamaño es impar, recortamos 1 píxel
+ 1060:                 #     h2, w2 = h - h % 2, w - w % 2
+ 1061:                 #     image_cropped = image[:h2, :w2]
+ 1062:                 #     # Binning 2x2
+ 1063:                 #     binned = image_cropped.reshape(h2//2, 2, w2//2, 2).mean(axis=(1,3))
+ 1064:                 #     # Volvemos a expandir para conservar la dimensión original
+ 1065:                 #     binned_full = np.kron(binned, np.ones((2,2)))
+ 1066:                 #     # Si se recortó, rellenamos el final con los valores del borde
+ 1067:                 #     if h % 2 != 0:
+ 1068:                 #         binned_full = np.vstack([binned_full, binned_full[-1:, :]])
+ 1069:                 #     if w % 2 != 0:
+ 1070:                 #         binned_full = np.hstack([binned_full, binned_full[:, -1:]])
+ 1071:                 #     return binned_full
+ 1072: 
+ 1073:                 # I_cam1 = __bin_2x2(I_cam1)
+ 1074:                 # I_cam2 = __bin_2x2(I_cam2)
+ 1075:                 # =============================
+ 1076:                 # (2) ALINEAR CAM1 &lt;--&gt; CAM2 CON STOKES I
+ 1077:                 # =============================
+ 1078:                 logging.info(&quot;Global alignment between cameras using Stokes I&quot;)
+ 1079:                 a,b = np.gradient(I_cam1)
+ 1080:                 I_cam1 = a+b
+ 1081:                 a,b = np.gradient(I_cam2)
+ 1082:                 I_cam2 = a+b
+ 1083: 
+ 1084:                 # TODO, Falta hacerlo al revés y promediar
+ 1085:                 _, srow_cam, scol_cam, err_I = realign_subpixel(
+ 1086:                     np.array([I_cam1[roi[0]:roi[1], roi[2]:roi[3]],
+ 1087:                             I_cam2[roi[0]:roi[1], roi[2]:roi[3]]]),
+ 1088:                     verbose=verbose, accu=acc, return_shift=True
+ 1089:                 )
+ 1090:                 # Print numeric shifts
+ 1091:                 logging.info(f&quot;Global camera shift → row={srow_cam[1]:.3f}, col={scol_cam[1]:.3f}&quot;)
+ 1092: 
+ 1093:                 err.append(err_I)
+ 1094:                 # srow_cam[1] = -0.6
+ 1095:                 # scol_cam[1] = 1.5
+ 1096:                 # Guardamos shifts globales
+ 1097:                 shifts[lambd, 1, 0, :] = srow_cam[1]   # cam2 shift
+ 1098:                 shifts[lambd, 1, 1, :] = scol_cam[1]
+ 1099: 
+ 1100:                 # Aplicar shift global SOLO a cam2 
+ 1101:                 for j in range(nmods):
+ 1102:                     aligned[1, lambd, j] = shift_subp(
+ 1103:                         data[1, lambd, j],
+ 1104:                         shift=[srow_cam[1], scol_cam[1]],
+ 1105:                         wrap=True, fill=0
+ 1106:                     )
+ 1107:                 # Cam1 no se toca (referencia)
+ 1108:                 aligned[0, lambd] = data[0, lambd]
+ 1109: 
+ 1110:                 if debug[&#x27;activate&#x27;]:
+ 1111: 
+ 1112:                     I_cam2_before = I_cam2.copy()
+ 1113: 
+ 1114:                     I_cam2 = shift_subp(
+ 1115:                         I_cam2,
+ 1116:                         shift=[srow_cam[1], scol_cam[1]],
+ 1117:                         wrap=True,
+ 1118:                         fill=0
+ 1119:                     )
+ 1120: 
+ 1121:                     # Visualización
+ 1122:                     plot_two_intensity_alignment_with_diff(
+ 1123:                         I_cam1=I_cam1,
+ 1124:                         I_cam2_before=I_cam2_before,
+ 1125:                         I_cam2_after=I_cam2,
+ 1126:                         srow=srow_cam[1],
+ 1127:                         scol=scol_cam[1],
+ 1128:                         zoom_center=debug[&#x27;zoom_center&#x27;],  # p.ej. (400, 400)
+ 1129:                         zoom_size=debug[&#x27;zoom_size&#x27;],      # p.ej. 100
+ 1130:                         title_prefix=f&quot;λ={lambd} Camera alignment before vs after&quot;
+ 1131:                     )
+ 1132: 
+ 1133:                     # ---------- DEBUG VISUALIZATION ----------
+ 1134:                     # Show before/after alignment for this λ
+ 1135: 
+<span style="background:#ffcccc"> 1136:                     imgs_before_cam1 = data[0, lambd]           # (4,x,y)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_before_cam1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1137:                     imgs_before_cam2 = data[1, lambd]           # (4,x,y)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_before_cam2&#x27; es VISTA (slicing/indexación)</span>
+ 1138: 
+<span style="background:#ffcccc"> 1139:                     imgs_after_cam1 = aligned[0, lambd]         # cam1 reference</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_after_cam1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1140:                     imgs_after_cam2 = aligned[1, lambd]         # cam2 shifted</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_after_cam2&#x27; es VISTA (slicing/indexación)</span>
+ 1141: 
+ 1142: 
+ 1143:                     # Display comparison
+ 1144:                     plot_alignment_comparison_with_diff(
+ 1145:                         imgs_before_cam1, imgs_before_cam2,
+ 1146:                         imgs_after_cam1, imgs_after_cam2,
+ 1147:                         srow=srow_cam[1],
+ 1148:                         scol=scol_cam[1],
+ 1149:                         zoom_center=debug[&#x27;zoom_center&#x27;],
+ 1150:                         zoom_size=debug[&#x27;zoom_size&#x27;],
+ 1151:                         title_prefix=f&quot;λ={lambd} Camera alignment (M1_cam1 M1_cam2)&quot;
+ 1152:                     )
+ 1153: 
+ 1154:                             # # Calculate power spectrum with apodization and the inverse Fourier transform
+ 1155:                     f_fft, power_spectrum = calculate_power_spectrum_with_apodization(imgs_after_cam1[0] - imgs_after_cam2[0], window_type=&#x27;hanning&#x27;)
+ 1156: 
+ 1157:                     # go back
+ 1158:                     inverse_image = calculate_inverse_fourier_transform(f_fft)
+ 1159: 
+ 1160:                     # Plot the results principales
+ 1161:                     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+ 1162:                     axs[0].imshow(imgs_after_cam1[0] - imgs_after_cam2[0], cmap=&#x27;gray&#x27;)
+ 1163:                     axs[0].set_title(&#x27;Original Image&#x27;)
+ 1164:                     axs[1].imshow(np.log10(power_spectrum[800-40:800+40,800-40:800+40]), cmap=&#x27;gray&#x27;)
+ 1165:                     axs[1].set_title(&#x27;Power Spectrum&#x27;)
+ 1166:                     axs[2].imshow(inverse_image.real, cmap=&#x27;gray&#x27;)
+ 1167:                     axs[2].set_title(&#x27;Inverse Fourier Transform&#x27;)
+ 1168:                     plt.show()
+ 1169: 
+ 1170:                 # -------------------------------------------
+ 1171: 
+ 1172:                 if align_modulations:
+ 1173:                     # =============================
+ 1174:                     # (3) PSEUDO-IMÁGENES POR MODULACIÓN j
+ 1175:                     # =============================
+<span style="background:#ffcccc"> 1176:                     imgs_cam1 = aligned[0, lambd]    # (4,x,y)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_cam1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1177:                     imgs_cam2 = aligned[1, lambd]    # (4,x,y)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_cam2&#x27; es VISTA (slicing/indexación)</span>
+ 1178: 
+<span style="background:#ffcccc"> 1179:                     M1 = mod_matrices[filter][0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;M1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1180:                     M2 = mod_matrices[filter][1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;M2&#x27; es VISTA (slicing/indexación)</span>
+ 1181: 
+ 1182: 
+ 1183:                     roi_norm = (roi[0], roi[1], roi[2], roi[3])
+ 1184: 
+ 1185:                     pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
+ 1186:                         imgs_cam1, imgs_cam2, M1, M2, roi=roi_norm
+ 1187:                     )
+ 1188:                     # pseudo_imgs = (imgs_cam1 + imgs_cam2)/2.
+ 1189: 
+ 1190:                     for j in range(4):
+ 1191:                         print(f&quot;[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, &quot;
+ 1192:                             f&quot;gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}&quot;)
+ 1193: 
+ 1194:                     # =============================
+ 1195:                     # (4) ALINEACIÓN ENTRE MODULACIONES
+ 1196:                     # =============================
+ 1197:                     logging.info(&quot;Aligning modulations using pseudo-images...&quot;)
+ 1198: 
+ 1199:                     _, srow_mod, scol_mod, err_mod = realign_subpixel(
+ 1200:                         pseudo_imgs[:, roi[0]:roi[1], roi[2]:roi[3]],
+ 1201:                         verbose=verbose, accu=acc, return_shift=True
+ 1202:                     )
+ 1203:                     err.append(err_mod)
+ 1204: 
+ 1205:                     shifts[lambd, 0, 0] = srow_mod
+ 1206:                     shifts[lambd, 0, 1] = scol_mod
+ 1207: 
+ 1208:                     for j in range(4):
+ 1209:                         print(f&quot;Camera shift mod {j} → row={shifts[lambd, 0, 0][j]:.3f}, col={shifts[lambd, 0, 1][j]:.3f}&quot;)
+ 1210: 
+ 1211:                     # if debug[&#x27;activate&#x27;]:
+ 1212:                     #     # ===== DEBUG: Visualización del alineamiento de pseudo‑imágenes =====
+ 1213: 
+ 1214:                     #     pseudo_before = pseudo_imgs.copy()
+ 1215: 
+ 1216:                     #     # Construir pseudo_after aplicando el jitter
+ 1217:                     #     pseudo_after = np.zeros_like(pseudo_imgs)
+ 1218:                     #     for j in range(nmods):
+ 1219:                     #         pseudo_after[j] = shift_subp(
+ 1220:                     #             pseudo_imgs[j],
+ 1221:                     #             shift=[srow_mod[j], scol_mod[j]],
+ 1222:                     #             wrap=True,
+ 1223:                     #             fill=0
+ 1224:                     #         )
+ 1225: 
+ 1226:                     #     plot_pseudo_mod_alignment(
+ 1227:                     #         pseudo_before,
+ 1228:                     #         pseudo_after,
+ 1229:                     #         srow_mod, scol_mod,
+ 1230:                     #         zoom_center=debug[&#x27;zoom_center&#x27;],
+ 1231:                     #         zoom_size=debug[&#x27;zoom_size&#x27;],
+ 1232:                     #         title_prefix=f&quot;λ={lambd} – pseudo‑modulation alignment&quot;
+ 1233:                     #     )
+ 1234: 
+ 1235: 
+ 1236:                     # =============================
+ 1237:                     # (5) APLICAR ESTE JITTER A AMBAS CAMARAS
+ 1238:                     # =============================
+ 1239:                     for cam in range(2):
+ 1240:                         for j in range(nmods):
+ 1241:                             aligned[cam, lambd, j] = shift_subp(
+ 1242:                                 aligned[cam, lambd, j],
+ 1243:                                 shift=[srow_mod[j], scol_mod[j]],
+ 1244:                                 wrap=True,
+ 1245:                                 fill=0
+ 1246:                             )
+ 1247:                     
+ 1248:                     logging.info(&quot;Final modulation alignment applied.&quot;)
+ 1249:                     # data = np.copy(aligned)
+ 1250:             else:
+ 1251:                 exit
+ 1252:             
+ 1253:             # --- Guardar FITS con I_cam1 - I_cam2 para la última longitud de onda ---
+ 1254:             # try:
+ 1255:             #     from astropy.io import fits
+ 1256:             #     if lambd == 0:
+ 1257:             #     # if lambd == nlambda-1:
+ 1258:             #     # demodular las cámaras ya alineadas en la última lambda
+ 1259:             #         _, dem_aligned = demodulate(aligned[:, lambd], filt=filter, onelambda=True, BothCams=True)
+ 1260:             #         I_cam1 = dem_aligned[0, 0].astype(np.float32)
+ 1261:             #         I_cam2 = dem_aligned[1, 0].astype(np.float32)
+ 1262:             #         diff = I_cam1 - I_cam2
+ 1263: 
+ 1264:             #         hdu = fits.PrimaryHDU(diff)
+ 1265:             #         hdu.header[&#x27;COMMENT&#x27;] = &#x27;I_cam1 - I_cam2 at last wavelength&#x27;
+ 1266:             #         out_name = &quot;cam1_minus_cam2_firstlam.fits&quot;
+ 1267:             #         hdu.writeto(out_name, overwrite=True)
+ 1268:             #         logging.info(f&quot;Wrote difference FITS: {out_name}&quot;)
+ 1269:             # except Exception as exc:
+ 1270:             #     logging.warning(f&quot;Could not write FITS (cam1-cam2): {exc}&quot;)
+ 1271: 
+ 1272: 
+ 1273:         elif quadrants &gt; 0:
+ 1274:             logging.info(f&quot;quadrants: {quadrants}&quot;)
+ 1275: 
+ 1276:             if align_sequence == 1:
+ 1277:                 # =============================
+ 1278:                 # (1) DEMODULACIÓN DE LAS CAMARAS (sin BothCams)
+ 1279:                 # =============================
+<span style="background:#ffcccc"> 1280:                 _, demod = demodulate(</span>
+<span style="color:orange; font-weight:bold">    → Vista/alias &#x27;data&#x27; pasada a función MODIFICADORA &#x27;demodulate&#x27;</span>
+ 1281:                     data[:, lambd],
+ 1282:                     filt=filter,
+ 1283:                     # dmod_matrices=&#x27;demod_matrices_david&#x27;,
+ 1284:                     onelambda=True,
+ 1285:                     BothCams=True
+ 1286:                 )
+ 1287:                 # demod: (2, 4, x, y)
+ 1288:                 I_cam1 = demod[0, 0].astype(float)  # I de cam1
+ 1289:                 I_cam2 = demod[1, 0].astype(float)  # I de cam2
+ 1290: 
+ 1291:                 # =============================
+ 1292:                 # (1b) BALANCE (2D) SOLO EN ESTA λ (opcional pero recomendado)
+ 1293:                 # =============================
+<span style="background:#ffcccc"> 1294:                 scale, gamma = balance(I_cam1, I_cam2, roi=roi)</span>
+<span style="color:orange; font-weight:bold">    → Vista/alias &#x27;I_cam1&#x27; pasada a función MODIFICADORA &#x27;balance&#x27;</span>
+<span style="color:orange; font-weight:bold">    → Vista/alias &#x27;I_cam2&#x27; pasada a función MODIFICADORA &#x27;balance&#x27;</span>
+ 1295:                 I_cam2_bal = I_cam2 * scale
+ 1296:                 print(f&quot;[λ={lambd}] Balance (2D): scale={scale:.6f}, gamma={gamma:.6f}&quot;)
+ 1297: 
+ 1298:                 # =============================
+ 1299:                 # (2) ALINEAR CAM1 &lt;--&gt; CAM2 CON STOKES I (POR CUADRANTE)
+ 1300:                 # =============================
+ 1301:                 logging.info(&quot;Camera alignment (per quadrant) using Stokes I&quot;)
+ 1302: 
+ 1303:                 # Empezamos con &#x27;aligned&#x27; como copia de los datos modulados crudos
+ 1304:                 aligned[0, lambd] = data[0, lambd]  # cam1 como referencia
+ 1305:                 aligned[1, lambd] = data[1, lambd]  # luego sustituiremos cuadrantes de cam2
+ 1306: 
+ 1307:                 for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+ 1308: 
+<span style="background:#ffcccc"> 1309:                     patch1 = I_cam1[y1:y2, x1:x2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1310:                     patch2 = I_cam2_bal[y1:y2, x1:x2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch2&#x27; es VISTA (slicing/indexación)</span>
+ 1311: 
+ 1312:                     # Shift cam2 -&gt; cam1 en ESTE cuadrante
+ 1313:                     _, srow_cam_q, scol_cam_q, _ = realign_subpixel(
+ 1314:                         np.array([patch1, patch2]),
+ 1315:                         verbose=verbose, accu=acc, return_shift=True
+ 1316:                     )
+ 1317:                     dy_cam = float(srow_cam_q[1])
+ 1318:                     dx_cam = float(scol_cam_q[1])
+ 1319: 
+ 1320:                     # Guardar shifts por cuadrante para &quot;cámara 2&quot;
+ 1321:                     # Estructura: shifts[lambda, q, cam, axis, mod]
+ 1322:                     # Para cámara 2 (cam=1), rellenamos el mismo shift para los 4 mods
+ 1323:                     shifts[lambd, q, 1, 0, :] = dy_cam
+ 1324:                     shifts[lambd, q, 1, 1, :] = dx_cam
+ 1325: 
+ 1326:                     print(f&quot;  Q{q}: cam2 shift (dy,dx)=({dy_cam:.3f}, {dx_cam:.3f})&quot;)
+ 1327: 
+ 1328:                 # shifts por cuadrante para CAM2 (cam2 -&gt; cam1) — vector de Q elementos
+ 1329:                 shifts_cam_q = [(float(shifts[lambd, q, 1, 0, 0]), float(shifts[lambd, q, 1, 1, 0]))
+ 1330:                                 for q in range(len(quadrants_roi))]
+ 1331: 
+ 1332:                 # Aplicar el shift de cámara 2 SOLO en este cuadrante a los 4 estados modulados
+ 1333:                 for j in range(nmods):
+ 1334:                     # aligned[1, lambd, j] = _apply_patch_shift(
+ 1335:                     #     aligned[1, lambd, j], y1, y2, x1, x2, dy_cam, dx_cam,
+ 1336:                     #     wrap=True, fill=0
+ 1337:                     # )
+ 1338:                     # TODO: SIGUE HABIENDO UN PROBLEMA AL UNIR LAS IMAGENES
+ 1339:                     aligned[1, lambd, j] = apply_quadrant_shifts_with_feather(
+ 1340:                         aligned[1, lambd, j],
+ 1341:                         quadrants_roi=quadrants_roi,
+ 1342:                         shifts_q=shifts_cam_q,    # mismos shifts de cámara para todos los mods
+ 1343:                         margin=10,
+ 1344:                         shift_func=shift_subp,
+ 1345:                         wrap=False, fill=0
+ 1346:                     )
+ 1347:                 
+ 1348:                 # =============================
+ 1349:                 # (2c) DEBUG: DEMODULADAS (I) POR CUADRANTE (OPCIONAL)
+ 1350:                 # =============================
+ 1351:                 if debug[&#x27;activate&#x27;]:
+ 1352: 
+ 1353:                     H, W = shape[-1], shape[-2]  # pon aquí tus valores
+ 1354:                     dy_cam2, dx_cam2 = build_displacement_maps_simple(H, W, quadrants_roi, shifts_cam_q)
+ 1355:                     plot_maps(dy_cam2, dx_cam2, title=&quot;CAM2&quot;)
+ 1356: 
+ 1357:                     # Usaremos la imagen balanceada como &quot;before&quot; y aplicaremos los shifts por cuadrante sobre ella.
+ 1358:                     I_cam2_before = I_cam2_bal.copy()
+ 1359: 
+ 1360:                     # Shifts por cuadrante para CAM2 (cam2 -&gt; cam1)
+ 1361:                     # Nota: hemos guardado (para cam=1) el mismo shift de cámara en los 4 mods; cogemos el de mod 0.
+ 1362:                     shifts_cam_q = []
+ 1363:                     for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+ 1364:                         dy = float(shifts[lambd, q, 1, 0, 0])  # row shift, cam2, mod 0
+ 1365:                         dx = float(shifts[lambd, q, 1, 1, 0])  # col shift, cam2, mod 0
+ 1366:                         shifts_cam_q.append((dy, dx))
+ 1367:                         if verbose:
+ 1368:                             print(f&quot;  [DEBUG] λ={lambd} Q{q}: cam2 shift (dy,dx)=({dy:+.3f}, {dx:+.3f})&quot;)
+ 1369: 
+ 1370:                     # Aplicar shifts por cuadrante con apodización y mezcla suave
+ 1371:                     I_cam2_after = apply_quadrant_shifts_with_feather(
+ 1372:                         img2d=I_cam2_before,
+ 1373:                         quadrants_roi=quadrants_roi,
+ 1374:                         shifts_q=shifts_cam_q,
+ 1375:                         margin=10,
+ 1376:                         shift_func=shift_subp,
+ 1377:                         wrap=True,   # importante para no sangrar contenido de otros cuadrantes
+ 1378:                         fill=0
+ 1379:                     )
+ 1380: 
+ 1381:                     # Visualización comparativa (antes vs después) frente a I_cam1
+ 1382:                     # Aquí no mostramos un único (srow, scol) porque trabajamos por cuadrante
+ 1383:                     plot_two_intensity_alignment_with_diff(
+ 1384:                         I_cam1=I_cam1,
+ 1385:                         I_cam2_before=I_cam2_before,
+ 1386:                         I_cam2_after=I_cam2_after,
+ 1387:                         srow=0.0, scol=0.0,  # per-quadrant → no aplica un único valor
+ 1388:                         zoom_center=debug.get(&#x27;zoom_center&#x27;, (400, 400)),
+ 1389:                         zoom_size=debug.get(&#x27;zoom_size&#x27;, 100),
+ 1390:                         title_prefix=f&quot;λ={lambd} Camera alignment (per quadrant, feather={10}px)&quot;
+ 1391:                     )
+ 1392: 
+ 1393:                 # =============================
+ 1394:                 # (3) PSEUDO-IMÁGENES POR MODULACIÓN j (con cámaras ya patch‑alineadas)
+ 1395:                 # =============================
+<span style="background:#ffcccc"> 1396:                 imgs_cam1 = aligned[0, lambd]    # (4,x,y)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_cam1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1397:                 imgs_cam2 = aligned[1, lambd]    # (4,x,y)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;imgs_cam2&#x27; es VISTA (slicing/indexación)</span>
+ 1398: 
+<span style="background:#ffcccc"> 1399:                 M1 = mod_matrices[filter][0]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;M1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1400:                 M2 = mod_matrices[filter][1]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;M2&#x27; es VISTA (slicing/indexación)</span>
+ 1401: 
+ 1402:                 roi_norm = (roi[0], roi[1], roi[2], roi[3])
+ 1403:                 pseudo_imgs, alphas, betas, gammas, residuals = compute_pseudo_images_leastsq(
+ 1404:                     imgs_cam1, imgs_cam2, M1, M2, roi=roi_norm
+ 1405:                 )
+ 1406: 
+ 1407:                 for j in range(nmods):
+ 1408:                     print(f&quot;[λ={lambd}] mod {j}: alpha={alphas[j]:.4f}, beta={betas[j]:.4f}, &quot;
+ 1409:                         f&quot;gamma={gammas[j]:.4f}, residual_norm={residuals[j]:.4e}&quot;)
+ 1410: 
+ 1411:                 # =============================
+ 1412:                 # (4) ALINEACIÓN ENTRE MODULACIONES (POR CUADRANTE)
+ 1413:                 # =============================
+ 1414:                 logging.info(&quot;Modulation alignment (per quadrant) using pseudo‑images&quot;)
+ 1415: 
+ 1416:                 for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+<span style="background:#ffcccc"> 1417:                     patch_pseudo = pseudo_imgs[:, y1:y2, x1:x2]  # (4, h, w)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch_pseudo&#x27; es VISTA (slicing/indexación)</span>
+ 1418:                     _, srow_mod_q, scol_mod_q, _ = realign_subpixel(
+ 1419:                         patch_pseudo, verbose=verbose, accu=acc, return_shift=True
+ 1420:                     )
+ 1421: 
+ 1422:                     # Guardar shifts de modulación por cuadrante
+ 1423:                     shifts[lambd, q, 0, 0, :] = np.array(srow_mod_q, dtype=float)  # axis=0 (row)
+ 1424:                     shifts[lambd, q, 0, 1, :] = np.array(scol_mod_q, dtype=float)  # axis=1 (col)
+ 1425: 
+ 1426:                     # # Aplicar shift de modulación SOLO en este cuadrante a ambas cámaras
+ 1427:                     # for cam in range(2):
+ 1428:                     #     for j in range(nmods):
+ 1429:                     #         dy_mod = float(srow_mod_q[j])
+ 1430:                     #         dx_mod = float(scol_mod_q[j])
+ 1431:                     #         aligned[cam, lambd, j] = _apply_patch_shift(
+ 1432:                     #             aligned[cam, lambd, j], y1, y2, x1, x2, dy_mod, dx_mod,
+ 1433:                     #             wrap=True, fill=0
+ 1434:                     #         )
+ 1435: 
+ 1436:                     srs = &quot;, &quot;.join([f&quot;{float(s):+.3f}&quot; for s in srow_mod_q])
+ 1437:                     scs = &quot;, &quot;.join([f&quot;{float(s):+.3f}&quot; for s in scol_mod_q])
+ 1438:                     print(f&quot;  Q{q}: mod shifts dy=[{srs}]  dx=[{scs}]&quot;)
+ 1439: 
+ 1440:                 Q = len(quadrants_roi)
+ 1441:                 # Construir shifts por mod para todos los cuadrantes
+ 1442:                 shifts_q_per_mod = []
+ 1443:                 for j in range(nmods):
+ 1444:                     # para mod j, vector de Q tuples (dy,dx)
+ 1445:                     shifts_for_j = [(float(shifts[lambd, q, 0, 0, j]), float(shifts[lambd, q, 0, 1, j]))
+ 1446:                                     for q in range(Q)]
+ 1447:                     shifts_q_per_mod.append(shifts_for_j)
+ 1448: 
+ 1449:                 # Aplica por cuadrante a CAM1 y CAM2
+ 1450:                 for cam in range(2):
+ 1451:                     aligned[cam, lambd] = apply_quadrant_shifts_with_feather_stack(
+ 1452:                         aligned[cam, lambd],             # (4,X,Y)
+ 1453:                         quadrants_roi=quadrants_roi,
+ 1454:                         shifts_q_per_mod=shifts_q_per_mod,
+ 1455:                         margin=10,
+ 1456:                         shift_func=shift_subp,
+ 1457:                         wrap=False, fill=0
+ 1458:                     )
+ 1459: 
+ 1460: 
+ 1461:                 if debug[&#x27;activate&#x27;]:
+ 1462:                     # Visualización comparando pseudo[0] vs pseudo[j] BEFORE/AFTER en un cuadrante
+ 1463:                     # (recalcular pseudo_after aplicando shifts de modulación por cuadrante)
+ 1464:                 # Pintar cada mod
+ 1465:                     for j, shifts_mod in enumerate(shifts_q_per_mod, start=1):
+ 1466:                         dy, dx = build_displacement_maps_simple(H, W, quadrants_roi, shifts_mod)
+ 1467:                         plot_maps(dy, dx, title=f&quot;MOD {j}&quot;)
+ 1468:                     
+ 1469:                     pseudo_after = pseudo_imgs.copy()
+ 1470:                     for q, (y1, y2, x1, x2) in enumerate(quadrants_roi):
+<span style="background:#ffcccc"> 1471:                         dy_vec = shifts[lambd, q, 0, 0, :]  # (4,)</span>
+<span style="color:orange; font-weight:bold">    → &#x27;dy_vec&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1472:                         dx_vec = shifts[lambd, q, 0, 1, :]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;dx_vec&#x27; es VISTA (slicing/indexación)</span>
+ 1473:                         # aplica por mod (j) en este cuadrante
+ 1474:                         for j in range(nmods):
+ 1475:                             pseudo_after[j, y1:y2, x1:x2] = shift_subp(
+ 1476:                                 pseudo_after[j, y1:y2, x1:x2],
+ 1477:                                 shift=[float(dy_vec[j]), float(dx_vec[j])],
+ 1478:                                 wrap=False, fill=0
+ 1479:                             )
+ 1480: 
+ 1481:                     plot_pseudo_mod_alignment(
+ 1482:                         pseudo_before=pseudo_imgs,
+ 1483:                         pseudo_after=pseudo_after,
+ 1484:                         srow_mod=np.zeros(nmods),  # no único; ya que es por cuadrante
+ 1485:                         scol_mod=np.zeros(nmods),
+ 1486:                         zoom_center=debug[&#x27;zoom_center&#x27;],
+ 1487:                         zoom_size=debug[&#x27;zoom_size&#x27;],
+ 1488:                         title_prefix=f&quot;λ={lambd} – pseudo‑modulation alignment (per quadrant)&quot;
+ 1489:                     )
+ 1490: 
+ 1491:                 logging.info(&quot;Per‑quadrant camera &amp; modulation alignment applied.&quot;)
+ 1492: 
+ 1493:             if align_sequence == 0:
+ 1494: 
+ 1495:                 # compute shifts for quadrants in camera 0. 
+ 1496:                 for q, roises in enumerate(quadrants_roi):
+ 1497:                     y1, y2, x1, x2 = roises
+<span style="background:#ffcccc"> 1498:                     patch = data[0, lambd, :, y1:y2, x1:x2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch&#x27; es VISTA (slicing/indexación)</span>
+ 1499:                     
+ 1500:                     _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+ 1501: 
+ 1502:                     shifts[lambd, q, 0, 0] = np.array(srow)
+ 1503:                     shifts[lambd, q, 0, 1] = np.array(scol)
+ 1504: 
+ 1505:                     for npol in range(1,nmods):
+ 1506:                             aligned[0, lambd,npol] = shift_subp(data[0, lambd,npol], shift=[shifts[lambd, q, 0, 0, npol], shifts[lambd, q, 0, 1, npol]], wrap=True, fill=0)
+ 1507: 
+ 1508:                 # compute shifts for quadrants in camera 0. 
+ 1509:                 for q, roises in enumerate(quadrants_roi):
+ 1510: 
+ 1511:                     y1, y2, x1, x2 = roises
+<span style="background:#ffcccc"> 1512:                     patch = data[1, lambd, :, y1:y2, x1:x2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch&#x27; es VISTA (slicing/indexación)</span>
+ 1513:                     
+ 1514:                     _, srow, scol, _ = realign_subpixel(patch, verbose = verbose, accu = acc, return_shift=True)
+ 1515: 
+ 1516:                     shifts[lambd, q, 1, 0] = np.array(srow)
+ 1517:                     shifts[lambd, q, 1, 1] = np.array(scol)
+ 1518: 
+ 1519:                     for npol in range(1,nmods):
+ 1520:                             aligned[1, lambd,npol] = shift_subp(data[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0)
+ 1521: 
+ 1522:                 # compute shifts for quadrants from camera 0 (corrected) to camera 1. 
+ 1523:                 for npol in range(nmods):
+ 1524:                     for q, roises in enumerate(quadrants_roi):
+ 1525:                         y1, y2, x1, x2 = roises
+<span style="background:#ffcccc"> 1526:                         patch_1 = aligned[0, lambd, npol, y1:y2, x1:x2]</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch_1&#x27; es VISTA (slicing/indexación)</span>
+<span style="background:#ffcccc"> 1527:                         patch_2 = aligned[1, lambd, npol, y1:y2, x1:x2] # ojo era rotated</span>
+<span style="color:orange; font-weight:bold">    → &#x27;patch_2&#x27; es VISTA (slicing/indexación)</span>
+ 1528: 
+ 1529:                         _, srow, scol, _ = realign_subpixel(np.array([patch_1,patch_2]), verbose = verbose, accu = acc, return_shift=True)
+ 1530:                         shifts[lambd, q, 1, 0, npol] = srow[1]
+ 1531:                         shifts[lambd, q, 1, 1, npol] = scol[1]
+ 1532: 
+ 1533:                     # apply shifts for quadrants to camera 1. 
+ 1534: 
+ 1535:                         aligned[1, lambd,npol] = shift_subp(aligned[1, lambd,npol], shift=[shifts[lambd, q, 1, 0, npol], shifts[lambd, q, 1, 1, npol]], wrap=True, fill=0) # ojo era rotated
+ 1536: 
+ 1537:             else:
+ 1538:                 pass
+ 1539: 
+ 1540:         else:
+ 1541:             raise ValueError(&quot;Quadrants parameter not recognized. It must be &gt;= 0.&quot;)
+ 1542: 
+ 1543:     tac = time.time()
+ 1544: 
+ 1545:     logging.info(f&quot;Alignment finished in {round(tac - tic, 3)} s.&quot;)
+ 1546: 
+ 1547:     if returnshifts:
+ 1548:         if onelambda:
+ 1549:             return aligned[:, 0], shifts[0]
+ 1550:         else:    
+ 1551:             return aligned, shifts, err
+ 1552:     else:
+ 1553:         if onelambda:
+ 1554:             return aligned[:, 0]
+ 1555:         else:    
+ 1556:             return aligned
+ 1557: 
+ 1558: 
+ 1559: def dual_align(data_both):
+ 1560:         
+ 1561:     data_aligned = np.zeros_like(data_both[0])
+ 1562:     for i in range(4):
+ 1563:         for j in range(10):
+ 1564:             dummy, _, _, _ = realign_subpixel(data_both[:, j, i, :, :], accu = 0.001, return_shift=True)
+ 1565:             data_aligned[j,i] = dummy[1]
+ 1566:     data_aligned = (data_both[0]+data_aligned)/2
+ 1567: 
+ 1568:     return data_aligned
+</pre>
+</body></html>

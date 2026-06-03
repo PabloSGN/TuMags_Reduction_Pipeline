@@ -1,0 +1,16 @@
+./copiar_renombrar_fits.sh /work/obs/TuMag_proccessed_data_2026/11_FLAR_FS1 --dry-run --only-matching --lv LV_1.1 --from-prefix "11_FLAR_FS1_TM_" --to-prefix "12_FLAR_TM_00_"
+
+# Dar permisos
+chmod +x copiar_renombrar_fits.sh
+
+# Dry-run
+./copiar_renombrar_fits.sh /work/obs/TuMag_proccessed_data_2026/DIRECTORIOORIGEN --dry-run
+
+# Ejecutar copia
+./copiar_renombrar_fits.sh /work/obs/TuMag_proccessed_data_2026/DIRECTORIOORIGEN
+
+# Solo los que empiecen por el prefijo esperado
+./copiar_renombrar_fits.sh /work/obs/TuMag_proccessed_data_2026/DIRECTORIOORIGEN --only-matching
+
+# Sobrescribir si existe
+./copiar_renombrar_fits.sh /work/obs/TuMag_proccessed_data_2026/DIRECTORIOORIGEN --overwrite

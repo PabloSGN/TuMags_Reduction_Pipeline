@@ -1,4 +1,57 @@
-Processed:
+python3 ../../TuMags_Reduction_Pipeline/process_data_main.py -f YAMLS_pre/config_tumag_01_QSUN_Fe_v0.4.yaml 
+
+- COMM1 
+    - DONE Fe (mejorada la v0.4 con cross-interf 8)
+    - DONE Mg (mejorada la v0.4 con cross-interf 8)
+
+- 02_EMEF_AR1 
+    - DONE Fe (mejorada la v0.4 )
+    - DONE Mg (mejorada la v0.4 )
+
+- 02_EMEF_AR2
+    - DONE Mg (mejorada la v0.4 )
+    - DONE Fe (mejorada la v0.4 )
+    - Queda chequear que este todo bien...
+
+- 03_SPOT_SP6
+    - Fe DONE
+    - Mg DONE (son con código 31, hay que documentarlo y rehacerlo bien)
+    
+- 04_QS_QS12_1
+
+- 04_QS_QS12_2
+
+- 04_QSUN-QS4ab
+    - DONE Fe (mejorada la v0.4 con cross-interf 8)
+    - DONE Mg (mejorada la v0.4 con cross-interf 8)
+    - Hay datos de Mg que faltan. Habría que añadirlos pero sin repetirlo todo (código 31). Ojo. Sólo si faltan menos de 8!
+    
+- 04_QSUN-QS8 - started
+    - DONE Fe (mejorada la v0.4 con cross-interf 8)
+    - DONE Mg (mejorada la v0.4 con cross-interf 8)
+    - Hay datos de Mg que faltan. Habría que añadirlos pero sin repetirlo todo (código 31). Ojo. Sólo si faltan menos de 8!
+
+- 05_QSUN-FS1
+    - Fe. Hacer una prueba de ROI 4. Hay una network fuerte y puede que se vea afectado por el cross-talk. Necesito chequear los resultados antes. 
+
+- 06_SPOT_AR1 
+    - DONE Fe (mejorada la v0.4 )
+    - DONE Mg (mejorada la v0.4 )
+    - Hay una version _av que tiene el alineamiento por longitud de onda
+
+- 06_SPOT_AR2
+PENDIENTE (Faltan datos)
+
+- 08_QSUN
+    - QSHC1
+    - QSHC2
+    - QSHC3
+
+
+
+
+
+
 
 - 11_FLAR_FS1 - DONE
     DONE 1 and 2.06 BUT gradient in Q and last wave in Mg
@@ -9,37 +62,11 @@ Processed:
      Procesando Fe PD DONE
      Procesando Mg PD DONE
 
-- 06_SPOT_AR1 - DONE
-    Calculando Fe 0.5 y 0.7 y 1.0.... 
-    Repitiendo 1.0 con jaegli DONE
-    PD done en Fe
-    - running Mg
 
-- COMM1 - DONE
-    - procesando hierro sin cont crosst: 
-    - Añado _inter8 en label. Ahora tengo que hacer que PD lo vea (modificar código)
-    - Voy por el Mg 
-    - All done. 
-
-- 04_QSUN-QS4ab
-    - Running config_tumag_04_QSUN_QS4ab_Fe.yaml 
-    - Running config_tumag_04_QSUN_QS4ab_Mg.yaml 
-    Falta los ninter_8 de los dos.
-
-2026-01-30 20:26:27,830 [SpawnProcess-1] INFO:  processing ocs: 18 ........... 
-2026-01-30 20:26:27,830 [SpawnProcess-1] INFO:  processing ocs: 18 which corresponds to 1 with 17 total images
-2026-01-30 20:26:27,830 [SpawnProcess-1] ERROR:   >> Error. The ocs: 18 number of images 17 does not coincide with the timeline info: 80
-2026-01-30 20:26:51,223 [SpawnProcess-6] INFO:  processing ocs: 19 ........... 
-2026-01-30 20:26:51,223 [SpawnProcess-6] INFO:  processing ocs: 19 which corresponds to 1 with 80 total images
-
-
-- 04_QSUN-QS8
 
 - 04_QSUN-QS2
 
 - 27_EMEF
-
-- 02_EMEF
 
 - 10_SPOT-SP4a&b
 
@@ -49,20 +76,10 @@ Processed:
 
 - 35_CHOL
 
-- 05_QSUN-FS_1
 
 - 23_SPOT-SP3&8
 
-
-
-Copia al PC FLARE 1.0 y 1.1 
-
-cp *1.0* /Users/orozco/IdAdA\ Dropbox/David\ orozco\ suárez/Public/datadownload/11_FLAR_FS1 
-
-cp *1.1* /Users/orozco/IdAdA\ Dropbox/David\ orozco\ suárez/Public/datadownload/11_FLAR_FS1 
-
-
-
+02_EMEF, 24_SPOT, y 25_SPOT a la lista de reducción, para Mariarita de parte de Solarnet
 
 
 
