@@ -49,6 +49,7 @@ observation_modes = {
     7 : "4",
     8 : "5.02",
     9 : "5.06",
+    10: "HC",
     64 : "PD_calibration",
     65 : "Spectral_calibration",
     66 : "Polarimetric_calibration",
@@ -144,7 +145,16 @@ om_config  = {
               "Nmods" : 4,
               "lvcr_mode" : "vectorial",
               "images_per_mode" : 3 * 4 * 2,
-              "name" :'Fe2.06'}
+              "name" :'Fe2.06'},
+
+    "HC" : {"Nlambda" : 1,
+              "line" : "525.02",
+              "lambda_array" : [-40],
+              "V_array" : [-2374],
+              "Nmods" : 1,
+              "lvcr_mode" : "vectorial",
+              "images_per_mode" : 2,
+              "name" :'Fe2.02'}
 }
 
 

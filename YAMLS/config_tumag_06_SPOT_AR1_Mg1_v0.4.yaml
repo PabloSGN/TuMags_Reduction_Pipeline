@@ -43,10 +43,10 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 force_redo:
   redo_flat: false                # Recalculate flats
   redo_dark: false                # Recalculate darks
-  level0_5: true
+  level0_5: false
   level0_6: false
   level0_7: true
-  level1_0: true
+  level1_0: false
   level1_1: false
   use_pd: false
 
@@ -58,7 +58,7 @@ plots:
   plot_flats: false
   plot_level0_5: false
   plot_level0_6: false
-  plot_level0_7: false
+  plot_level0_7: true
   plot_level1_0: true
   plot_level1_1: false
   roi_plots: [200, -200, 200, -200]
@@ -103,13 +103,13 @@ level_07:
   # "2" = manual. Requires manual_shift
   align_roi: [600,1100,100,600]
   align_accuracy: 0.001
-  align_rot_data_filter: "alignment_results.csv"   # e.g. "pinholes_Fe2.02.csv"
+  align_rot_data_filter: "alignment_results.csv"   # e.g. "pinholes_Fe2.02.csv" le cambio el nombre...
   align_quadrants: 0 #-8 #-16
   align_verbose: false
   align_modulations: false
   aligment_level: "dataset"
   advanced_alignment: true
-  advanced_wave: 0
+  advanced_wave: 0 #[0,1,2,3,4,5,6,7,8,9] # '_av' todas las landas 
   advanced_save: true
   advanced_overwrite: true
   destretch_aling_cam: 'same'
@@ -122,7 +122,7 @@ level_07:
   destretch_lambda_tt: 0.02
   demod_matrix: 'demod_matrices_david_v2' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
   demod_mode: 'join' # 'join'
-  add_level_07_label: '' #'dt'  special
+  add_level_07_label: '_av' #'dt'  special "av" para el uso de todas las landas
   manual_shift: [0.5, 0.02] # [shift_y, shift_x] to apply to cam2 (only if align_sequence == 2)
 
 # ----------------------------------------------------------

@@ -22,6 +22,47 @@ def _generate_squares(radius,divisions: int = 6):
     X,Y = np.meshgrid(square_centers, square_centers)
     return np.vstack([X.ravel(), Y.ravel()])
 
+#  enerador de cuadrantes
+def _generate_tiles_with_overlap(H, W, n, overlap_frac):
+    base_h = H / n
+    base_w = W / n
+    pad_h = int(round(base_h * overlap_frac))
+    pad_w = int(round(base_w * overlap_frac))
+    
+    tiles = []
+    for i in range(n):
+        for j in range(n):
+            # Expandimos el tile por el pad, sin salirnos de la imagen
+            y1 = max(0, int(round(i * base_h)) - pad_h)
+            y2 = min(H, int(round((i + 1) * base_h)) + pad_h)
+            x1 = max(0, int(round(j * base_w)) - pad_w)
+            x2 = min(W, int(round((j + 1) * base_w)) + pad_w)
+            
+            if y2 > y1 and x2 > x1:
+                tiles.append((y1, y2, x1, x2, pad_h, pad_w))
+    return tiles
+
+# Ventana de atenuación lineal (Bilinear Tapering) ---
+def _make_taper_window(y1, y2, x1, x2, H, W, pad_h, pad_w):
+    """Crea una ventana 2D que cae a 0 en los bordes solapados para un fundido perfecto."""
+    h, w = y2 - y1, x2 - x1
+    wy = np.ones(h, dtype=float)
+    wx = np.ones(w, dtype=float)
+    
+    # Atenuar borde superior (solo si no es el borde absoluto de la imagen)
+    if y1 > 0 and pad_h > 0:
+        wy[:pad_h] = np.linspace(0, 1, pad_h)
+    # Atenuar borde inferior
+    if y2 < H and pad_h > 0:
+        wy[-pad_h:] = np.linspace(1, 0, pad_h)
+    # Atenuar borde izquierdo
+    if x1 > 0 and pad_w > 0:
+        wx[:pad_w] = np.linspace(0, 1, pad_w)
+    # Atenuar borde derecho
+    if x2 < W and pad_w > 0:
+        wx[-pad_w:] = np.linspace(1, 0, pad_w)
+        
+    return wy[:, None] * wx[None, :]
 
 def evaluate_crosstalk(data, verbose=False, 
                        pthresh=0.05, png=False,
@@ -39,7 +80,9 @@ def evaluate_crosstalk(data, verbose=False,
                        local_order=1,            # 1 -> (X, Ix, Iy); 2 -> añade Laplaciano
                        deriv_sigma=0.0,          # suavizado previo SOLO para derivadas (0 = off)
                        local_ridge_lambda=0.0,    # regularización ridge (0 = off)
-                       fit_grad =  False
+                       fit_grad =  False,
+                       robust_pol_weights=False,
+                       robust_nsigma=3.0,
                        ):
     """
     Evalúa cross-talk en una sub-región usando:
@@ -91,6 +134,36 @@ def evaluate_crosstalk(data, verbose=False,
             AtA = AtA + lam * L
         return np.linalg.solve(AtA, Aty)
 
+    def weighted_lstsq(A, y, w=None):
+        """
+        Least squares ponderado:
+            minimize sum_i w_i * (y_i - A_i theta)^2
+        """
+        if w is None:
+            theta, *_ = np.linalg.lstsq(A, y, rcond=None)
+            return theta
+
+        w = np.asarray(w, float)
+
+        good = (
+            np.isfinite(w) &
+            np.all(np.isfinite(A), axis=1) &
+            np.isfinite(y)
+        )
+
+        if good.sum() < A.shape[1] + 2:
+            theta, *_ = np.linalg.lstsq(A, y, rcond=None)
+            return theta
+
+        ws = np.sqrt(w[good])
+
+        Aw = A[good] * ws[:, None]
+        yw = y[good] * ws
+
+        theta, *_ = np.linalg.lstsq(Aw, yw, rcond=None)
+
+        return theta
+    
     def flatten_mask(M2d, *arrs2d):
         outs = []
         idx = np.where(M2d)
@@ -188,6 +261,23 @@ def evaluate_crosstalk(data, verbose=False,
     if pthresh_intensity != 0:
         sel2d &= (I2d > pthresh_intensity)
 
+# ==========================================================
+# PESOS ROBUSTOS BASADOS EN POLARIZACIÓN
+# ==========================================================
+
+    robust_w2d = None
+    if robust_pol_weights:
+        P2d = np.sqrt(Q2d**2 + U2d**2 + V2d**2)
+        medP = np.nanmedian(P2d)
+        madP = np.nanmedian(np.abs(P2d - medP))
+        sigmaP = 1.4826 * madP
+        if np.isfinite(sigmaP) and sigmaP > 0:
+            scale = robust_nsigma * sigmaP + 1e-12
+            # pesos suaves tipo Lorentziano
+            robust_w2d = 1.0 / (1.0 + (P2d / scale)**2)
+        else:
+            robust_w2d = np.ones_like(P2d)
+
     # variable(s) predictoras
     if xcomp == 'I':
         X2d = I2d
@@ -216,8 +306,20 @@ def evaluate_crosstalk(data, verbose=False,
             if xv.size < 5:
                 results[name] = (np.nan, np.nan, 0.0, 0.0, 0.0)  # a,b,c,d,e
                 continue
+            # if ctmethod == 'linfit':
+            #     a, b = linfit_clip(xv, yv, n_sigma)
             if ctmethod == 'linfit':
-                a, b = linfit_clip(xv, yv, n_sigma)
+                if robust_w2d is not None:
+                    print('*robust*')
+                    wv = robust_w2d[sel2d].ravel()
+                    A = np.column_stack([
+                        np.ones_like(xv),
+                        xv
+                    ])
+                    theta = weighted_lstsq(A, yv, wv)
+                    a, b = theta.tolist()
+                else:
+                    a, b = linfit_clip(xv, yv, n_sigma)
             elif ctmethod == 'rms':
                 b = minimize_rms(xv, yv); a = np.mean(yv) - b*np.mean(xv)
             else:
@@ -287,8 +389,23 @@ def evaluate_crosstalk(data, verbose=False,
             mats = flatten_mask(sel2d, *cols, Y2d)
             *Xs, yv = mats
             A = np.column_stack([x.ravel() for x in Xs])
-            theta = ridge_solve(A, yv, lam=float(local_ridge_lambda))
-
+            # theta = ridge_solve(A, yv, lam=float(local_ridge_lambda))
+            if robust_w2d is not None:
+                wv = robust_w2d[sel2d].ravel()
+                ws = np.sqrt(wv)
+                Aw = A * ws[:, None]
+                yw = yv * ws
+                theta = ridge_solve(
+                    Aw,
+                    yw,
+                    lam=float(local_ridge_lambda)
+                )
+            else:
+                theta = ridge_solve(
+                    A,
+                    yv,
+                    lam=float(local_ridge_lambda)
+                )
             # CORREGIDO: Forzamos a y b porque ajustamos sobre residuos
             a, b = 0.0, 1.0
             c, d = theta[:2]
@@ -592,6 +709,8 @@ def fit_mueller_matrix(
     local_ridge_lambda: float = 0.0,        # regularización para modelo local
     aggregate_wavelengths: bool = False,    # True -> ajusta una sola vez apilando todas las λ en 2D
     channels: Tuple[str, ...] = ('Q','U','V'),  # qué canales corregir en STANDARD
+    robust_pol_weights: bool = False,
+    robust_nsigma: float = 3.0,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     Fit and correct cross-talk in spectro-polarimetric data.
@@ -754,6 +873,8 @@ def fit_mueller_matrix(
                 deriv_sigma=deriv_sigma,
                 local_ridge_lambda=local_ridge_lambda,
                 verbose=verbose,
+                robust_pol_weights=robust_pol_weights,
+                robust_nsigma=robust_nsigma,
             )
 
             coeffs_per_wvl: Optional[List[Dict[str, Any]]] = None
@@ -1088,47 +1209,6 @@ def fit_mueller_matrix_tiled(
         if nf > 0 and np.isfinite(nf):
             data_float = data_float / nf
     
-    # --- 2. Generador de cuadrantes con solapamiento ---
-    def _generate_tiles_with_overlap(H, W, n, overlap_frac):
-        base_h = H / n
-        base_w = W / n
-        pad_h = int(round(base_h * overlap_frac))
-        pad_w = int(round(base_w * overlap_frac))
-        
-        tiles = []
-        for i in range(n):
-            for j in range(n):
-                # Expandimos el tile por el pad, sin salirnos de la imagen
-                y1 = max(0, int(round(i * base_h)) - pad_h)
-                y2 = min(H, int(round((i + 1) * base_h)) + pad_h)
-                x1 = max(0, int(round(j * base_w)) - pad_w)
-                x2 = min(W, int(round((j + 1) * base_w)) + pad_w)
-                
-                if y2 > y1 and x2 > x1:
-                    tiles.append((y1, y2, x1, x2, pad_h, pad_w))
-        return tiles
-
-    # --- 3. Ventana de atenuación lineal (Bilinear Tapering) ---
-    def _make_taper_window(y1, y2, x1, x2, H, W, pad_h, pad_w):
-        """Crea una ventana 2D que cae a 0 en los bordes solapados para un fundido perfecto."""
-        h, w = y2 - y1, x2 - x1
-        wy = np.ones(h, dtype=float)
-        wx = np.ones(w, dtype=float)
-        
-        # Atenuar borde superior (solo si no es el borde absoluto de la imagen)
-        if y1 > 0 and pad_h > 0:
-            wy[:pad_h] = np.linspace(0, 1, pad_h)
-        # Atenuar borde inferior
-        if y2 < H and pad_h > 0:
-            wy[-pad_h:] = np.linspace(1, 0, pad_h)
-        # Atenuar borde izquierdo
-        if x1 > 0 and pad_w > 0:
-            wx[:pad_w] = np.linspace(0, 1, pad_w)
-        # Atenuar borde derecho
-        if x2 < W and pad_w > 0:
-            wx[-pad_w:] = np.linspace(1, 0, pad_w)
-            
-        return wy[:, None] * wx[None, :]
 
     tiles_info = _generate_tiles_with_overlap(H, W, quadrants, overlap_fraction)
     
@@ -1258,7 +1338,7 @@ def ver_planos_ajuste(planes, samples):
     if not any_plot:
         print("\nNo se ha dibujado ninguna superficie (faltan términos con >=3 puntos).")
 
-def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw):
+def fit_mueller_matrix_rois_with_plane_old(data, rois, channels=('Q','U','V'), **kw):
     L, _, Y, X = data.shape
     name2idx = {'I':0,'Q':1,'U':2,'V':3}
     TERMS = ('a','b','c','d','e')
@@ -1332,6 +1412,216 @@ def fit_mueller_matrix_rois_with_plane(data, rois, channels=('Q','U','V'), **kw)
                 if t=='c': CT += arr * dIx
                 if t=='d': CT += arr * dIy
             data_corr[l,j] -= CT
+
+    return data_corr, planes, maps, infos, samples
+
+def fit_mueller_matrix_rois_with_plane(
+    data,
+    channels=('Q','U','V'),
+    quadrants=8,
+    overlap_fraction=0.25,
+    fit_cross_term=False,
+    weighted_plane=False,
+    robust_pol_weights = False,
+    robust_nsigma=3.0,
+    **kw
+):
+    """
+    Igual filosofía que fit_mueller_matrix_tiled:
+      - divide en tiles con overlap
+      - extrae coeficientes locales
+      - ajusta planos espaciales para cada término
+    """
+
+    L, _, Y, X = data.shape
+    name2idx = {'I':0,'Q':1,'U':2,'V':3}
+    TERMS = ('a','b','c','d','e')
+
+    # ==========================================================
+    # EXTRAER COEFICIENTES
+    # ==========================================================
+
+    def extraer_coef(info):
+        out = {ch:{} for ch in channels}
+        per = info.get('coeffs_per_wvl', [])
+        if not per:
+            return out
+        for ch in channels:
+            acc = {t:[] for t in TERMS}
+            for elt in per:
+                fd = elt['fit'].get(ch, {})
+                for t in TERMS:
+                    if t in fd:
+                        acc[t].append(float(fd[t]))
+            out[ch] = {
+                t: np.nanmedian(acc[t])
+                for t in TERMS if acc[t]
+            }
+        return out
+
+    # ==========================================================
+    # PROCESADO POR TILE
+    # ==========================================================
+
+    tiles = _generate_tiles_with_overlap(
+        Y, X,
+        quadrants,
+        overlap_fraction
+    )
+    samples = {
+        ch:{t:[] for t in TERMS}
+        for ch in channels
+    }
+    infos = []
+
+    print('siii')
+    for q, (y1, y2, x1, x2) in enumerate(tiles):
+        sub = data[:, :, y1:y2, x1:x2]
+        _, info = fit_mueller_matrix(
+            sub,
+            channels=channels,
+            robust_pol_weights = robust_pol_weights,
+            robust_nsigma = robust_nsigma,
+            **kw
+        )
+        infos.append(info)
+
+        coefs = extraer_coef(info)
+        # Centro REAL del tile
+        cx = 0.5 * (x1 + x2)
+        cy = 0.5 * (y1 + y2)
+
+        # Peso opcional:
+        # tiles más grandes -> más confianza
+        weight = (y2 - y1) * (x2 - x1)
+
+        for ch in channels:
+            for t in TERMS:
+                if t not in coefs.get(ch, {}):
+                    continue
+                v = float(coefs[ch][t])
+                if np.isfinite(v):
+                    if weighted_plane:
+                        samples[ch][t].append(
+                            (cx, cy, v, weight)
+                        )
+                    else:
+                        samples[ch][t].append(
+                            (cx, cy, v)
+                        )
+        logging.info(
+            f"[Tile {q+1}/{len(tiles)}] coeficientes extraídos"
+        )
+
+    # ==========================================================
+    # AJUSTE DE PLANOS
+    # ==========================================================
+
+    planes = {ch:{} for ch in channels}
+    maps   = {ch:{} for ch in channels}
+
+    xs = np.arange(X)[None, :]
+    ys = np.arange(Y)[:, None]
+
+    for ch in channels:
+        for t in TERMS:
+            pts = samples[ch][t]
+
+            if len(pts) < 3:
+                continue
+            # ----------------------------------------------
+            # Datos
+            # ----------------------------------------------
+
+            if weighted_plane:
+                x = np.array([p[0] for p in pts], float)
+                y = np.array([p[1] for p in pts], float)
+                z = np.array([p[2] for p in pts], float)
+                w = np.array([p[3] for p in pts], float)
+            else:
+
+                x = np.array([p[0] for p in pts], float)
+                y = np.array([p[1] for p in pts], float)
+                z = np.array([p[2] for p in pts], float)
+
+                w = np.ones_like(z)
+
+            # ----------------------------------------------
+            # Modelo
+            # ----------------------------------------------
+
+            if fit_cross_term:
+                P = np.column_stack([
+                    x,
+                    y,
+                    x*y,
+                    np.ones_like(x)
+                ])
+            else:
+                P = np.column_stack([
+                    x,
+                    y,
+                    np.ones_like(x)
+                ])
+
+            # Weighted least squares
+            Wsqrt = np.sqrt(w)[:, None]
+            Pw = P * Wsqrt
+            zw = z * np.sqrt(w)
+            coef = np.linalg.lstsq(
+                Pw,
+                zw,
+                rcond=None
+            )[0]
+
+            # ----------------------------------------------
+            # Reconstrucción
+            # ----------------------------------------------
+
+            if fit_cross_term:
+                A, B, Dxy, C = coef
+                planes[ch][t] = (A, B, C, Dxy)
+                maps[ch][t] = (
+                    A*xs +
+                    B*ys +
+                    C +
+                    Dxy*(ys*xs)
+                )
+            else:
+                A, B, C = coef
+                planes[ch][t] = (A, B, C)
+                maps[ch][t] = (
+                    A*xs +
+                    B*ys +
+                    C
+                )
+
+    if kw.get("plot_planes", False):
+        ver_planos_ajuste(planes, samples)
+    # ==========================================================
+    # CORRECCIÓN FINAL
+    # ==========================================================
+
+    data_corr = data.copy()
+
+    for l in range(L):
+        I = data_corr[l, 0]
+        dIx = sobel(I, axis=1)
+        dIy = sobel(I, axis=0)
+        for ch in channels:
+            j = name2idx[ch]
+            CT = np.zeros_like(I)
+
+            for t, arr in maps[ch].items():
+                if t == 'a':
+                    CT += arr
+                elif t == 'b':
+                    CT += arr * I
+                elif t == 'c':
+                    CT += arr * dIx
+                elif t == 'd':
+                    CT += arr * dIy
+            data_corr[l, j] -= CT
 
     return data_corr, planes, maps, infos, samples
 
@@ -1422,22 +1712,6 @@ def write_crosstalk_header(
 
     return header
 
-def _grid_tiles(H: int, W: int, y1: int, y2: int, x1: int, x2: int, divisions: int) -> List[Tuple[int,int,int,int]]:
-    h = max(0, y2 - y1); w = max(0, x2 - x1)
-    if h <= 0 or w <= 0:
-        raise ValueError("Region must have positive area.")
-    dh = h / divisions; dw = w / divisions
-    tiles = []
-    for i in range(divisions):
-        for j in range(divisions):
-            yt1 = int(round(y1 + i * dh)); yt2 = int(round(y1 + (i+1) * dh))
-            xt1 = int(round(x1 + j * dw)); xt2 = int(round(x1 + (j+1) * dw))
-            yt1 = max(0, min(H, yt1)); yt2 = max(0, min(H, yt2))
-            xt1 = max(0, min(W, xt1)); xt2 = max(0, min(W, xt2))
-            if yt2 > yt1 and xt2 > xt1:
-                tiles.append((yt1, yt2, xt1, xt2))
-    return tiles
-
 def _pearson(u, v):
     u = np.asarray(u).ravel(); v = np.asarray(v).ravel()
     m = np.isfinite(u) & np.isfinite(v)
@@ -1487,7 +1761,9 @@ def fit_interference_Iref_to_Q_tiled(
     local_ridge_lambda: float = 0.0,       
     apply: bool = True,                    
     show_grid: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    overlap_fraction: float = 0.25,
+    fit_cross_term: bool = False,
 ) -> Tuple[np.ndarray, List[Tuple[int,int,int,int]], Dict[str, Any]]:
     
     if data.ndim != 4 or data.shape[1] != 4:
@@ -1503,7 +1779,8 @@ def fit_interference_Iref_to_Q_tiled(
     y1, y2, x1, x2 = region
     if y2 < 0: y2 = H
     if x2 < 0: x2 = W
-    tiles = _grid_tiles(H, W, y1, y2, x1, x2, divisions)
+    # tiles = _grid_tiles(H, W, y1, y2, x1, x2, divisions)
+    tiles = _generate_tiles_with_overlap(H, W, divisions, overlap_fraction)
 
     Iref = data[ref_wvl, 0, :, :].astype(float)
     Iref_b = gaussian_filter(Iref, sigma=deriv_sigma) if (use_local and deriv_sigma > 0) else Iref
@@ -1520,24 +1797,34 @@ def fit_interference_Iref_to_Q_tiled(
     corr = np.full((n_wvl, n_tiles), np.nan, float)
 
     data_corr = np.copy(data)
+    corr_accum = np.zeros_like(data[:,1], dtype=float)
+    weight_accum = np.zeros((H, W), dtype=float)
+                             
 
     if show_grid:
         I0 = data[0, 0]
         fig, ax = plt.subplots(figsize=(7,7))
         im = ax.imshow(I0, cmap='gray')
-        for (yt1, yt2, xt1, xt2) in tiles:
+        for (yt1, yt2, xt1, xt2, _, _) in tiles:
             ax.add_patch(Rectangle((xt1, yt1), xt2-xt1, yt2-yt1, fill=False, edgecolor='r', lw=0.8))
         ax.set_title(f"Tiles {divisions}×{divisions} (I @ λref={ref_wvl})")
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout(); plt.show()
 
-    for t_idx, (yt1, yt2, xt1, xt2) in enumerate(tiles):
+    for t_idx, (yt1, yt2, xt1, xt2, pad_h, pad_w) in enumerate(tiles):
         X  = Iref[yt1:yt2, xt1:xt2]
         if use_local:
             Xx = Ix_ref[yt1:yt2, xt1:xt2]
             Xy = Iy_ref[yt1:yt2, xt1:xt2]
             Lx = L_ref[yt1:yt2, xt1:xt2] if local_order >= 2 else None
 
+        window = _make_taper_window(
+            yt1, yt2,
+            xt1, xt2,
+            H, W,
+            pad_h, pad_w
+        )
+        weight_accum[yt1:yt2, xt1:xt2] += window
         M0 = np.isfinite(X)
         if pthresh_intensity > 0:
             M0 &= (X > pthresh_intensity)
@@ -1561,10 +1848,19 @@ def fit_interference_Iref_to_Q_tiled(
                 else:
                     raise ValueError("ctmethod must be 'linfit' or 'rms'.")
                 a[w, t_idx], b[w, t_idx] = a_w, b_w
+                # if apply and np.isfinite(a_w) and np.isfinite(b_w):
+                #     Yhat = a_w + b_w * X
+                #     Mf = np.isfinite(Yhat) & np.isfinite(Y)
+                #     data_corr[w, 1, yt1:yt2, xt1:xt2][Mf] = Y[Mf] - Yhat[Mf]
+
                 if apply and np.isfinite(a_w) and np.isfinite(b_w):
                     Yhat = a_w + b_w * X
-                    Mf = np.isfinite(Yhat) & np.isfinite(Y)
-                    data_corr[w, 1, yt1:yt2, xt1:xt2][Mf] = Y[Mf] - Yhat[Mf]
+                    Ycorr = Y - Yhat
+                    Mf = np.isfinite(Ycorr)
+                    corr_accum[w, yt1:yt2, xt1:xt2][Mf] += (
+                        Ycorr[Mf] * window[Mf]
+                    )
+
 
             else:
                 cols = [np.ones_like(X), X, Xx, Xy]
@@ -1579,10 +1875,25 @@ def fit_interference_Iref_to_Q_tiled(
                 a[w, t_idx], b[w, t_idx], c[w, t_idx], d[w, t_idx], e[w, t_idx] = \
                     float(a_w), float(b_w), float(c_w), float(d_w), float(e_w)
 
+                # if apply and np.all(np.isfinite([a_w, b_w, c_w, d_w, e_w])):
+                #     Yhat = a_w + b_w*X + c_w*Xx + d_w*Xy + (e_w*Lx if local_order >= 2 else 0.0)
+                #     Mf = np.isfinite(Yhat) & np.isfinite(Y)
+                #     data_corr[w, 1, yt1:yt2, xt1:xt2][Mf] = Y[Mf] - Yhat[Mf]
+
                 if apply and np.all(np.isfinite([a_w, b_w, c_w, d_w, e_w])):
-                    Yhat = a_w + b_w*X + c_w*Xx + d_w*Xy + (e_w*Lx if local_order >= 2 else 0.0)
-                    Mf = np.isfinite(Yhat) & np.isfinite(Y)
-                    data_corr[w, 1, yt1:yt2, xt1:xt2][Mf] = Y[Mf] - Yhat[Mf]
+                    Yhat = (
+                        a_w +
+                        b_w*X +
+                        c_w*Xx +
+                        d_w*Xy +
+                        (e_w*Lx if local_order >= 2 else 0.0)
+                    )
+                    Ycorr = Y - Yhat
+                    Mf = np.isfinite(Ycorr)
+                    corr_accum[w, yt1:yt2, xt1:xt2][Mf] += (
+                        Ycorr[Mf] * window[Mf]
+                    )
+
 
         if verbose:
             print(f"[tile {t_idx+1}/{n_tiles}] done.")
@@ -1599,6 +1910,13 @@ def fit_interference_Iref_to_Q_tiled(
         'corr': corr,                       
         'tiles': tiles
     }
+    if apply:
+
+        weight_accum = np.maximum(weight_accum, 1e-12)
+        data_corr[:, 1, :, :] = (
+            corr_accum /
+            weight_accum[None, :, :]
+        )
     return data_corr, tiles, out
 
 def write_interference_Iref_to_Q_header(

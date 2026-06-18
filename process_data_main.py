@@ -554,7 +554,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
     out_file = input_data_filename.replace(from_label, to_label + cfg['level_07']['add_level_07_label'])
     logging.info(f' Saving filename: {out_file}')
     with fits.open(input_data_filename) as hdu_list:
-        hdu_list[0].data = data
+        hdu_list[0].data = data.astype(np.float32)
         hdu_list[0].header = header
         hdu_list.writeto(out_file, overwrite=True)
 
@@ -761,7 +761,7 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
     logging.info(f' Saving filename: {out_file}')
     
     with fits.open(input_data_filename) as hdu_list:
-        hdu_list[0].data = data
+        hdu_list[0].data = data.astype(np.float32)
         hdu_list[0].header = header
         hdu_list.writeto(out_file, overwrite=True)
         
@@ -979,7 +979,7 @@ def reduce_image_1_0_old(input_data_filename, cfg, from_label="LV_0.7", to_label
     out_file = input_data_filename.replace(from_label, to_label + cfg['level_10']['add_level_10_label'])
     logging.info(f' Saving filename: {out_file}')
     with fits.open(input_data_filename) as hdu_list:
-        hdu_list[0].data = data
+        hdu_list[0].data = data.astype(np.float32)
         hdu_list[0].header = header
         hdu_list.writeto(out_file, overwrite=True)
 
@@ -1003,11 +1003,28 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
 
     wn, pn, xs, ys = data.shape
 
+
+    def _mascara_circular(nx, ny, radio=None, centro=None):
+        if centro is None:
+            centro = (ny // 2, nx // 2)  # (y, x)
+
+        if radio is None:
+            radio = min(nx, ny) / 2
+
+        y, x = np.ogrid[:ny, :nx]
+
+        distancia2 = (x - centro[1])**2 + (y - centro[0])**2
+
+        mascara = (distancia2 <= radio**2).astype(np.uint8)
+
+        return mascara
+
+    # Ejemplo
+    mask = _mascara_circular(2000, 2000, radio=180)
     with tqdm(total=wn * pn) as pbar:
         for wl in range(wn):
             for pl in range(pn):
                 if pl == 0:
-
                     data[wl, pl], noise_filter = phased.restore_ima(
                         data[wl, pl], zk,
                         pd = cfg['pd'], low_f = cfg['low_f'], 
@@ -1023,8 +1040,9 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
                         cobs = cfg['cobs'], epsilon = cfg['epsilon'],
                         sigma = cfg['sigma'], stray = cfg['stray'],
                         noise=noise_filter,
+                        # noise=mask,
                     )
-            pbar.update(1)
+                pbar.update(1)
 
     if cfg['plots']['plot_level1_1']:
         plt_level(
@@ -1503,6 +1521,7 @@ def main(argv=None) -> int:
         BASE_DIR = Path(__file__).resolve().parent
         file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
         zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+        print(zk)
 
         reduce_partial = partial(
             reduce_image_1_1, cfg=cfg_dict, zk=zk

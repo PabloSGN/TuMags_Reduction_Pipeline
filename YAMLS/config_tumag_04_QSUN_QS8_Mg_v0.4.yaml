@@ -44,9 +44,9 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 force_redo:
   redo_flat: false                # Recalculate flats
   redo_dark: false                # Recalculate darks
-  level0_5: true
+  level0_5: false
   level0_6: false
-  level0_7: true
+  level0_7: false
   level1_0: true
   level1_1: false
   use_pd: false
@@ -131,15 +131,15 @@ level_07:
 # LEVEL 1.0 OPTIONS
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "standard"         # "jaeggli" or "standard"
+  crosst_mode: "jaeggli"         # "jaeggli" or "standard"
   crosst_strategy: "sequential"   # "sequential" | "simultaneous"
   crosst_roi: [200,-200,200,-200]      # Normalization region
   crosst_region: [200,-200,200,-200]   # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
-  crosst_last_wave: None #used -1 for standard and -2 for jaeggli
-  crosst_quadrants: 8
-  crosst_interference: 8 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
+  crosst_last_wave: -2 #used -1 for standard and -2 for jaeggli
+  crosst_quadrants: 0
+  crosst_interference: 4 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
   crosst_dual: false #8          # or 'comm1_cal.npz' file
   normalization: 0
   plot_crosst_method: false

@@ -26,10 +26,10 @@ process_line: "1"              # Observation mode to process
 # process_files: "0"                # ":" -> all, or range, or single ID
 # process_files: 2
 process_ocs: ":"                  # ":" -> all, or range, or single ID
-process_files: ":"                # ":" -> all, or range, or single ID
+process_files: "1"                # ":" -> all, or range, or single ID
 
-parallel: true 
-max_workers: 12
+parallel: false 
+max_workers: 4
 
 tumag_data_location: "./"         # Path to Organized_files_local folder
 # Organized_files_local_folder_name: "Organized_files_TuMag_d2"
@@ -47,8 +47,8 @@ force_redo:
   level0_5: false
   level0_6: false
   level0_7: false
-  level1_0: true
-  level1_1: false
+  level1_0: false
+  level1_1: true
   use_pd: false             # needs level0_6: true before (or run before)
 
 
@@ -64,6 +64,7 @@ plots:
   plot_level1_0: true
   plot_level1_1: true
   roi_plots: [200, -200, 200, -200]
+  roi_plots: [0, -300, 0, -300]
 
 
 # ----------------------------------------------------------
@@ -160,7 +161,7 @@ crosstalk:
 # ----------------------------------------------------------
 # LEVEL 1.1 OPTIONS
 # ----------------------------------------------------------
-zernike_id: "04_QSUN_Fe2.02_1" #"06_SPOT_Fe2.02_0"
+zernike_id: "02_EMEF_Mg1_0" #"01_QSUN_Mg1" #"06_SPOT_Fe2.02_0"
 
  #----- DEBUGGING OPTIONS
 debug:

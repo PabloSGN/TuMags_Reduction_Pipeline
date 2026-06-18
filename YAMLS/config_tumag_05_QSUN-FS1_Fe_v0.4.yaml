@@ -17,7 +17,7 @@
 # ----------------------------------------------------------
 
 obs_ID: "05_QSUN-FS1"                   # Observation ID
-proc_version: "0.4" # con cross-talk standard
+proc_version: "0.4" 
 
 process_line: "2.02"              # Observation mode to process
 # process_line: "1"              # Observation mode to process
@@ -26,9 +26,9 @@ process_line: "2.02"              # Observation mode to process
 # process_files: "0"                # ":" -> all, or range, or single ID
 # process_files: 2
 process_ocs: ":"                  # ":" -> all, or range, or single ID
-process_files: ":"                # ":" -> all, or range, or single ID
+process_files: "0"                # ":" -> all, or range, or single ID
 
-parallel: true 
+parallel: false 
 max_workers: 12
 
 tumag_data_location: "./"         # Path to Organized_files_local folder
@@ -42,13 +42,13 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 # REPROCESSING OPTIONS
 # ----------------------------------------------------------
 force_redo:
-  redo_flat: true                # Recalculate flats
-  redo_dark: true                # Recalculate darks
-  level0_5: true
+  redo_flat: false                # Recalculate flats
+  redo_dark: false                # Recalculate darks
+  level0_5: false
   level0_6: false
-  level0_7: true
-  level1_0: true
-  level1_1: false
+  level0_7: false
+  level1_0: false
+  level1_1: true
   use_pd: false
 
 
@@ -58,9 +58,9 @@ force_redo:
 plots:
   plot_darks: false
   plot_flats: false
-  plot_level0_5: true
+  plot_level0_5: false
   plot_level0_6: false
-  plot_level0_7: true
+  plot_level0_7: false
   plot_level1_0: true
   plot_level1_1: true
   roi_plots: [200, -200, 200, -200]
@@ -86,7 +86,7 @@ pref_model: True
 # LEVEL 0.5 OPTIONS
 # ----------------------------------------------------------
 level_05:
-  filtering: true                 # Remove high-frequency content
+  filtering: false                 # Remove high-frequency content
   save_level_05: true             # Save processed level 0.5 data
 
 size: 2016
@@ -131,15 +131,15 @@ level_07:
 # LEVEL 1.0 OPTIONS
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "standard"         # "jaeggli" or "standard"
+  crosst_mode: "jaeggli"         # "jaeggli" or "standard"
   crosst_strategy: "sequential"   # "sequential" | "simultaneous"
   crosst_roi: [200,-200,200,-200]      # Normalization region
   crosst_region: [200,-200,200,-200]   # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: None #used -1 for standard and -2 for jaeggli
-  crosst_quadrants: 8
-  crosst_interference: 8 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
+  crosst_quadrants: 0
+  crosst_interference: 4 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
   crosst_dual: false #8          # or 'comm1_cal.npz' file
   normalization: 0
   plot_crosst_method: false
@@ -162,7 +162,7 @@ crosstalk:
 # ----------------------------------------------------------
 # LEVEL 1.1 OPTIONS
 # ----------------------------------------------------------
-zernike_id: "04_QSUN_Mg1_1" 
+zernike_id: "04_QSUN_Fe2.02_1" 
 
 #----- DEBUGGING OPTIONS
 debug:
@@ -171,6 +171,18 @@ debug:
   zoom_size: 600
   filter_test: false
 
+reg1: 0.1 # 0.05
+low_f: 0.2
+reg2: 1 
+epsilon: 0.02 #0.02
+sigma: 5000 # 5000
+
+  # - crosstalk.aggregate_wavelengths: False
+  # - debug.allow_99: False
+  # - cobs: 32.4
+  # - epsilon: 0.02
+  # - sigma: 5000
+  # - stray: 'moffat'-
 # ----------------------------------------------------------
 # OBSERVATION MODES (REFERENCE)
 # ----------------------------------------------------------

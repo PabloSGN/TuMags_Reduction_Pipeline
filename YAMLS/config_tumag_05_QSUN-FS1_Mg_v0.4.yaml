@@ -26,9 +26,9 @@ process_line: "1"              # Observation mode to process
 # process_files: "0"                # ":" -> all, or range, or single ID
 # process_files: 2
 process_ocs: ":"                  # ":" -> all, or range, or single ID
-process_files: ":"                # ":" -> all, or range, or single ID
+process_files: "o"                # ":" -> all, or range, or single ID
 
-parallel: true 
+parallel: false 
 max_workers: 12
 
 tumag_data_location: "./"         # Path to Organized_files_local folder
@@ -42,11 +42,11 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 # REPROCESSING OPTIONS
 # ----------------------------------------------------------
 force_redo:
-  redo_flat: true                # Recalculate flats
-  redo_dark: true                # Recalculate darks
-  level0_5: true
+  redo_flat: false                # Recalculate flats
+  redo_dark: false                # Recalculate darks
+  level0_5: false
   level0_6: false
-  level0_7: true
+  level0_7: false
   level1_0: true
   level1_1: false
   use_pd: false
@@ -132,19 +132,19 @@ level_07:
 # ----------------------------------------------------------
 level_10:
   crosst_mode: "standard"         # "jaeggli" or "standard"
-  crosst_strategy: "sequential"   # "sequential" | "simultaneous"
+  crosst_strategy: "simultaneous"   # "sequential" | "simultaneous"
   crosst_roi: [200,-200,200,-200]      # Normalization region
   crosst_region: [200,-200,200,-200]   # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: None #used -1 for standard and -2 for jaeggli
-  crosst_quadrants: 8
-  crosst_interference: 8 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
+  crosst_quadrants: 0
+  crosst_interference: 3 #"Iref2Q_polycoef_comm1_Fe2.02.csv" #8          # or 'comm1_cal.npz' file
   crosst_dual: false #8          # or 'comm1_cal.npz' file
   normalization: 0
   plot_crosst_method: false
   crosst_verbose: false
-  add_level_10_label: '' #_inter8'
+  add_level_10_label: '_inter3' #_inter8'
 
 crosstalk:
   apply_only: false     # activa el modo "aplicar sin estimar"
