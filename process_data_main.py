@@ -45,7 +45,7 @@ PROJECT_ROOT = add_project_root()
 import config as cf
 import image_handler as ih
 from master_dark import compute_master_darks
-from master_flatfield_v2 import compute_master_flat_field
+from master_flatfield_v3 import compute_master_flat_field
 from image_filtering import filter_frecuencies
 from fits_files_handling import generate_fits, update_header
 from alignment import align_obsmode
@@ -156,6 +156,7 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
 
     logging.info(f' processing ocs: {ocs} ........... ')
     om_value = OCs[ocs]['OM']
+    print(cfg['process_line'],om_value)
     if cfg['process_line'] == om_value:
         logging.info(f' processing ocs: {ocs} which corresponds to {om_value} with {len(OCs[ocs]["ims"])} total images')
         if len(OCs[ocs]['ims']) != obs_dict[obs_ID]['obs_size'][process_line_index]:
@@ -197,7 +198,7 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
                 data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
                 f"{filename}_LV_0.5_v{cfg['proc_version']}", '0.5', 'flat_corrected'
             )
-
+    
 # =======================  reduce_image_0_7   ======================= #
 def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to_label="LV_0.7"):
     """Nivel LV_0.7: balance entre cámaras, alineación (avanzada / Fourier / destretch), demodulación y salida FITS.
@@ -1263,7 +1264,10 @@ def main(argv=None) -> int:
                         flat_paths, dc=dc_real, verbose=True,
                         modify_linearity=cam_linearity, norm_roi=cfg.flat_norm_roi,
                         norm_method=cfg.norm_method, remove_prefilter=cfg.remove_prefilter,
-                        pref_model=cfg.pref_model, import_blueshift_guess=cfg.import_blueshift_guess
+                        pref_model=cfg.pref_model, import_blueshift_guess=cfg.import_blueshift_guess,
+                        centro = cfg.centro, corte = cfg.corte,
+                        discard_repetitions = cfg.discard_repetitions,
+                        flat_optimization = cfg.flat_optimization,
                     )
                     np.savez(flat_output_file, ff_data=ff_data.astype(np.float32), ff_info=ff_info)
             else:
@@ -1273,7 +1277,10 @@ def main(argv=None) -> int:
                     flat_paths, dc=dc_real, verbose=True,
                     modify_linearity=cam_linearity, norm_roi=cfg.flat_norm_roi,
                     norm_method=cfg.norm_method, remove_prefilter=cfg.remove_prefilter,
-                    pref_model=cfg.pref_model, import_blueshift_guess=cfg.import_blueshift_guess
+                    pref_model=cfg.pref_model, import_blueshift_guess=cfg.import_blueshift_guess,
+                    centro = cfg.centro, corte = cfg.corte,
+                    discard_repetitions = cfg.discard_repetitions,
+                    flat_optimization = cfg.flat_optimization,
                 )
                 np.savez(flat_output_file, ff_data=ff_data.astype(np.float32), ff_info=ff_info)
 

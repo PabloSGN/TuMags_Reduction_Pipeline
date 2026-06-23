@@ -29,7 +29,8 @@ DEFAULT_CONFIG = {
     # Rango de OCS / files: ":" -> todos (o rango "a:b" o índice único)
     "process_ocs": ":",
     "process_files": ":",
-
+    "discard_repetitions": None,
+    "flat_optimization": False,
     "parallel": False,
     "max_workers": 4,
 
@@ -230,6 +231,14 @@ def _pretty_value(v: Any) -> str:
     except Exception:
         return repr(v)
 
+def normalize_none_strings(obj):
+    if isinstance(obj, dict):
+        return {k: normalize_none_strings(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [normalize_none_strings(v) for v in obj]
+    elif isinstance(obj, str) and obj.lower() == "none":
+        return None
+    return obj
 
 class ConfigLoader:
     """
@@ -259,12 +268,13 @@ class ConfigLoader:
         with self.filepath.open("r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
+
         if cfg is None:
             cfg = {}
         if not isinstance(cfg, dict):
             raise ValueError(f"Config file must contain a YAML mapping at top-level. Got: {type(cfg)}")
 
-        self.config = cfg
+        self.config = normalize_none_strings(cfg)
 
         # 2) Aplicar defaults EN MEMORIA (no se escribe a disco)
         #    Ahora devolvemos lista de tuplas (full_key, default_value_usado)

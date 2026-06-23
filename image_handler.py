@@ -275,8 +275,10 @@ class nominal_flat:
         # create interp function with new linearity 
         if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
             modify_linear = modified_curve(center=modify_linearity[0], amplitude=modify_linearity[1])
+        from matplotlib import pyplot as plt
 
         for rep in range(nreps):
+            print("nrep (n/t)", rep, nreps)
             for lambd in range(nlambda):
                 if f"wv_{lambd}" not in self.info["Images_headers"]:
                     self.info["Images_headers"][f"wv_{lambd}"] = {}
@@ -300,11 +302,13 @@ class nominal_flat:
                                 if key not in self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"]:
                                     self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key] = []
                                 self.info["Images_headers"][f"wv_{lambd}"][f"Mod_{mod}"][key].append(head0[key])
+
             
                         # Saving image data into main data array
                         self.data[0, lambd, mod] += im0 - (dc[0] * head0["nAcc"])
                         self.data[1, lambd, mod] += np.flip(im1, axis=-1) - (dc[1] * head0["nAcc"])  # Flip cam 2 image. 
-        
+
+
         self.data /= (nreps * lambda_repeat)
 
         # Completing info of Observation Mode with info from header

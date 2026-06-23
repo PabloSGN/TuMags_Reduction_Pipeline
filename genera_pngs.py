@@ -318,7 +318,7 @@ cbar.ax.tick_params(labelsize=8)
 # Animación
 # -------------------------------------------------
 fig.subplots_adjust(right=0.85)
-with writer.saving(fig, f"{out_dir}/movie_{name}_{line}_StokesV.mp4", dpi=120):
+with writer.saving(fig,os.path.join(mov_dir, movie_name), dpi=120):
     for f in files:
         hdu = fits.open(f)
         data = hdu[0].data

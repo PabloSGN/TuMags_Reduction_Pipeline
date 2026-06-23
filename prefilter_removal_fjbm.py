@@ -6,6 +6,8 @@ We correct from blueshift the spectral profile of the flat while
 assuming that the spectral positions of the FTS are correct and do not need
 to be shifted
 
+Modified by FJBM on 2026-06-19 to support all observation modes for prefilter fitting and removal.
+Modified by FJBM on 2026-06-23 to include Config dict and volts_2_lambda function from Pablo
 #
 """   
 import sys
@@ -26,6 +28,49 @@ n=2.5 #As fitted by Pablo
 h=281e-6 #As fitted by Pablo
 
 
+Config = {
+'517' : {'Gamma'    : 0.47,
+         'wls_norm' : 0,
+         'Pend'     : 0.00030907042253499933,
+         'Ord'      : 5173.432608450703,
+         'pref_b'    : 5172.66,
+         'Min_wvl'  : 5170,
+         'Max_wvl'  : 5176,
+         'R'        : 0.75,
+         'n'        : 2.56,
+         'd'        : 281e-6,
+         'theta'    : 0,
+         "pref_c" : 0.5},
+'525.02': {
+        'Gamma'    : 0.98,
+        'wls_norm' : -5,
+        'Pend'     : 0.0002957121398329138,
+        'Ord'      : 5249.543594995222,
+        'pref_b'    : 5250.5,
+        'Min_wvl'  : 5246,
+        'Max_wvl'  : 5255,
+        'R'        : 0.77,
+        'n'        : 2.56,
+        'd'        : 281e-6,
+        'theta'    : 0,
+        "pref_c" : 0.65},
+'525.06' : {
+        'Gamma'    : 1,
+        'wls_norm' : 7,
+        'Pend'     : 0.000288733333332857,
+        'Ord'      : 5251.371833333332,
+        'pref_b'    : 5250.5,  
+        'Min_wvl'  : 5246,
+        'Max_wvl'  : 5255,
+        'R'        : 0.75,
+        'n'        : 2.56,
+        'd'        : 281e-6,
+        'theta'    : 0,
+        "pref_c" : 0.65 }}
+
+def volts_2_lambda(volts, config):
+    return config['Pend'] * volts + config['Ord']
+
 def gaussian(x,x0,sigma):
     """
     Gaussian function defined so FWHM=2.355*sigma
@@ -36,24 +81,34 @@ def gaussian(x,x0,sigma):
     """
     return np.exp(-0.5*((x-x0)/sigma)**2)
 
+def wvl0(om):
+    """
+    Function to return the central wavelength of the observed line depending on the observation mode
+    """
+    if om=='2.02' or om=='3.02' or om=='5.02':
+        wvl0=525.0217e-9-0.125e-12 #Central wavelength of the line (according to FTS)
+    elif om=='2.06' or om=='3.06' or om=='5.06':
+        wvl0=525.0653e-9   
+    elif om=='1' or om=='0s' or om=='0p' or om=='4':
+        wvl0=517.27e-9
+    return wvl0
+
 def prefilter_model(om,wvlv):
     """
     Function to create a prefilter model depending on the observation mode
     based on the fitted parameters for the prefilter.
     """
-    if om=='2.02':
+    if om=='2.02' or om=='3.02' or om=='5.02':
         pref_wvl=525.04e-9
         pref_sigma=0.055e-9
-        wvl0=525.0217e-9-0.125e-12 #Central wavelength of the line (according to FTS)
-    elif om=='2.06':
+    elif om=='2.06' or om=='3.06' or om=='5.06':
         pref_wvl=525.07e-9
-        pref_sigma=0.04e-9
-        wvl0=525.0653e-9   
-    elif om=='1':
+        pref_sigma=0.04e-9 
+    elif om=='1' or om=='0s' or om=='0p' or om=='4':
         pref_wvl=517.26e-9
         pref_sigma=0.05e-9
-        wvl0=517.27e-9
-    pref_model=gaussian(wvlv+wvl0,pref_wvl,pref_sigma)
+
+    pref_model=gaussian(wvlv+wvl0(om),pref_wvl,pref_sigma)
     return pref_model
 
 
@@ -64,17 +119,14 @@ def prefilter_fitting(cam_ave,om,wvlv):
     #Central wavelength of the observed line and optimization parameters
     meth='Nelder-Mead' #Minimization method
 
-    if om=='2.02':
-        wvl0=525.0217e-9-0.125e-12 #Central wavelength of the line (according to FTS)
+    if om=='2.02' or om=='3.02' or om=='5.02':
         init_guess=[3e-12,525.05e-9,0.06e-9] #Initial guess [etalon width (m), pref.  wvl (m), pref. width (m)]
-    elif om=='1':
-        wvl0=517.27e-9
+    elif om=='1' or om=='0s' or om=='0p' or om=='4':
         init_guess=[3.5e-12,517.25e-9,0.06e-9] #Initial guess [etalon width (m), pref.  wvl (m), pref. width (m)]
-    elif om=='2.06':
-        wvl0=525.0653e-9
+    elif om=='2.06' or om=='3.06' or om=='5.06':
         init_guess=[3.8e-12,525.05e-9,0.06e-9]
     bounds=[(1e-12,10e-12), #Transmission width
-            (wvl0-1e-9,wvl0+1e-9), #Central wavelength
+            (wvl0(om)-1e-9,wvl0(om)+1e-9), #Central wavelength
             (0.01e-9,1e-9)] #Prefilter width
 
 
@@ -95,21 +147,20 @@ def prefilter_fitting(cam_ave,om,wvlv):
     wvlv_interp=np.linspace(-0.1e-9,0.1e-9,10001) #Interval of wvls for interpolation centered about 0
 
    
-
     #Loop over different sigmas to create 2D interpolation
     i=-1
     fts_matrix=np.zeros((len(wvlv_interp),len(sigma_vector)))
     for sigma in sigma_vector:
         i+=1
         norm=np.sum(gaussian(wvlv_interp,0,sigma))
-        fts_matrix[:,i]=convolve(fts_interp(wvl0+wvlv_interp),
+        fts_matrix[:,i]=convolve(fts_interp(wvl0(om)+wvlv_interp),
                             gaussian(wvlv_interp,0,sigma),mode='same')/norm
         #Shift to center minimum
         min_wvl_conv=minimize(lambda x: fts_matrix[:,i][np.argmin(np.abs(wvlv_interp - x))],
                             x0=0,method='Nelder-Mead',bounds=[(-1e-12,1e-12)]).x[0]
     
         fts_matrix[:,i]=np.interp(wvlv_interp + min_wvl_conv,wvlv_interp,fts_matrix[:,i])
-    fts_interp2D=RectBivariateSpline(wvl0+wvlv_interp,sigma_vector,fts_matrix,kx=1,ky=1)
+    fts_interp2D=RectBivariateSpline(wvl0(om)+wvlv_interp,sigma_vector,fts_matrix,kx=1,ky=1)
 
 
     """
@@ -125,14 +176,14 @@ def prefilter_fitting(cam_ave,om,wvlv):
 
 
     #Normalization factor to match the intensity of the profiles with FTS
-    if om=='2.02':
-        norm=1*cam_ave[-1]/fts_interp(wvl0+wvlv[-1])
+    if om=='2.02' or om=='3.02' or om=='5.02':
+        norm=1*cam_ave[-1]/fts_interp(wvl0(om)+wvlv[-1])
         prof_scaled=cam_ave/norm
-    elif om=='2.06': 
-        norm=1.085*cam_ave[-1]/fts_interp(wvl0+wvlv[-1])
+    elif om=='2.06' or om=='3.06' or om=='5.06': 
+        norm=1.085*cam_ave[-1]/fts_interp(wvl0(om)+wvlv[-1])
         prof_scaled=cam_ave/norm 
-    elif om=='1':
-        norm=1.15*cam_ave[0]/fts_interp(wvl0+wvlv[0])
+    elif om=='1' or om=='0s' or om=='0p' or om=='4':
+        norm=1.15*cam_ave[0]/fts_interp(wvl0(om)+wvlv[0])
         prof_scaled=cam_ave/norm
 
 
@@ -141,7 +192,7 @@ def prefilter_fitting(cam_ave,om,wvlv):
     minimum mismatch
     """
     #Shift needed for the profile to coincide with FTS minimum
-    delta_wvl=wvl0 - wvl_min
+    delta_wvl=wvl0(om) - wvl_min
 
         
     #Convolve FTS with Gaussian to match the resolution
@@ -168,13 +219,13 @@ def prefilter_fitting(cam_ave,om,wvlv):
     pf_width_opt=minim.x[2]
 
 
-    print('Fitted prefilter parameters for om='+om+':')
+    print('Fitted prefilter parameters for om '+om+':')
     print('Etalon sigma (pm): ',np.round(sigma_opt*1e12,2))
     print('Prefilter central wavelength (nm): ',np.round(wvl_pf_opt*1e9,3))
     print('Prefilter sigma (nm): ',np.round(pf_width_opt*1e9,3))
 
     #Compute prefilter
-    prefilter=gaussian(wvlv+wvl0,wvl_pf_opt,pf_width_opt)
+    prefilter=gaussian(wvlv+wvl0(om),wvl_pf_opt,pf_width_opt)
     return prefilter
 
 
