@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, TextBox
 from astropy.io import fits as pyfits
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.widgets import RangeSlider
 
-
-def view_data(file_ID):
+def view_data(file_ID, flip_order=False):
 
     stokes_limits = {
         0: (0.2, 1.2),     # Stokes I
@@ -122,9 +122,36 @@ def view_data(file_ID):
     # -----------------------
     with pyfits.open(file_ID, memmap=True) as hdu_list:
         stokes = hdu_list[0].data
+    
+    if stokes.ndim == 5:
+        stokes = stokes[0]
+
+
+    if flip_order:
+        print("[INFO] Input order assumed to be (stokes, wave, y, x). Converting to (wave, stokes, y, x).")
+        stokes = np.swapaxes(stokes, 0, 1)
+    else:
+        print("[INFO] Input order assumed to be (wave, stokes, y, x).")
+
     stokes = stokes / np.mean(stokes[-1, 0, :, :])
     wave_axis = np.arange(stokes.shape[0])
 
+    # Si sólo hay I y V, crear Q y U artificiales
+    if stokes.shape[1] == 2:
+
+        stokes_iv = stokes
+
+        stokes = np.zeros(
+            (stokes.shape[0], 4, stokes.shape[2], stokes.shape[3]),
+            dtype=stokes.dtype
+        )
+
+        stokes[:, 0] = stokes_iv[:, 0]  # I
+        stokes[:, 1] = stokes_iv[:, 1]  # Q fake
+        stokes[:, 2] = stokes_iv[:, 1]  # U fake
+        stokes[:, 3] = stokes_iv[:, 1]  # V
+
+        print("Detected NSTOKES=2 (I,V). Replicating V into Q,U,V for display.")
     # -----------------------
     # Create figure and axes
     # -----------------------
@@ -135,6 +162,39 @@ def view_data(file_ID):
     ax4 = fig.add_axes([0.55, 0.20, 0.18, 0.32])  # V
     ax5 = fig.add_axes([0.75, 0.20, 0.18, 0.32])  # I
 
+    # Sliders laterales para cada panel
+
+    ax_rs2 = fig.add_axes([0.52, 0.55, 0.015, 0.32])
+    ax_rs3 = fig.add_axes([0.72, 0.55, 0.015, 0.32])
+    ax_rs4 = fig.add_axes([0.52, 0.20, 0.015, 0.32])
+    ax_rs5 = fig.add_axes([0.72, 0.20, 0.015, 0.32])
+
+    rs2 = RangeSlider(ax_rs2, "", 0.2, 1.2, valinit=(0.2, 1.2),
+                    orientation="vertical")
+
+    rs3 = RangeSlider(ax_rs3, "", -0.05, 0.05, valinit=(-0.01, 0.01),
+                    orientation="vertical")
+
+    rs4 = RangeSlider(ax_rs4, "", -0.05, 0.05, valinit=(-0.01, 0.01),
+                    orientation="vertical")
+
+    rs5 = RangeSlider(ax_rs5, "", -0.05, 0.05, valinit=(-0.01, 0.01),
+                    orientation="vertical")
+
+    def update_limits(val):
+
+        ax2.set_ylim(rs2.val)
+        ax3.set_ylim(rs3.val)
+        ax4.set_ylim(rs4.val)
+        ax5.set_ylim(rs5.val)
+
+        fig.canvas.draw_idle()
+
+    rs2.on_changed(update_limits)
+    rs3.on_changed(update_limits)
+    rs4.on_changed(update_limits)
+    rs5.on_changed(update_limits)
+    
     def force_right_axis(ax):
         # ax.spines['left'].set_visible(False)
         ax.spines['right'].set_visible(True)
@@ -202,21 +262,26 @@ def view_data(file_ID):
     # box_wave.label.set_horizontalalignment('right')
     slider_wave.label.set_position((-0.15, 0.5))
 
-    # Y-limits for right panel
-    ax_box_min = fig.add_axes([x_right, y_box+0.85, 0.05, h_box])
-    box_min = TextBox(ax_box_min, 'Y min', initial='-0.01')
-    ax_box_max = fig.add_axes([x_right + 0.2, y_box+0.85, 0.05, h_box])
-    box_max = TextBox(ax_box_max, 'Y max', initial='0.01')
-    box_min.label.set_fontsize(9)
-    # box_min.label.set_horizontalalignment('right')
-    box_max.label.set_fontsize(9)
-    # box_max.label.set_horizontalalignment('right')
+    # # Y-limits for right panel
+    # ax_box_min = fig.add_axes([x_right, y_box+0.85, 0.05, h_box])
+    # box_min = TextBox(ax_box_min, 'Y min', initial='-0.01')
+    # ax_box_max = fig.add_axes([x_right + 0.2, y_box+0.85, 0.05, h_box])
+    # box_max = TextBox(ax_box_max, 'Y max', initial='0.01')
+    # box_min.label.set_fontsize(9)
+    # # box_min.label.set_horizontalalignment('right')
+    # box_max.label.set_fontsize(9)
+    # # box_max.label.set_horizontalalignment('right')
 
     from matplotlib.widgets import Button
 
     # Reset Zoom button
     ax_button_reset = fig.add_axes([0.47, 0.05, 0.1, 0.05])  # [left, bottom, width, height]
     button_reset = Button(ax_button_reset, 'Reset Zoom', color='lightgray', hovercolor='0.9')
+
+    # Auto Scale button
+    ax_button_auto = fig.add_axes([0.59, 0.05, 0.1, 0.05])
+    button_auto = Button(ax_button_auto, 'Auto Scale',
+                        color='lightgray', hovercolor='0.9')
 
     def reset_zoom(event):
         ax1.set_xlim(original_xlim)
@@ -225,7 +290,46 @@ def view_data(file_ID):
 
     button_reset.on_clicked(reset_zoom)
 
+    def auto_scale(event):
 
+        x = cursor.x
+        y = cursor.y
+
+        # Escalas espectrales para el píxel seleccionado
+        profI = stokes[:, 0, y, x]
+        profQ = stokes[:, 1, y, x]
+        profU = stokes[:, 2, y, x]
+        profV = stokes[:, 3, y, x]
+
+
+        def lims(x):
+            p1, p99 = np.nanpercentile(x, [1, 99])
+            if p1 == p99:
+                p1 -= 1e-6
+                p99 += 1e-6
+            return p1, p99
+
+        ax2.set_ylim(*lims(profI))
+        ax3.set_ylim(*lims(profQ))
+        ax4.set_ylim(*lims(profU))
+        ax5.set_ylim(*lims(profV))
+
+        # Reescala la imagen mostrada
+        stokes_index = int(slider_stokes.val)
+        wave_index = int(slider_wave.val)
+
+        image = stokes[wave_index, stokes_index]
+
+        im_ax1.set_clim(
+            np.nanpercentile(image, 1),
+            np.nanpercentile(image, 99)
+        )
+
+        cursor.clim = im_ax1.get_clim()
+
+        fig.canvas.draw_idle()
+
+    button_auto.on_clicked(auto_scale)
     # -----------------------
     # Cursor
     # -----------------------
@@ -282,38 +386,38 @@ def view_data(file_ID):
     slider_stokes.on_changed(lambda val: update_ax1(stokes_index=int(val)))
     slider_wave.on_changed(lambda val: update_ax1(wave_index=int(val)))
 
-    # Y-limits
-    def submit_ymin(text):
-        try:
-            ymin = float(text)
-            for ax in [ax3, ax4, ax5]:
-                ax.set_ylim(bottom=ymin)
-            # Update clim for the left panel if it matches current Stokes
+    # # Y-limits
+    # def submit_ymin(text):
+    #     try:
+    #         ymin = float(text)
+    #         for ax in [ax3, ax4, ax5]:
+    #             ax.set_ylim(bottom=ymin)
+    #         # Update clim for the left panel if it matches current Stokes
 
-            stokes_index = int(slider_stokes.val)
-            old_clim = list(im_ax1.get_clim())
-            im_ax1.set_clim(vmin=ymin, vmax=old_clim[1])
-            cursor.clim = im_ax1.get_clim()  # sync with cursor
-            fig.canvas.draw_idle()        
-        except ValueError:
-            pass
+    #         stokes_index = int(slider_stokes.val)
+    #         old_clim = list(im_ax1.get_clim())
+    #         im_ax1.set_clim(vmin=ymin, vmax=old_clim[1])
+    #         cursor.clim = im_ax1.get_clim()  # sync with cursor
+    #         fig.canvas.draw_idle()        
+    #     except ValueError:
+    #         pass
 
-    def submit_ymax(text):
-        try:
-            ymax = float(text)
-            for ax in [ax3, ax4, ax5]:
-                ax.set_ylim(top=ymax)
-            # Update clim for the left panel if it matches current Stokes
-            stokes_index = int(slider_stokes.val)
-            old_clim = list(im_ax1.get_clim())
-            im_ax1.set_clim(vmin=old_clim[0], vmax=ymax)
-            cursor.clim = im_ax1.get_clim()
-            fig.canvas.draw_idle()
-        except ValueError:
-            pass
+    # def submit_ymax(text):
+    #     try:
+    #         ymax = float(text)
+    #         for ax in [ax3, ax4, ax5]:
+    #             ax.set_ylim(top=ymax)
+    #         # Update clim for the left panel if it matches current Stokes
+    #         stokes_index = int(slider_stokes.val)
+    #         old_clim = list(im_ax1.get_clim())
+    #         im_ax1.set_clim(vmin=old_clim[0], vmax=ymax)
+    #         cursor.clim = im_ax1.get_clim()
+    #         fig.canvas.draw_idle()
+    #     except ValueError:
+    #         pass
 
-    box_min.on_submit(submit_ymin)
-    box_max.on_submit(submit_ymax)
+    # box_min.on_submit(submit_ymin)
+    # box_max.on_submit(submit_ymax)
 
     # -----------------------
     # Colormap selector
@@ -353,17 +457,31 @@ def list_fits(inpath: str = './', contain: str = None, remove_dir: bool = False,
 if __name__ == '__main__':
 
     def print_help():
-        print("Usage: python visor.py <file.fits>")
+        print("Usage: python visor.py <file.fits> [-flip]")
         print("Use -help to display this message.")
+        print("")
+        print("Options:")
+        print("  -flip    Flip wavelength/order inside view_data")
 
-    if len(sys.argv) == 2 and sys.argv[1] == "-help":
+    if len(sys.argv) >= 2 and sys.argv[1] == "-help":
         print_help()
         sys.exit(0)
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
         print("Error: You must provide one FITS filename.")
         print_help()
         sys.exit(1)
 
     file_ID = sys.argv[1]
-    view_data(file_ID)
+
+    flip_order = False
+
+    if len(sys.argv) == 3:
+        if sys.argv[2] == "-flip":
+            flip_order = True
+        else:
+            print(f"Error: Unknown option {sys.argv[2]}")
+            print_help()
+            sys.exit(1)
+
+    view_data(file_ID, flip_order=flip_order)

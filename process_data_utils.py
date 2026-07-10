@@ -29,8 +29,6 @@ DEFAULT_CONFIG = {
     # Rango de OCS / files: ":" -> todos (o rango "a:b" o índice único)
     "process_ocs": ":",
     "process_files": ":",
-    "discard_repetitions": None,
-    "flat_optimization": False,
     "parallel": False,
     "max_workers": 4,
 
@@ -86,7 +84,10 @@ DEFAULT_CONFIG = {
     "norm_method": "blueshift",
     "remove_prefilter": True,
     "pref_model": True,
-
+    "discard_repetitions": None,
+    "flat_optimization": False,
+    "interp_method": 'spline',   # 'quadratic', 'spline', 'pchip'
+    "plot_interpolators": False,
     # ----------------------------------------------------------
     # LEVEL 0.5 OPTIONS
     # ----------------------------------------------------------
@@ -503,45 +504,91 @@ def plt_level(data,roi,png_folder,name,level,label='',cclim=None):
         plt.close()  # Close the figure to avoid showing it
 
     elif level=='0.5':
-
         cn, wn, pn, xs, ys = data.shape
 
-        fig, ax = plt.subplots(wn, pn, figsize=(16, 32))
-        fig.tight_layout()
-        for i in range(wn):
-            for j in range(pn):
-                plr = np.median(data[0, i, j, roi[0]:roi[1], roi[2]:roi[3]])
-                if cclim:
-                    im = ax[i, j].imshow(
-                    data[0, i, j, roi[0]:roi[1], roi[2]:roi[3]], cmap="Greys_r",clim=cclim)
-                    # ,clim=(plr*0.7,plr*1.3))
-                else:
-                    im = ax[i, j].imshow(
-                        data[0, i, j, roi[0]:roi[1], roi[2]:roi[3]], cmap="Greys_r")
-                        # ,clim=(plr*0.7,plr*1.3))
-                im.set_interpolation("none")
-                plt.colorbar(im, ax=ax[i, j])
-        plt.savefig(f"{png_folder}/pngs/{name}_{label}_cam0.png", dpi=150)
-        plt.close()  # Close the figure to avoid showing it
 
-        fig, ax = plt.subplots(wn, pn, figsize=(16, 32))
-        fig.tight_layout()
-        for i in range(wn):
-            for j in range(pn):
-                plr = np.median(data[1, i, j, roi[0]:roi[1], roi[2]:roi[3]])
-                if cclim:
-                    im = ax[i, j].imshow(
-                    data[1, i, j, roi[0]:roi[1], roi[2]:roi[3]], cmap="Greys_r",clim=cclim)
-                    # ,clim=(plr*0.7,plr*1.3))
-                else:
-                    im = ax[i, j].imshow(
-                        data[1, i, j, roi[0]:roi[1], roi[2]:roi[3]], cmap="Greys_r")
-                    # ,clim=(plr*0.7,plr*1.3))
-                im.set_interpolation("none")
-                plt.colorbar(im, ax=ax[i, j])
-        plt.savefig(f"{png_folder}/pngs/{name}_{label}_cam1.png", dpi=150)
-        plt.close()  # Close the figure to avoid showing it
+        def _ensure_2d_axes(ax, nrows, ncols):
+            """
+            Fuerza a que ax sea indexable como ax[i, j]
+            en todos los casos.
+            """
+            if nrows == 1 and ncols == 1:
+                ax = np.array([[ax]])
+            elif nrows == 1:
+                ax = np.array([ax])
+            elif ncols == 1:
+                ax = np.array([[a] for a in ax])
+            return ax
 
+
+        def _plot_camera_grid(cam_index, savepath):
+            # -------------------------------------------------
+            # Caso especial: una sola polarización/componente
+            # -------------------------------------------------
+            if pn == 1:
+                fig, ax = plt.subplots(wn, 1, figsize=(8, max(4, 4 * wn)))
+                fig.tight_layout()
+
+                ax = _ensure_2d_axes(ax, wn, 1)
+
+                for i in range(wn):
+                    subim = data[cam_index, i, 0, roi[0]:roi[1], roi[2]:roi[3]]
+                    plr = np.median(subim)
+
+                    if cclim:
+                        im = ax[i, 0].imshow(
+                            subim,
+                            cmap="Greys_r",
+                            clim=cclim
+                        )
+                    else:
+                        im = ax[i, 0].imshow(
+                            subim,
+                            cmap="Greys_r"
+                            # si quieres:
+                            # clim=(plr*0.7, plr*1.3)
+                        )
+
+                    im.set_interpolation("none")
+                    plt.colorbar(im, ax=ax[i, 0])
+
+            # -------------------------------------------------
+            # Caso general: varias polarizaciones/componentes
+            # -------------------------------------------------
+            else:
+                fig, ax = plt.subplots(wn, pn, figsize=(16, 32))
+                fig.tight_layout()
+
+                ax = _ensure_2d_axes(ax, wn, pn)
+
+                for i in range(wn):
+                    for j in range(pn):
+                        subim = data[cam_index, i, j, roi[0]:roi[1], roi[2]:roi[3]]
+                        plr = np.median(subim)
+
+                        if cclim:
+                            im = ax[i, j].imshow(
+                                subim,
+                                cmap="Greys_r",
+                                clim=cclim
+                            )
+                        else:
+                            im = ax[i, j].imshow(
+                                subim,
+                                cmap="Greys_r"
+                                # si quieres:
+                                # clim=(plr*0.7, plr*1.3)
+                            )
+
+                        im.set_interpolation("none")
+                        plt.colorbar(im, ax=ax[i, j])
+
+            plt.savefig(savepath, dpi=150)
+            plt.close()
+
+
+        _plot_camera_grid(0, f"{png_folder}/pngs/{name}_{label}_cam0.png")
+        _plot_camera_grid(1, f"{png_folder}/pngs/{name}_{label}_cam1.png")
     else:
         pass
 

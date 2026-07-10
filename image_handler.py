@@ -180,7 +180,7 @@ def _procesar_imagenes(imagenes, nlambda, nmods):
 
 class nominal_observation:
 
-    def __init__(self, om, images_path, dc, modify_linearity=(None, None), allow_99 = False):
+    def __init__(self, om, images_path, dc, modify_linearity=(None, None), allow_99 = False, hc = False):
 
         self.info = {"ObservationMode": om,
                      "Images_headers": {}}
@@ -194,16 +194,12 @@ class nominal_observation:
         nlambda = cf.om_config[om]["Nlambda"]   # N wavelengths from config file
         
         if allow_99:
-            # print(images_path)
             if len(images_path) != nlambda * nmods * 2:
                 print(f"Warning: jump_99 enabled but number of images provided ({len(images_path)}) does not match expected ({nlambda * nmods * 2}). Proceeding with processing but check results carefully.")
                 images_path = _procesar_imagenes(images_path, nlambda, nmods)
-            # print(images_path)
-        else:
-            print(allow_99,'******')
         images_path_reshaped = np.array(images_path).reshape(nlambda, nmods, 2)
 
-        _, h1 = read(images_path_reshaped[0, 0, 0])  # read first image to get acc
+        # _, h1 = read(images_path_reshaped[0, 0, 0])  # read first image to get acc
        
         # create interp function with new linearity 
         if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
@@ -240,6 +236,8 @@ class nominal_observation:
         self.info["Roiy_offset"] = head0["Roiy_offset"]
             
         # Saving info from config file into observtaion mode info
+        if hc:
+            head0["ObservationMode"] = 'HC'
         for entry in cf.om_config[head0["ObservationMode"]]:
             self.info[entry] = cf.om_config[head0["ObservationMode"]][entry]
 
@@ -255,7 +253,7 @@ class nominal_observation:
 class nominal_flat:
 
     # Process the observations
-    def __init__(self, om, images_path, nreps, dc, lambda_repeat=4, verbose=False, modify_linearity=(None, None)):
+    def __init__(self, om, images_path, nreps, dc, lambda_repeat=4, modify_linearity=(None, None)):
 
         print(f"Processing images...")
 
@@ -275,7 +273,6 @@ class nominal_flat:
         # create interp function with new linearity 
         if modify_linearity and modify_linearity[0] is not None and modify_linearity[1] is not None:  # MINIMAL FIX
             modify_linear = modified_curve(center=modify_linearity[0], amplitude=modify_linearity[1])
-        from matplotlib import pyplot as plt
 
         for rep in range(nreps):
             print("nrep (n/t)", rep, nreps)
@@ -422,7 +419,7 @@ def read_ID(image_index, plotflag=False, verbose=False, header=False, binning=Fa
 
     return I, H
 
-def separate_ocs(paths, verbose=True, flat_fieldmode=False):
+def separate_ocs(paths, verbose=True, flat_fieldmode=False, hc = False):
     """
     Function to separate the images provided into different OCS. 
 
@@ -461,21 +458,25 @@ def separate_ocs(paths, verbose=True, flat_fieldmode=False):
 
     for ind, im in enumerate(paths):
         
-        print(f"{ind}/{len(paths)} read.")
+        print(f"{ind}/{len(paths)} read: {im}.")
         _, H = read(im)
 
         oc = H['ObservationCounter']
         oc_ind = labelling(oc, completed_ocs)
+        
 
         if oc_ind not in OCs:
             OCs[oc_ind] = {}
-            OCs[oc_ind]["OM"] = H["ObservationMode"]
+            if hc:
+                OCs[oc_ind]["OM"] = 'HC'
+            else:
+                OCs[oc_ind]["OM"] = H["ObservationMode"]
             OCs[oc_ind]["ims"] = []
             OCs[oc_ind]["empty"] = True
             OCs[oc_ind]["ims"].append(im)
 
-            if H["ObservationMode"] in cf.om_config:
-                OCs[oc_ind]["Expected Nim"] = cf.om_config[H["ObservationMode"]]["images_per_mode"] * mult
+            if OCs[oc_ind]["OM"] in cf.om_config:
+                OCs[oc_ind]["Expected Nim"] = cf.om_config[OCs[oc_ind]["OM"]]["images_per_mode"] * mult
             else:
                 OCs[oc_ind]["Expected Nim"] = 999
 
@@ -506,7 +507,7 @@ def get_time_from_filename(filename):
     Function to get the time as a datetime object from the file name. 
     """
     split = [int(x) for x in filename[:-4].split("_")]
-    return datetime(split[0], split[1], split[2], split[3], split[4], split[5])
+    return datetime(split[0], split[1], split[2], split[3], split[4], split[5], split[6] * 1000)
 
 def obs_mode_separator(paths, verbose=False):
     """

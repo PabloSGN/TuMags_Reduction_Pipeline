@@ -399,17 +399,22 @@ def update_alignment_csv(
 
     return df
 
-def alignment(data, header, filter, wave, size_corner=500, size_center=300, weight=[0.5,2.0,1.0]):
+def alignment(data, header, filter, wave, size_corner=500, size_center=300, weight=[0.5,2.0,1.0], nodemod = False):
     
     tic = time.time()
 
-    _, demod = demodulate(data[:, wave], 
-                            filt=filter, 
-                            onelambda=True, 
-                            BothCams=True)
+    if nodemod:
 
-    I_cam1 = demod[0, 0]
-    I_cam2 = demod[1, 0]
+        I_cam1 = data[0, 0]
+        I_cam2 = data[1, 0]
+    else:
+        _, demod = demodulate(data[:, wave], 
+                                filt=filter, 
+                                onelambda=True, 
+                                BothCams=True)
+
+        I_cam1 = demod[0, 0]
+        I_cam2 = demod[1, 0]
 
     # scale, gamma = balance(I_cam1, I_cam2)
     # I_cam2 = I_cam2 * scale
@@ -460,11 +465,22 @@ def alignment(data, header, filter, wave, size_corner=500, size_center=300, weig
         }
     )
 
-    # Calcular timestamp con medias de M0-M3
-    dt = []
-    for k in range(4):
-        dt.append(parse_header_time(header[f"WV_{wave}_M{k}"]))
-    timestamp = sum(minutes_from_dt(d) for d in dt) / 4.0
+    # print(header['NMODS'])
+    # # Calcular timestamp con medias de M0-M3
+    # dt = []
+    # for k in range(4):
+    #     dt.append(parse_header_time(header[f"WV_{wave}_M{k}"]))
+    # timestamp = sum(minutes_from_dt(d) for d in dt) / 4.0
+
+    try:
+        nmods = int(header['NMODS'])
+        timestamp = np.mean([
+            minutes_from_dt(parse_header_time(header[f"WV_{wave}_M{k}"]))
+            for k in range(nmods)
+        ])
+    except:
+        print('Error in alignment nmods. timestamp = 0')
+        timestamp = 0
 
     tac = time.time()
 

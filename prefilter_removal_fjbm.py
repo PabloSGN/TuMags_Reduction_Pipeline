@@ -205,8 +205,28 @@ def prefilter_fitting(cam_ave,om,wvlv):
         wvlv_shifted=wvlv + delta_wvl
 
         #Interpolated mean profile at shifted wavelengths
-        fts_shifted=fts_interp2D(wvlv_shifted, sigma).flatten()
+        # fts_shifted=fts_interp2D(wvlv_shifted, sigma).flatten()
+        try:
+            fts_shifted = fts_interp2D(wvlv_shifted, sigma).flatten()
+        except Exception:
 
+            print("\n---- DEBUG ----")
+            print("sigma =", sigma)
+            print("delta_wvl =", delta_wvl)
+
+            print("wvlv:")
+            print(wvlv)
+
+            print("wvlv_shifted:")
+            print(wvlv_shifted)
+
+            print("diff(wvlv_shifted):")
+            print(np.diff(wvlv_shifted))
+
+            print("strictly increasing:",
+                np.all(np.diff(wvlv_shifted) > 0))
+
+            raise
         #Compute difference with individual profile avoiding continuum wavelength
         diff=prof_scaled[:] - fts_shifted[:]*gaussian(wvlv_shifted,wvl_pf,pf_width)  
         return np.sum(diff**2)

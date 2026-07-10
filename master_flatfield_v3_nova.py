@@ -22,6 +22,7 @@ from pathlib import Path
 import logging
 import os
 from matplotlib import pyplot as plt
+
 # Third-party libraries
 import numpy as np
 from tqdm import tqdm
@@ -41,12 +42,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                               pref_model=True, import_blueshift_guess=True,
                               modify_linearity=([1539, 1540], [1.0, 1.0]),
                               norm_roi=[300, -300, 300, -300], corte = 650, centro = [800,800],
-                              discard_repetitions = False, flat_optimization = False,
-                              interp_method = 'spline',   # 'quadratic', 'spline', 'pchip'
-                              plot_interpolators = True,
-                              ):
-
-
+                              discard_repetitions = False, flat_optimization = False):
 
     """
     Function to compute the flat-field observation from the images paths. 
@@ -71,9 +67,6 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
     tic = time.time()
     block_size = 50
     print("CPUs:", os.cpu_count())
-    backend = "loky"#"threading" #loky
-    n_jobs = min(8, max(1, (os.cpu_count() or 1) - 2))
-
 
     if verbose:
         print(f"\nComputing flats.")
@@ -134,36 +127,44 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
         print(f"Nº of repetitions: {nreps}")
         print(f"Nº of wavelengths: {N_wls}")
         print(f"Nº of Modulations: {N_mods}")
+#        print(f"Wavelength sampling (pm): {wvlv * 1e12}")
 
-    # Read images and correct them from dark current.
+    # -------------------------------------------------------------------------
+    # Read images and dark-correct
+    # -------------------------------------------------------------------------
     flat_obs = ih.nominal_flat(om, flat_fields_paths, nreps, dc, modify_linearity=modify_linearity)
     data = flat_obs.get_data()
-    #Get information of commanded voltages for each wavelength
+
+    # -------------------------------------------------------------------------
+    # Read commanded voltages and reorder if decreasing
+    # -------------------------------------------------------------------------
     volts_list = [] 
     for lambd in range(N_wls):
-            volts_list.append(flat_obs.info["Images_headers"][f"wv_{lambd}"][f"Mod_{0}"]['hvps_read_volts'][0])
+            volts_list.append(flat_obs.info["Images_headers"][f"wv_{lambd}"][f"Mod_{0}"]['hvps_comm_volts'][0])
 
     volts_list = np.asarray(volts_list)
     dv = np.diff(volts_list)
     reordering = False
-    logging.info(volts_list)
     if np.all(dv > 0):
         logging.info("Voltages increasing")
     elif np.all(dv < 0):
         logging.info("Voltages decreasing -> reordering")
         idx = np.argsort(volts_list)
         volts_list = volts_list[idx]
-        logging.info(volts_list)
         data = data[:, idx, ...]
         reordering = True
     else:
         logging.warning("Voltages are not monotonic")
 
-    # Convert volts information to wavelength using the config dictionary
-    wvl=pr.volts_2_lambda(np.array(volts_list), pr.Config[cf.om_config[om]["line"]])*1e-10 #Wavelength in meters
+    # -------------------------------------------------------------------------
+    # Convert volts to wavelength
+    # -------------------------------------------------------------------------
+    wvl=pr.volts_2_lambda(volts_list, pr.Config[cf.om_config[om]["line"]])*1e-10 #Wavelength in meters
     wvlv = wvl - pr.wvl0(om)  # Wavelengths in meters relative to central wavelength
-    
-    # Define range of pixels to be used for blueshift calculation and mean profile
+
+    # -------------------------------------------------------------------------
+    # Define cropped area for the blueshift fit
+    # -------------------------------------------------------------------------
     x0 = centro[0] - corte
     y0 = centro[1] - corte
     xf = centro[0] + corte
@@ -172,37 +173,35 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
     Ny = yf - y0
     logging.info(f'  >> flat (processed area) cropping..........{x0,y0,xf,yf,Nx,Ny}')
 
-    # region donde el blueshift es menor (ad-hoc)
+    # Region where blueshift is smallest (ad-hoc)
     x0_mean = 1200
     y0_mean = 1200
     xf_mean = x0_mean + 100
     yf_mean = y0_mean + 100
 
-    # Compute mean value over central region for blueshift calculation
+    # -------------------------------------------------------------------------
+    # Average profiles in the reference region
+    # -------------------------------------------------------------------------
     cam1_ave = np.mean(data[0, :, :, x0_mean:xf_mean, y0_mean:yf_mean], axis=(1, 2, 3))
     cam2_ave = np.mean(data[1, :, :, x0_mean:xf_mean, y0_mean:yf_mean], axis=(1, 2, 3))
 
-    norm_ff = np.ones(data.shape)
+    norm_ff = np.ones_like(data)
 
     # -------------------------------------------------------------------------
     # Normalize flat field according to selected method
     # -------------------------------------------------------------------------
     if norm_method == "blueshift":
-        # Interpolation of the averaged profiles over wavelength
+        # Interpolation of the averaged profiles over wavelength TODO: se puede usar otro no?
+        cam1_interp_ref = interp1d(wvlv, cam1_ave, kind='quadratic', bounds_error=False,
+                               fill_value='extrapolate')
+        cam2_interp_ref = interp1d(wvlv, cam2_ave, kind='quadratic', bounds_error=False,
+                               fill_value='extrapolate')
 
-        if interp_method.lower() == 'quadratic':
-            cam1_interp = interp1d(wvlv, cam1_ave, kind='quadratic', bounds_error=False,
-                                fill_value='extrapolate')
-            cam2_interp = interp1d(wvlv, cam2_ave, kind='quadratic', bounds_error=False,
-                                fill_value='extrapolate')
-        elif interp_method.lower() == 'pchip':
-            cam1_interp = PchipInterpolator(wvlv, cam1_ave, extrapolate=True)
-            cam2_interp = PchipInterpolator(wvlv, cam2_ave, extrapolate=True)
-        else:
-            cam1_interp = CubicSpline(wvlv, cam1_ave, bc_type='natural',extrapolate=True)
-            cam2_interp = CubicSpline(wvlv, cam2_ave, bc_type='natural',extrapolate=True)
+        meth = 'Nelder-Mead'
 
-        # Map observation mode to guess family
+        # ---------------------------------------------------------------------
+        # Blueshift initial guess
+        # ---------------------------------------------------------------------
         if import_blueshift_guess:
             if om == "0s" or om == "0p" or om=="1" or om=="4":
                 om_guess = "1"
@@ -222,53 +221,63 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                 logging.info(f"Using blueshift guess mode: {om_guess} for ObservationMode {om}")
 
             BASE_DIR = Path(__file__).resolve().parent
-            file_path_blueshift = BASE_DIR / f"{fname_guess}_wvl_shifts_cam1.npy"
-            blueshift_guess = np.load(file_path_blueshift)
-            file_path_scale = BASE_DIR / f"{fname_guess}_scales_cam1.npy"
-            scale_guess = np.load(file_path_scale)
+            blueshift_guess = np.load(BASE_DIR / f"{fname_guess}_wvl_shifts_cam1.npy")
+            scale_guess = np.load(BASE_DIR / f"{fname_guess}_scales_cam1.npy")
 
-        # Fit all pixels for each camera
+        # Output arrays
 
         wvl_shifts = np.zeros((2, Nx, Ny))
         scales = np.zeros((2, Nx, Ny))
 
         logging.info('Fitting blueshift and scale for each camera...')
+
         for cam in range(2):
             logging.info(f'Camera {cam + 1}')
             cam_ave = cam1_ave if cam == 0 else cam2_ave
 
-            # Interpolation of the averaged profiles over wavelength
+            interp_method = 'spline'   # 'quadratic', 'spline', 'pchip'
+            plot_interpolators = True
+
+            # ---------------------------------------------------
+            # Preparar datos
+            # ---------------------------------------------------
+
             if om == '2.02':
-                # Add a "fake" point to avoid divergence when extrapolating
                 wvlv_interp = np.append(wvlv, 30e-12)
                 cam_ave_interp = np.append(cam_ave, cam_ave[-1])
             else:
-                wvlv_interp = wvlv
-                cam_ave_interp = cam_ave
+                wvlv_interp = wvlv.copy()
+                cam_ave_interp = cam_ave.copy()
 
+            interp_sort_idx = np.argsort(wvlv_interp)
+            x_interp = wvlv_interp[interp_sort_idx]
+            y_interp = cam_ave_interp[interp_sort_idx]
+
+            # ---------------------------------------------------
+            # Crear interpolador seleccionado
+            # ---------------------------------------------------
             if interp_method.lower() == 'quadratic':
-                cam_interp = interp1d(
-                    wvlv_interp, cam_ave_interp,
+                line_interp = interp1d(
+                    x_interp, y_interp,
                     kind='quadratic',
                     bounds_error=False,
                     fill_value='extrapolate'
                 )
             elif interp_method.lower() == 'pchip':
-                cam_interp = PchipInterpolator(
-                    wvlv_interp, cam_ave_interp, extrapolate=True
+                line_interp = PchipInterpolator(
+                    x_interp, y_interp, extrapolate=True
                 )
             else:
-                cam_interp = CubicSpline(
-                    wvlv_interp, cam_ave_interp,
+                line_interp = CubicSpline(
+                    x_interp, y_interp,
                     bc_type='natural',
                     extrapolate=True
                 )
 
+            # ---------------------------------------------------
+            # Diagnóstico opcional
+            # ---------------------------------------------------
             if plot_interpolators:
-                interp_sort_idx = np.argsort(wvlv_interp)
-                x_interp = wvlv_interp[interp_sort_idx]
-                y_interp = cam_ave_interp[interp_sort_idx]
-
                 wvlv2 = np.linspace(np.min(x_interp), np.max(x_interp), 5000)
 
                 interp_quad = interp1d(
@@ -305,22 +314,32 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                 print(f"Spline    : {cen_cubic*1e12:.4f} pm")
                 print(f"PCHIP     : {cen_pchip*1e12:.4f} pm")
 
-            # Compute line center
-            wvlv2 = np.linspace(wvlv[0], wvlv[-1], 5000)
-            line_center = wvlv2[np.argmin(cam_interp(wvlv2))]
+            # ---------------------------------------------------
+            # Centro de línea con el interpolador elegido
+            # ---------------------------------------------------
 
-            wvlv_fit = wvlv.copy()
-            interp = cam1_interp if cam == 0 else cam2_interp
+            wvlv2 = np.linspace(np.min(x_interp), np.max(x_interp), 5000)
 
+            line_center = wvlv2[np.nanargmin(line_interp(wvlv2))]
+
+            ind_fit0 = 0
+            ind_fitf = -1
+
+            wvlv_fit = wvlv[ind_fit0:ind_fitf]
+            reference_interp = cam1_interp_ref if cam == 0 else cam2_interp_ref
+
+            # ---------------------------------------------
+            # Fit blueshift and scale
+            # ---------------------------------------------
             if flat_optimization:
                 logging.info("using opmtimized version")
                 
                 # Rejilla de shifts
-                delta_grid = np.linspace(-10e-12, 10e-12, 510)
+                delta_grid = np.linspace(-10e-12, 10e-12, 510) #increase
 
                 # Referencias interpoladas precalculadas
                 refs = np.array([
-                    interp(wvlv_fit + delta)
+                    reference_interp(wvlv_fit + delta)
                     for delta in delta_grid
                 ])
                 refs_norm = np.sum(refs**2, axis=1)
@@ -331,7 +350,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                     for ii, i in enumerate(range(i0, i1)):
                         for j in range(Ny):
                             cam_indiv = np.mean(
-                                data[cam, :, :, x0+i, y0+j],
+                                data[cam, ind_fit0:ind_fitf, :, x0+i, y0+j],
                                 axis=1
                             )
                             dots = refs @ cam_indiv
@@ -352,8 +371,8 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                     for i0 in range(0, Nx, block_size)
                 ]
                 results = Parallel(
-                    n_jobs=n_jobs,
-                    backend=backend,
+                    n_jobs=-1,
+                    backend="loky",
                     verbose=10
                 )(
                     delayed(fit_block)(i0, i1)
@@ -369,30 +388,25 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
 
             else:
                 # Fit each pixel
-                meth = 'Nelder-Mead'
                 for i in tqdm(range(Nx)):
                     for j in range(Ny):
-                        cam_indiv = np.mean(data[cam, :, :, x0+i, y0+j], axis=1)
+                        cam_indiv = np.mean(data[cam, ind_fit0:ind_fitf, :, x0+i, y0+j], axis=1)
 
                         def merit_indiv1(params):
                             delta_wvl = params[0]
                             scale = params[1]
 
-                            wvlv_shifted = wvlv + delta_wvl
-
-                            if cam == 0:
-                                cam_mean_shifted = cam1_interp(wvlv_shifted)
-                            else:
-                                cam_mean_shifted = cam2_interp(wvlv_shifted)
+                            wvlv_shifted = wvlv_fit + delta_wvl
+                            cam_mean_shifted = reference_interp(wvlv_shifted)
 
                             diff = scale * cam_mean_shifted - cam_indiv
                             return np.sum(diff ** 2)
-                        
+
                         if import_blueshift_guess:
                             guess_ij = [blueshift_guess[i, j], scale_guess[i, j]]
                         else:
                             guess_ij = [0, 1]
-                        
+
                         minim = minimize(
                             merit_indiv1,
                             x0=guess_ij,
@@ -403,19 +417,46 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                         wvl_shifts[cam, i, j] = minim.x[0]
                         scales[cam, i, j] = minim.x[1]
 
-            # Compute offset of wavelength sampling with respect to line center
-            max_shift = np.max(wvl_shifts[cam, :, :])
-            wvl_offset = line_center + max_shift
+            # ---------------------------------------------
+            # Re-reference blueshift
+            # Blueshift in the Sun is negative, so using max_shift as reference
+            # makes the least-shifted pixel equal to 0.
+            # Example: [-5,-4,-3,-2] -> subtract(-2) -> [-3,-2,-1,0]
+            # ---------------------------------------------
+            raw_min_shift = np.min(wvl_shifts[cam])
+            raw_max_shift = np.max(wvl_shifts[cam])
+
             logging.info(
+                f"Camera {cam+1}: raw blueshift range = "
+                f"[{raw_min_shift*1e12:.3f}, {raw_max_shift*1e12:.3f}] pm"
+            )
+
+            max_shift = raw_max_shift
+            wvl_shifts[cam] -= max_shift
+
+            logging.info(
+                f"Camera {cam+1}: referenced blueshift range = "
+                f"[{np.min(wvl_shifts[cam])*1e12:.3f}, {np.max(wvl_shifts[cam])*1e12:.3f}] pm"
+            )
+
+            wvl_offset = line_center + max_shift
+
+            if verbose:
+                logging.info(
                     f'Sampling offset with respect to line center for cam {cam + 1} (pm): {wvl_offset * 1e12:g}'
                 )
-            
+            # ---------------------------------------------
+            # Apply Eq. 3 / correct profiles
+            # ---------------------------------------------
             def correct_block(i0, i1):
                 logging.info(f"Starting block {i0}:{i1}")
+
                 norm_block = np.empty((i1 - i0, N_wls, N_mods, Ny))
+
                 for ii, i in enumerate(range(i0, i1)):
                     for j in range(Ny):
                         cam_shifted_average = np.zeros(N_wls)
+
                         for k in range(N_mods):
                             if om == '2.02':
                                 cam_data_interp = np.append(
@@ -425,36 +466,42 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
                             else:
                                 cam_data_interp = data[cam, :, k, x0+i, y0+j]
 
-                            if interp_method.lower() == 'quadratic':
-                                cam_interp = interp1d(wvlv_interp, cam_data_interp, kind='quadratic', bounds_error=False,
-                                                    fill_value='extrapolate')
-                            elif interp_method.lower() == 'pchip':
-                                cam_interp = PchipInterpolator(wvlv_interp, cam_data_interp, extrapolate=True)
-                            else:
-                                cam_interp = CubicSpline(wvlv_interp, cam_data_interp, bc_type='natural',extrapolate=True)
+                            # Always sort interpolation axis
+                            cam_data_interp_sorted = cam_data_interp[interp_sort_idx]
 
-                            cam_shifted = cam_interp(
+                            corr_interp = interp1d(
+                                x_interp,
+                                cam_data_interp_sorted,
+                                kind='quadratic',
+                                bounds_error=False,
+                                fill_value='extrapolate'
+                            )
+
+                            cam_shifted = corr_interp(
                                 wvlv - wvl_shifts[cam, i, j]
                             )
                             cam_shifted_average += cam_shifted
+
                         cam_shifted_average /= N_mods
+
                         for k in range(N_mods):
                             norm_block[ii, :, k, j] = (
                                 scales[cam, i, j]
                                 * data[cam, :, k, x0+i, y0+j]
                                 / cam_shifted_average
                             )
+
                 logging.info(f"Block {i0}:{i1} finished")
                 return i0, i1, norm_block
-            
+
             blocks = [
                 (i0, min(i0 + block_size, Nx))
                 for i0 in range(0, Nx, block_size)
             ]
 
             results = Parallel(
-                n_jobs=n_jobs,
-                backend=backend,
+                n_jobs=-1,
+                backend="loky",
                 verbose=10
             )(
                 delayed(correct_block)(i0, i1)
@@ -462,9 +509,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
             )
 
             for i0, i1, norm_block in results:
-                norm_ff[cam, :, :, x0+i0:x0+i1, y0:y0+Ny] = (
-                    np.moveaxis(norm_block, 0, 2)
-                )            
+                norm_ff[cam, :, :, x0+i0:x0+i1, y0:y0+Ny] = np.moveaxis(norm_block, 0, 2)
 
         np.savez('blueshift.npz', wvl_shifts=wvl_shifts, scales=scales)
 
@@ -495,6 +540,12 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
     else:
         raise Exception("Invalid normalization method. Please select 'blueshift','avg', 'mod' or 'none'")
 
+    debug = False
+    if debug:
+        from joblib import dump
+        dump(locals(), "tmp/mydebug.joblib")
+        raise SystemExit
+
     # -------------------------------------------------------------------------
     # Remove prefilter if required
     # -------------------------------------------------------------------------
@@ -508,6 +559,7 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
             prefilter = pr.prefilter_model(om_pref, wvlv)
         else:
             prefilter = pr.prefilter_fitting(cam1_ave, om_pref, wvlv)
+
         norm_ff *= prefilter[np.newaxis, :, np.newaxis, np.newaxis, np.newaxis]
 
     if reordering:

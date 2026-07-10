@@ -56,9 +56,13 @@ def header_generator(data, ominfo,datatype="SCIENCE"):
     shape = data.shape
     ndim = data.ndim
     ny, nx = shape[-2], shape[-1]
-
     obs_start = ominfo["Images_headers"]["wv_0"]["M0"]["Date"]
-    obs_end = ominfo["Images_headers"][f"wv_{ominfo['Nlambda'] - 1}"]["M3"]["Date"]
+    if ominfo['Nmods'] == 2:
+        obs_end = ominfo["Images_headers"][f"wv_{ominfo['Nlambda'] - 1}"]["M1"]["Date"]
+    elif ominfo['Nmods'] == 1:
+        obs_end = ominfo["Images_headers"][f"wv_{ominfo['Nlambda'] - 1}"]["M0"]["Date"]
+    else:
+        obs_end = ominfo["Images_headers"][f"wv_{ominfo['Nlambda'] - 1}"]["M3"]["Date"]
 
     h = {
         "SIMPLE"   : True,
@@ -217,8 +221,8 @@ def header_generator(data, ominfo,datatype="SCIENCE"):
     for wl in ominfo["Images_headers"]:
         for pn in ominfo["Images_headers"][wl]:
             file_id = ominfo["Images_headers"][wl][pn]['image_name']
-            # print(file_id)
             dt_str = file_id.split('_0_')[0]  # '2024_07_12_09_27_29_344'
+            # print(file_id,dt_str)
             dt = datetime.strptime(dt_str, '%Y_%m_%d_%H_%M_%S_%f')            
             h[f"{wl}_{pn}"] = dt.strftime("%d%m%YT%H%M%S.%f")
             comms[f"{wl}_{pn}"] = f"Exact wave adquisition"
@@ -237,7 +241,7 @@ def header_generator(data, ominfo,datatype="SCIENCE"):
 
 def generate_fits(data, fits_folder, extended_filename, level, pipeline_version, om_info = None, 
                   header = None, zkes = None,  shifts = None, fitted_muller = None,datatype=None,
-                  FLAT_ID = None, DARK_ID = None,
+                  FLAT_ID = None, DARK_ID = None, 
                   ):
 
     """

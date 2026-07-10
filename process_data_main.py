@@ -141,7 +141,7 @@ cam_linearity = ([1539, 1540], [1.0, 1.0])
 
 # ======================= processing programs ======================= #
 # =======================  reduce_image_0_5   ======================= #
-def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths, process_line_index):
+def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, ff_info, obs_ID, ff_paths, dc_paths, process_line_index):
     """Nivel LV_0.5: carga observación nominal, corrige por flat, recorta, filtra opcionalmente y escribe FITS.
 
     Pensado para ejecutarse en subproceso (un ``ocs`` por worker). Solo procesa si ``cfg['process_line']``
@@ -156,7 +156,9 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
 
     logging.info(f' processing ocs: {ocs} ........... ')
     om_value = OCs[ocs]['OM']
-    print(cfg['process_line'],om_value)
+    # print(OCs[ocs])
+    # if cfg['process_line'] == 'HC':
+    #     om_value = 'HC'
     if cfg['process_line'] == om_value:
         logging.info(f' processing ocs: {ocs} which corresponds to {om_value} with {len(OCs[ocs]["ims"])} total images')
         if len(OCs[ocs]['ims']) != obs_dict[obs_ID]['obs_size'][process_line_index]:
@@ -165,19 +167,157 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
                 logging.warning("  >> Debug mode: allowing mismatch in number of images (proceeding with processing).")
             else:
                 return
-
-        obs_data = ih.nominal_observation(cfg['process_line'], OCs[ocs]["ims"], dc_real, modify_linearity=cam_linearity,allow_99=cfg['debug']['allow_99'])
+        if om_value == 'HC':
+            hc_true = True
+        else:
+            hc_true = False
+        obs_data = ih.nominal_observation(cfg['process_line'], OCs[ocs]["ims"], dc_real, modify_linearity=cam_linearity,allow_99=cfg['debug']['allow_99'],hc = hc_true)
         data = obs_data.get_data()
         om_info = obs_data.get_info()
 
-        date_str = om_info["Images_headers"]["wv_0"]["M0"]["Date"].strftime("%d%m%YT%H%M%S")
+        if hc_true:
+            date_str = om_info["Images_headers"]["wv_0"]["M0"]["Date"].strftime("%d%m%YT%H%M%S.%f")[:-3]
+        else:
+            date_str = om_info["Images_headers"]["wv_0"]["M0"]["Date"].strftime("%d%m%YT%H%M%S")
         dataid = obs_ID + "_TM_" + cf.om_config[cfg['process_line']]["name"] + '_' + str(cf.om_config[cfg['process_line']]["Nlambda"]) + "_"
         filename = dataid + date_str
         extended_filename = f"{filename}_LV_0.5_v{cfg['proc_version']}.fits"
         logging.info(f' Output filename: {extended_filename}')
 
         logging.info(f'  >> FF correction..........')
-        data = np.where(np.isfinite(ff_data), data / ff_data, 0)
+
+        volts_list_obs = [] 
+        volts_list_flat = [] 
+        for lambd in range(om_info['Nlambda']):
+            volts_list_obs.append(om_info["Images_headers"][f"wv_{lambd}"][f"M{0}"]['hvps_read_volts'])
+        for lambd in range(ff_info['Nlambda']):
+            volts_list_flat.append(ff_info["Images_headers"][f"wv_{lambd}"][f"Mod_{0}"]['hvps_read_volts'][0])
+        volts_obs = np.asarray(volts_list_obs, dtype=float)
+        volts_flat = np.asarray(volts_list_flat, dtype=float)
+
+        logging.info(f"Observation voltages : {volts_obs}")
+        logging.info(f"Flat voltages        : {volts_flat}")
+
+        def _voltage_direction(v):
+            dv = np.diff(v)
+            if len(v) <= 1:
+                return "single"
+            if np.all(dv > 0):
+                return "increasing"
+            if np.all(dv < 0):
+                return "decreasing"
+            return "non-monotonic"
+        dir_obs = _voltage_direction(volts_obs)
+        dir_flat = _voltage_direction(volts_flat)
+        if dir_obs != dir_flat:
+            logging.warning(
+                f"Voltage order mismatch: OBS={dir_obs}, FLAT={dir_flat}"
+            )
+
+        voltage_sigma = 50.0  # voltios, por ejemplo
+        mapping = []
+        for iobs, vobs in enumerate(volts_obs):
+            diffs = np.abs(volts_flat - vobs)
+            if len(diffs) == 0:
+                raise RuntimeError("Flat contains no wavelengths")
+            iflat = np.argmin(diffs)
+            mapping.append(iflat)
+            if diffs[iflat] > voltage_sigma:
+                logging.warning(
+                    f"Wave {iobs}: "
+                    f"obs={vobs:.1f} V, "
+                    f"closest flat={volts_flat[iflat]:.1f} V "
+                    f"(Δ={diffs[iflat]:.1f} V > tolerance)"
+                )
+            else:
+                logging.info(
+                    f"Wave {iobs}: "
+                    f"obs={vobs:.1f} V -> "
+                    f"flat wave {iflat} "
+                    f"({volts_flat[iflat]:.1f} V, "
+                    f"Δ={diffs[iflat]:.1f} V)"
+                )
+
+        ff_data_matched = ff_data[:, mapping, ...]
+
+        # ------------------------------------------------------------------
+        # Adapt flat Stokes/mod dimension to match data
+        # Assumed convention:
+        #   1 -> I
+        #   2 -> I,V
+        #   4 -> I,Q,U,V
+        # Shapes:
+        #   data            -> (cam, wave, stokes, x, y)
+        #   ff_data_matched -> (cam, wave, stokes_flat, x, y)
+        # ------------------------------------------------------------------
+        if ff_data_matched.ndim != data.ndim:
+            raise ValueError(
+                f"Dimension mismatch:\n"
+                f"data    ndim = {data.ndim}, shape = {data.shape}\n"
+                f"ff_data ndim = {ff_data_matched.ndim}, shape = {ff_data_matched.shape}"
+            )
+
+        n_data_stokes = data.shape[2]
+        n_flat_stokes = ff_data_matched.shape[2]
+
+        if n_data_stokes == n_flat_stokes:
+            # Same number of Stokes/components
+            pass
+
+        elif n_data_stokes == 1:
+            logging.info(
+                f"Data has 1 component, flat has {n_flat_stokes}. "
+                f"Using only flat I."
+            )
+            ff_data_matched = ff_data_matched[:, :, [0], :, :]
+
+        elif n_data_stokes == 2:
+            if n_flat_stokes == 2:
+                logging.info(
+                    "Data has 2 components (I,V), flat has 2 components (I,V). "
+                    "Using flat I and V."
+                )
+                ff_data_matched = ff_data_matched[:, :, [0, 1], :, :]
+            elif n_flat_stokes == 4:
+                logging.info(
+                    "Data has 2 components (I,V), flat has 4 components (I,Q,U,V). "
+                    "Using flat I and V."
+                )
+                ff_data_matched = ff_data_matched[:, :, [0, 3], :, :]
+            else:
+                raise ValueError(
+                    f"Cannot map data with 2 Stokes to flat with {n_flat_stokes} components."
+                )
+
+        elif n_data_stokes == 4:
+            if n_flat_stokes == 4:
+                pass
+            else:
+                raise ValueError(
+                    f"Data has 4 Stokes (I,Q,U,V) but flat has {n_flat_stokes}. "
+                    "A 4-Stokes dataset requires a 4-Stokes flat."
+                )
+
+        else:
+            raise ValueError(
+                f"Unsupported number of Stokes/components in data: {n_data_stokes}"
+            )
+
+        # Final shape check
+        if ff_data_matched.shape != data.shape:
+            raise ValueError(
+                f"Shape mismatch after Stokes adaptation:\n"
+                f"data    = {data.shape}\n"
+                f"ff_data = {ff_data_matched.shape}"
+            )
+
+        # Safe division
+        data = np.where(
+            np.isfinite(ff_data_matched) & (ff_data_matched != 0),
+            data / ff_data_matched,
+            0
+        )
+
 
         logging.info(f'  >> data cropping..........')
         data = data[:, :, :, cfg['centro'][0] - cfg['corte']:cfg['centro'][0] + cfg['corte'],
@@ -190,13 +330,13 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, obs_ID, ff_paths, dc_paths
             data.astype(np.float32),
             cfg['output_folder'] + obs_ID + '/', extended_filename, '0.5', cfg['proc_version'],
             om_info=om_info, zkes=None, shifts=None, fitted_muller=None, datatype='SCIENCE',
-            DARK_ID=dc_paths, FLAT_ID=ff_paths[process_line_index]
+            DARK_ID=dc_paths, FLAT_ID=ff_paths[process_line_index],
         )
 
         if cfg['plots']['plot_level0_5']:
             plt_level(
                 data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-                f"{filename}_LV_0.5_v{cfg['proc_version']}", '0.5', 'flat_corrected'
+                f"{filename}_LV_0.5_v{cfg['proc_version']}", '0.5', 'flat_corrected',
             )
     
 # =======================  reduce_image_0_7   ======================= #
@@ -322,6 +462,11 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         df = df.sort_values(['obs_ID', 'line', 'wave', 'timestamp']).reset_index(drop=True)
         return df
 
+    if cfg['process_line'] == 'HC':
+        hc_true = True
+    else:
+        hc_true = False
+
     # =================== ADVANCED ALIGNMENT =================== #
     if cfg['level_07']['advanced_alignment']:
         logging.info("  Entering advanced_alignment .....")
@@ -346,6 +491,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
                 cfg['level_07'].get('size_corner', 500),
                 cfg['level_07'].get('size_center', 300),
                 cfg['level_07'].get('weight', [0.5,2.0,1.0]),
+                nodemod = hc_true
             )
 
             logging.info(f"  Done advanced_alignment for λ={wave}")
@@ -384,16 +530,18 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
     if cfg['level_07']['aligment_level'] == 'dataset':
         logging.info('  Interpolating rotation (dataset-level) ...')
 
-        # try:
-        #     timestamp_ds = timestamp
-        # except NameError:
-        # dt = [parse_header_time(header[f"WV_{wave_list[0]}_M{k}"]) for k in range(4)]
+        nmods = int(header['NMODS'])
         try:
-            dt = [parse_header_time(header[f"WV_{advanced_wave}_M{k}"]) for k in range(4)]
-        except:
-            dt = [parse_header_time(header[f"WV_{0}_M{k}"]) for k in range(4)]
-
-        timestamp_ds = sum(minutes_from_dt(d) for d in dt) / 4.0
+            dt = [
+                parse_header_time(header[f"WV_{cfg['level_07']['advanced_wave']}_M{k}"])
+                for k in range(nmods)
+            ]
+        except KeyError:
+            dt = [
+                parse_header_time(header[f"WV_{0}_M{k}"])
+                for k in range(nmods)
+            ]
+        timestamp_ds = sum(minutes_from_dt(d) for d in dt) / nmods
 
         if not cfg['level_07']['advanced_save'] and cfg['level_07']['advanced_alignment']:
             logging.warning("  No advanced alignment or save enabled, but 'dataset' level interpolation selected. Ensure the CSV has relevant data or consider enabling advanced mode for better results.")
@@ -544,13 +692,16 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
             hdu_list.writeto(out_file, overwrite=True)
 
     # Demodulación principal
-    data = demodulate(data, line['line'], dmod_matrices=cfg['level_07']['demod_matrix'], mode=cfg['level_07']['demod_mode'])
+    if  not cfg['process_line'] == 'HC':
+        data = demodulate(data, line['line'], dmod_matrices=cfg['level_07']['demod_matrix'], mode=cfg['level_07']['demod_mode'])
 
-    if cfg['plots']['plot_level0_7']:
-        plt_level(
-            data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-            filename, '0.7', label='_' + cfg['level_07']['align_mode'] + 'demodulated' + cfg['level_07']['add_level_07_label']
-        )
+        if cfg['plots']['plot_level0_7']:
+            plt_level(
+                data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
+                filename, '0.7', label='_' + cfg['level_07']['align_mode'] + 'demodulated' + cfg['level_07']['add_level_07_label']
+            )
+    else:
+        data = np.mean(data,axis=0)
 
     out_file = input_data_filename.replace(from_label, to_label + cfg['level_07']['add_level_07_label'])
     logging.info(f' Saving filename: {out_file}')
@@ -577,6 +728,18 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
         data = hdul[0].data
         header = hdul[0].header
 
+    nmods = int(header['NMODS'])
+    if nmods == 2:
+        data_iv = data
+        data = np.zeros(
+            (data.shape[0], 4, data.shape[2], data.shape[3]),
+            dtype=data.dtype
+        )
+        data[:, 0, :, :] = data_iv[:, 0, :, :]  # I
+        data[:, 1, :, :] = data_iv[:, 1, :, :]  # Q fake
+        data[:, 2, :, :] = data_iv[:, 1, :, :]  # U fake
+        data[:, 3, :, :] = data_iv[:, 1, :, :]  # V
+    
     if cfg['level_10']['crosst_dual']:
         filename_dual = Path(input_data_filename.replace('0.7', '0.7_stokesI')).with_suffix('')
         with fits.open(str(filename_dual) + '.fits') as hdul:
@@ -586,7 +749,7 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
 
     roi = cfg['level_10']['crosst_roi']
 
-    # --- 1. Normalización de datos ---
+    # --- 1. Normalización de datos --- TODO: DEPENDE DEL MODO!
     if cfg['level_10']['normalization'] == 0:
         norm_factor = np.median(data[-1, 0, roi[0]:roi[1], roi[2]:roi[3]])
         logging.info(f'  >> Normalization factor: {norm_factor} ')
@@ -594,161 +757,164 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
         norm_factor = cfg['level_10']['normalization']
         
     data = data / norm_factor # <- ATENCIÓN: El cubo ya está normalizado a partir de aquí
+    if not nmods == 1:
 
-    mode = cfg['level_10']['crosst_mode']
-    strategy = cfg['level_10'].get('crosst_strategy', 'simultaneous')
-    params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
+        mode = cfg['level_10']['crosst_mode']
+        strategy = cfg['level_10'].get('crosst_strategy', 'simultaneous')
+        params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
 
-    if params['use_local']:
-        if mode == 'jaeggli' and strategy == 'simultaneous':
-            raise ValueError("crosst_strategy='simultaneous' is NOT compatible with crosst_mode='jaeggli' with use_local: True")
+        if params['use_local']:
+            if mode == 'jaeggli' and strategy == 'simultaneous':
+                raise ValueError("crosst_strategy='simultaneous' is NOT compatible with crosst_mode='jaeggli' with use_local: True")
 
 
-    # =========================================================================
-    # 2A. MODO GLOBAL (Sin cuadrantes)
-    # =========================================================================
-    if cfg['level_10']['crosst_quadrants'] == 0:
-        
-        if params['apply_only']:
-            logging.info(f"[crosstalk] APPLYING ONLY. per_wavelength={per_wv}")
-            data, info = apply_crosstalk_coeffs_standard(
-                data, coeffs, per_wavelength=per_wv,
-                use_local=params['use_local'], local_order=params['local_order'],
-                deriv_sigma=params['deriv_sigma'], channels=params['channels']
-            )
-            info['mode'] = 'global' 
-            if mode == 'standard':
-                 header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+        # =========================================================================
+        # 2A. MODO GLOBAL (Sin cuadrantes)
+        # =========================================================================
+        if cfg['level_10']['crosst_quadrants'] == 0:
+            
+            if params['apply_only']:
+                logging.info(f"[crosstalk] APPLYING ONLY. per_wavelength={per_wv}")
+                data, info = apply_crosstalk_coeffs_standard(
+                    data, coeffs, per_wavelength=per_wv,
+                    use_local=params['use_local'], local_order=params['local_order'],
+                    deriv_sigma=params['deriv_sigma'], channels=params['channels']
+                )
+                info['mode'] = 'global' 
+                if mode == 'standard':
+                    header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
 
-        else:
-            logging.info(f'  >> fitting cross-talk factors (GLOBAL):')
-            data, info = fit_mueller_matrix(
+            else:
+                logging.info(f'  >> fitting cross-talk factors (GLOBAL):')
+                data, info = fit_mueller_matrix(
+                    data,
+                    method=mode,
+                    strategy=strategy,
+                    pthresh=cfg['level_10']['crosst_threshold'],
+                    ctmethod='linfit',
+                    last_wvl=cfg['level_10']['crosst_last_wave'],
+                    region=cfg['level_10']['crosst_region'],
+                    norm=False, # <-- MUY IMPORTANTE: ya se normalizó arriba
+                    use_local=params['use_local'],
+                    local_order=cfg['crosstalk'].get('local_order', 1),
+                    deriv_sigma=params.get('deriv_sigma', 0.0),
+                    local_ridge_lambda=0.0,
+                    aggregate_wavelengths=params.get('aggregate_wavelengths', False),
+                    channels=('Q', 'U', 'V'),
+                    verbose=cfg['level_10']['crosst_verbose'],
+                    dualI=dualI,
+                )
+
+                # Escribir cabeceras FITS según el método
+                if mode == 'standard':
+                    header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+                    
+                elif mode == 'jaeggli':
+                    matrix = info.get('MM1a', {})
+                    # Si es array de (4,4) lo escribimos
+                    if isinstance(matrix, np.ndarray) and matrix.ndim == 2:
+                        update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
+                        for i in range(4):
+                            for j in range(4):
+                                key = f'MMAT_{i}{j}'
+                                header[key] = (float(matrix[i, j]), f'Mueller matrix element [{i},{j}]')
+
+        # =========================================================================
+        # 2B. MODO TILED (Cuadrantes con Feathering suave)
+        # =========================================================================
+        elif isinstance(cfg['level_10']['crosst_quadrants'], int):
+            logging.info(f"  >> fitting cross-talk using TILED seamless approach ({cfg['level_10']['crosst_quadrants']}x{cfg['level_10']['crosst_quadrants']})")
+            data, tiles_info, infos = fit_mueller_matrix_tiled(
                 data,
-                method=mode,
                 strategy=strategy,
                 pthresh=cfg['level_10']['crosst_threshold'],
-                ctmethod='linfit',
+                norm=False, # <-- Ya se normalizó arriba
+                quadrants=cfg['level_10']['crosst_quadrants'],
+                overlap_fraction=0.25,  # <-- ESTO BORRA LAS LÍNEAS ENTRE CUADRANTES
+                method=mode,
                 last_wvl=cfg['level_10']['crosst_last_wave'],
-                region=cfg['level_10']['crosst_region'],
-                norm=False, # <-- MUY IMPORTANTE: ya se normalizó arriba
                 use_local=params['use_local'],
                 local_order=cfg['crosstalk'].get('local_order', 1),
                 deriv_sigma=params.get('deriv_sigma', 0.0),
-                local_ridge_lambda=0.0,
-                aggregate_wavelengths=params.get('aggregate_wavelengths', False),
+                ctmethod='linfit',
                 channels=('Q', 'U', 'V'),
                 verbose=cfg['level_10']['crosst_verbose'],
                 dualI=dualI,
+                aggregate_wavelengths=params.get('aggregate_wavelengths', False),
             )
 
-            # Escribir cabeceras FITS según el método
-            if mode == 'standard':
-                header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
-                
-            elif mode == 'jaeggli':
-                matrix = info.get('MM1a', {})
-                # Si es array de (4,4) lo escribimos
-                if isinstance(matrix, np.ndarray) and matrix.ndim == 2:
-                    update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
-                    for i in range(4):
-                        for j in range(4):
-                            key = f'MMAT_{i}{j}'
-                            header[key] = (float(matrix[i, j]), f'Mueller matrix element [{i},{j}]')
+        # =========================================================================
+        # 2C. MODO ROIs Fijos (Generación de plano)
+        # =========================================================================
+        elif isinstance(cfg['level_10']['crosst_quadrants'], list):
+            logging.info(f'  >> fitting cross-talk using Fixed ROIs approach')
+            rois = cfg['level_10']['crosst_quadrants'] # Ej: [(100, 100, 400), (1500, 100, 400), ...]
 
-    # =========================================================================
-    # 2B. MODO TILED (Cuadrantes con Feathering suave)
-    # =========================================================================
-    elif isinstance(cfg['level_10']['crosst_quadrants'], int):
-        logging.info(f"  >> fitting cross-talk using TILED seamless approach ({cfg['level_10']['crosst_quadrants']}x{cfg['level_10']['crosst_quadrants']})")
-        data, tiles_info, infos = fit_mueller_matrix_tiled(
-            data,
-            strategy=strategy,
-            pthresh=cfg['level_10']['crosst_threshold'],
-            norm=False, # <-- Ya se normalizó arriba
-            quadrants=cfg['level_10']['crosst_quadrants'],
-            overlap_fraction=0.25,  # <-- ESTO BORRA LAS LÍNEAS ENTRE CUADRANTES
-            method=mode,
-            last_wvl=cfg['level_10']['crosst_last_wave'],
-            use_local=params['use_local'],
-            local_order=cfg['crosstalk'].get('local_order', 1),
-            deriv_sigma=params.get('deriv_sigma', 0.0),
-            ctmethod='linfit',
-            channels=('Q', 'U', 'V'),
-            verbose=cfg['level_10']['crosst_verbose'],
-            dualI=dualI,
-            aggregate_wavelengths=params.get('aggregate_wavelengths', False),
-        )
-
-    # =========================================================================
-    # 2C. MODO ROIs Fijos (Generación de plano)
-    # =========================================================================
-    elif isinstance(cfg['level_10']['crosst_quadrants'], list):
-        logging.info(f'  >> fitting cross-talk using Fixed ROIs approach')
-        rois = cfg['level_10']['crosst_quadrants'] # Ej: [(100, 100, 400), (1500, 100, 400), ...]
-
-        data, planes, maps, infos, samples = fit_mueller_matrix_rois_with_plane(
-            data,
-            rois=rois,
-            method=mode,
-            pthresh=cfg['level_10']['crosst_threshold'],
-            last_wvl=cfg['level_10']['crosst_last_wave'],
-            use_local=params['use_local'],
-            local_order=1,
-            ctmethod='linfit',
-            channels=('Q','U','V'),
-            verbose=cfg['level_10']['crosst_verbose'],
-            aggregate_wavelengths=params.get('aggregate_wavelengths', False),
-        )
-        if cfg['level_10']['crosst_verbose']:
-            ver_planos_ajuste(planes, samples)
-
-
-    # =========================================================================
-    # 3. INTERFERENCIA (I -> Q)
-    # =========================================================================
-    if cfg['level_10']['crosst_interference']:
-        if not isinstance(cfg['level_10']['crosst_interference'], int):
-            logging.info(f"  >> using interference cross-talk factors from CSV: {cfg['level_10']['crosst_interference']}")
-            coeffs = load_polynomial_coeffs_csv(cfg['level_10']['crosst_interference'])
-            
-            wn, pn, _, _ = data.shape
-            
-            # CORRECCIÓN BUG TQDM: total=wn, ya que iteramos wn veces y actualizamos de 1 en 1
-            with tqdm(total=wn, desc="Applying Interference") as pbar:
-               for wl in range(wn):
-                    # Aplicamos solo a Stokes Q (idx 1)
-                    data[wl, 1] = apply_polynomial_Iref2Q(data[wl, 1], data[-1, 0], coeffs, wavelength=wl)
-                    pbar.update(1)
-
-        else:
-            logging.info(f"  >> fitting interference cross-talk factors dynamically")
-            ref_wvl = -1
-            data, tiles, out = fit_interference_Iref_to_Q_tiled(
+            data, planes, maps, infos, samples = fit_mueller_matrix_rois_with_plane(
                 data,
-                ref_wvl=ref_wvl,
-                divisions=int(cfg['level_10']['crosst_interference']),
-                region=[0, -1, 0, -1],
-                ctmethod='linfit',
-                n_sigma=3,
-                pthresh_intensity=0.0,
-                use_local=False,
+                rois=rois,
+                method=mode,
+                pthresh=cfg['level_10']['crosst_threshold'],
+                last_wvl=cfg['level_10']['crosst_last_wave'],
+                use_local=params['use_local'],
                 local_order=1,
-                deriv_sigma=0.0,
-                local_ridge_lambda=0.0,
-                apply=True,
-                show_grid=False,
-                verbose=False
+                ctmethod='linfit',
+                channels=('Q','U','V'),
+                verbose=cfg['level_10']['crosst_verbose'],
+                aggregate_wavelengths=params.get('aggregate_wavelengths', False),
             )
+            if cfg['level_10']['crosst_verbose']:
+                ver_planos_ajuste(planes, samples)
 
-            header = write_interference_Iref_to_Q_header(
-                header,
-                a=out['a'], b=out['b'], c=out['c'], d=out['d'], e=out['e'],
-                ref_wvl=out['ref_wvl'], divisions=out['divisions'], tiles=tiles,
-                use_local=out['use_local'], local_order=out['local_order'],
-                deriv_sigma=out['deriv_sigma'], ridge_lambda=out['ridge'],
-                index_width=3, after_keyword='ALIGMETH'
-            )
 
+        # =========================================================================
+        # 3. INTERFERENCIA (I -> Q)
+        # =========================================================================
+        if cfg['level_10']['crosst_interference']:
+            if not isinstance(cfg['level_10']['crosst_interference'], int):
+                logging.info(f"  >> using interference cross-talk factors from CSV: {cfg['level_10']['crosst_interference']}")
+                coeffs = load_polynomial_coeffs_csv(cfg['level_10']['crosst_interference'])
+                
+                wn, pn, _, _ = data.shape
+                
+                # CORRECCIÓN BUG TQDM: total=wn, ya que iteramos wn veces y actualizamos de 1 en 1
+                with tqdm(total=wn, desc="Applying Interference") as pbar:
+                    for wl in range(wn):
+                            # Aplicamos solo a Stokes Q (idx 1)
+                            data[wl, 1] = apply_polynomial_Iref2Q(data[wl, 1], data[-1, 0], coeffs, wavelength=wl)
+                            pbar.update(1)
+
+            else:
+                logging.info(f"  >> fitting interference cross-talk factors dynamically")
+                ref_wvl = -1
+                data, tiles, out = fit_interference_Iref_to_Q_tiled(
+                    data,
+                    ref_wvl=ref_wvl,
+                    divisions=int(cfg['level_10']['crosst_interference']),
+                    region=[0, -1, 0, -1],
+                    ctmethod='linfit',
+                    n_sigma=3,
+                    pthresh_intensity=0.0,
+                    use_local=False,
+                    local_order=1,
+                    deriv_sigma=0.0,
+                    local_ridge_lambda=0.0,
+                    apply=True,
+                    show_grid=False,
+                    verbose=False
+                )
+
+                header = write_interference_Iref_to_Q_header(
+                    header,
+                    a=out['a'], b=out['b'], c=out['c'], d=out['d'], e=out['e'],
+                    ref_wvl=out['ref_wvl'], divisions=out['divisions'], tiles=tiles,
+                    use_local=out['use_local'], local_order=out['local_order'],
+                    deriv_sigma=out['deriv_sigma'], ridge_lambda=out['ridge'],
+                    index_width=3, after_keyword='ALIGMETH'
+                )
+        if nmods == 2:
+            data = data[:, [0, 3], :, :]
+        
     # =========================================================================
     # 4. ESCRITURA Y PLOTS
     # =========================================================================
@@ -1256,7 +1422,7 @@ def main(argv=None) -> int:
                     logging.info(f'  >> loading flat')
                     flat = np.load(flat_output_file, allow_pickle=True)
                     ff_data = flat['ff_data']
-                    ff_info = flat['ff_info']
+                    ff_info = flat['ff_info'].item()
                 else:
                     logging.info(f'  >> but force_redo is True.')
                     flat_paths = ih.get_images_paths(ff_paths[process_line_index])
@@ -1268,6 +1434,8 @@ def main(argv=None) -> int:
                         centro = cfg.centro, corte = cfg.corte,
                         discard_repetitions = cfg.discard_repetitions,
                         flat_optimization = cfg.flat_optimization,
+                        interp_method = cfg.interp_method,
+                        plot_interpolators = cfg.plot_interpolators,
                     )
                     np.savez(flat_output_file, ff_data=ff_data.astype(np.float32), ff_info=ff_info)
             else:
@@ -1281,6 +1449,8 @@ def main(argv=None) -> int:
                     centro = cfg.centro, corte = cfg.corte,
                     discard_repetitions = cfg.discard_repetitions,
                     flat_optimization = cfg.flat_optimization,
+                    interp_method = cfg.interp_method,
+                    plot_interpolators = cfg.plot_interpolators,
                 )
                 np.savez(flat_output_file, ff_data=ff_data.astype(np.float32), ff_info=ff_info)
 
@@ -1290,6 +1460,7 @@ def main(argv=None) -> int:
         logging.info('-----------------------------------')
 
         # OCs
+        hc_true = False
         if cfg.force_redo['level0_5']:
             ocs_output_file = out_dir / f"{obs_ID}_ocs.npz"
             logging.info(f'  >> ocs output file will be: {ocs_output_file}')
@@ -1300,7 +1471,9 @@ def main(argv=None) -> int:
             else:
                 logging.info(f'  >> determining ocs....')
                 obs_images = ih.get_images_paths(obs_paths)
-                OCs = ih.separate_ocs(obs_images, verbose=False)
+                if cfg.process_line == 'HC':
+                    hc_true = True
+                OCs = ih.separate_ocs(obs_images, verbose=True, hc = hc_true)
                 np.savez(ocs_output_file, OCs=OCs)
 
             process_ocs = list(OCs.keys())
@@ -1315,7 +1488,7 @@ def main(argv=None) -> int:
             #########################  PROCESO DE REDUCCIÓN 0.5  #########################  
             reduce_partial = partial(
                 reduce_image_0_5,
-                OCs=OCs, cfg=cfg_dict, dc_real=dc_real, ff_data=ff_data,
+                OCs=OCs, cfg=cfg_dict, dc_real=dc_real, ff_data=ff_data,ff_info=ff_info,
                 obs_ID=obs_ID, ff_paths=ff_paths, dc_paths=dc_paths,
                 process_line_index=process_line_index
             )
