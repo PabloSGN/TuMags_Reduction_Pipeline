@@ -178,6 +178,8 @@ DEFAULT_CONFIG = {
     # LEVEL 1.1 OPTIONS
     # ----------------------------------------------------------
     "zernike_id": "06_SPOT_Mg1_0",  # "06_SPOT_Fe2.02_0"
+    "pd_mode": "auto",  # "manual"
+    "zernikes": [0,0,0,0],  # "manual zerniques starting from z4 defocus"
 
     # ----- DEBUGGING OPTIONS
     "debug": {

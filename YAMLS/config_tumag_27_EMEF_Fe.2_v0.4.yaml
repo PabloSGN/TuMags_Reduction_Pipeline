@@ -16,25 +16,24 @@
 # GLOBAL PARAMETERS
 # ----------------------------------------------------------
 
-obs_ID: "06_SPOT_AR1"                   # Observation ID 
+obs_ID: "27_EMEF"                   # Observation ID 
 proc_version: "0.4" # con cross-talk standard
 
 process_line: "2.02"              # Observation mode to process
 # process_line: "1"              # Observation mode to process
 
-# process_files: 2
+# process_files: 2 
 process_ocs: ":"                  # ":" -> all, or range, or single ID
 process_files: ":"                # ":" -> all, or range, or single ID
-
-parallel: false
-max_workers: 12
+ 
+parallel: true
+max_workers: 4
 
 tumag_data_location: "./"         # Path to Organized_files_local folder
-Organized_files_local_folder_name: "Organized_files_local"
-output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
-
 # Organized_files_local_folder_name: "Organized_files_TuMag_d2"
-# output_folder: "/Volumes/TuMag_d3/reduccion/"   # Output results folder
+Organized_files_local_folder_name: "Organized_files_TuMag_d4"
+
+output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 
 
 # ----------------------------------------------------------
@@ -43,11 +42,11 @@ output_folder: "/Volumes/TuMag_d5/reduccion/"   # Output results folder
 force_redo:
   redo_flat: false                # Recalculate flats
   redo_dark: false                # Recalculate darks
-  level0_5: false
+  level0_5: true
   level0_6: false
-  level0_7: false
-  level1_0: false
-  level1_1: true
+  level0_7: true
+  level1_0: true
+  level1_1: false
   use_pd: false
 
 # ----------------------------------------------------------
@@ -60,8 +59,8 @@ plots:
   plot_level0_6: false
   plot_level0_7: false
   plot_level1_0: true
-  plot_level1_1: false
-  roi_plots: [200, -200, 200, -200]
+  plot_level1_1: true
+  roi_plots: [1, -1, 1, -1]
 
 
 # ----------------------------------------------------------
@@ -78,6 +77,8 @@ import_blueshift_guess: True
 norm_method: "blueshift"
 remove_prefilter: True
 pref_model: True
+discard_repetitions: null # TBD
+flat_optimization: true
 
 
 # ----------------------------------------------------------
@@ -101,15 +102,15 @@ level_07:
   # "0" = Align modulations in both cams, then cam 1 w.r.t cam 0 (global ROI or quadrants)
   # "1" = Align cam 1 respect cam 0 first, then modulations. Assumes same jitter cam0 and 2. (global ROI or quadrants)
   # "2" = manual. Requires manual_shift
-  align_roi: [600,1100,100,600]
+  align_roi: [1200,1500,100,400]
   align_accuracy: 0.001
-  align_rot_data_filter: "alignment_results.csv"   # e.g. "pinholes_Fe2.02.csv"
+  align_rot_data_filter: "alignment_results.csv"   # e.g. "pinholes_Fe2.02.csv" le cambio el nombre...
   align_quadrants: 0 #-8 #-16
   align_verbose: false
   align_modulations: false
   aligment_level: "dataset"
   advanced_alignment: true
-  advanced_wave: 0
+  advanced_wave: 0 #[0,1,2,3,4,5,6,7,8,9] # '_av' todas las landas 
   advanced_save: true
   advanced_overwrite: true
   destretch_aling_cam: 'same'
@@ -122,17 +123,17 @@ level_07:
   destretch_lambda_tt: 0.02
   demod_matrix: 'demod_matrices_david_v2' #demod_matrices_acampos, demod_matrices, demod_matrices_david, demod_matrices_david_ct
   demod_mode: 'join' # 'join'
-  add_level_07_label: '' #'dt'  special
+  add_level_07_label: '' #'dt'  special "av" para el uso de todas las landas
   manual_shift: [0.5, 0.02] # [shift_y, shift_x] to apply to cam2 (only if align_sequence == 2)
 
 # ----------------------------------------------------------
 # LEVEL 1.0 OPTIONS
 # ----------------------------------------------------------
 level_10:
-  crosst_mode: "standard"         # "jaeggli" or "standard"
-  crosst_strategy: "simultaneous"   # "sequential" | "simultaneous"
-  crosst_roi: [600,1100,100,600]      # Normalization region
-  crosst_region: [600,1100,100,600]   # Crosstalk calculation region
+  crosst_mode: "jaeggli"         # "jaeggli" or "standard"
+  crosst_strategy: "sequential"   # "sequential" | "simultaneous"
+  crosst_roi: [1200,1500,100,400]    # Normalization region
+  crosst_region: [1200,1500,100,400] # Crosstalk calculation region
   crosst_threshold:  0.01 # Single (only V, or three array,list (for QUV independent))
   crosst_intensity_threshold: 0.8 # 0.01 thersshold for avoid umbra (intensity). 0 means not used
   crosst_last_wave: None #used -1 for standard and -2 for jaeggli
@@ -159,7 +160,7 @@ crosstalk:
 # ----------------------------------------------------------
 # LEVEL 1.1 OPTIONS
 # ----------------------------------------------------------
-zernike_id: "06_SPOT_Fe2.02_0" #"06_SPOT_Fe2.02_0"
+zernike_id: "06_SPOT_Mg1_0" #"06_SPOT_Fe2.02_0"
 
 #----- DEBUGGING OPTIONS
 debug:
@@ -167,6 +168,7 @@ debug:
   zoom_center: [600,600]
   zoom_size: 600
   filter_test: false
+  allow_99: false
 
 
 # ----------------------------------------------------------

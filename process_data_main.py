@@ -1338,7 +1338,7 @@ def main(argv=None) -> int:
     line = cfg.process_line
     logging.info(f"  >> Input obs_ID: {obs_ID}")
     logging.info(f"  >> Processing line obs_ID: {line}")
-    logging.info(f"  >> Folder data location: {cfg.tumag_data_location}")
+    logging.info(f"  >> Folder raw data location: {cfg.tumag_data_location}")
     logging.info(f"  >> Output folder location: {cfg.output_folder}")
 
     # ===================== LEVEL 0.5 / FLATS / DARKS ===================== #
@@ -1538,10 +1538,13 @@ def main(argv=None) -> int:
         if not isinstance(files, list):
             files = [files]
 
-        logging.info('Importing zernikes: %s', cfg.zernike_id)
-        BASE_DIR = Path(__file__).resolve().parent
-        file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
-        zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+        if cfg.pd_mode == 'auto':
+            logging.info('Importing zernikes: %s', cfg.zernike_id)
+            BASE_DIR = Path(__file__).resolve().parent
+            file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
+            zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+        elif cfg.pd_mode == 'manual':
+            zk = np.asarray(cfg.zernikes)
 
         reduce_partial = partial(
             reduce_image_0_6, cfg=cfg_dict, zk=zk,
@@ -1681,7 +1684,6 @@ def main(argv=None) -> int:
 
         dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
         ext_ = f"_LV_1.0{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
-
         directory = Path(cfg.output_folder + obs_ID + '/')
         files = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
         files = [f for f in files if dataid in f and ext_ in f]
@@ -1697,12 +1699,14 @@ def main(argv=None) -> int:
         if not isinstance(files, list):
             files = [files]
 
-        logging.info('Importing zernikes: %s', cfg.zernike_id)
-        BASE_DIR = Path(__file__).resolve().parent
-        file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
-        zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+        if cfg.pd_mode == 'auto':
+            logging.info('Importing zernikes: %s', cfg.zernike_id)
+            BASE_DIR = Path(__file__).resolve().parent
+            file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
+            zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+        elif cfg.pd_mode == 'manual':
+            zk = np.asarray(cfg.zernikes)
         print(zk)
-
         reduce_partial = partial(
             reduce_image_1_1, cfg=cfg_dict, zk=zk
         )
