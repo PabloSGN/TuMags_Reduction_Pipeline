@@ -28,45 +28,45 @@ n=2.5 #As fitted by Pablo
 h=281e-6 #As fitted by Pablo
 
 
-Config = {
-'517' : {'Gamma'    : 0.47,
-         'wls_norm' : 0,
-         'Pend'     : 0.00030907042253499933,
-         'Ord'      : 5173.432608450703,
-         'pref_b'    : 5172.66,
-         'Min_wvl'  : 5170,
-         'Max_wvl'  : 5176,
-         'R'        : 0.75,
-         'n'        : 2.56,
-         'd'        : 281e-6,
-         'theta'    : 0,
-         "pref_c" : 0.5},
-'525.02': {
-        'Gamma'    : 0.98,
-        'wls_norm' : -5,
-        'Pend'     : 0.0002957121398329138,
-        'Ord'      : 5249.543594995222,
-        'pref_b'    : 5250.5,
-        'Min_wvl'  : 5246,
-        'Max_wvl'  : 5255,
-        'R'        : 0.77,
-        'n'        : 2.56,
-        'd'        : 281e-6,
-        'theta'    : 0,
-        "pref_c" : 0.65},
-'525.06' : {
-        'Gamma'    : 1,
-        'wls_norm' : 7,
-        'Pend'     : 0.000288733333332857,
-        'Ord'      : 5251.371833333332,
-        'pref_b'    : 5250.5,  
-        'Min_wvl'  : 5246,
-        'Max_wvl'  : 5255,
-        'R'        : 0.75,
-        'n'        : 2.56,
-        'd'        : 281e-6,
-        'theta'    : 0,
-        "pref_c" : 0.65 }}
+# Config = {
+# '517' : {'Gamma'    : 0.47,
+#          'wls_norm' : 0,
+#          'Pend'     : 0.00030907042253499933,
+#          'Ord'      : 5173.432608450703,
+#          'pref_b'    : 5172.66,
+#          'Min_wvl'  : 5170,
+#          'Max_wvl'  : 5176,
+#          'R'        : 0.75,
+#          'n'        : 2.56,
+#          'd'        : 281e-6,
+#          'theta'    : 0,
+#          "pref_c" : 0.5},
+# '525.02': {
+#         'Gamma'    : 0.98,
+#         'wls_norm' : -5,
+#         'Pend'     : 0.0002957121398329138,
+#         'Ord'      : 5249.543594995222,
+#         'pref_b'    : 5250.5,
+#         'Min_wvl'  : 5246,
+#         'Max_wvl'  : 5255,
+#         'R'        : 0.77,
+#         'n'        : 2.56,
+#         'd'        : 281e-6,
+#         'theta'    : 0,
+#         "pref_c" : 0.65},
+# '525.06' : {
+#         'Gamma'    : 1,
+#         'wls_norm' : 7,
+#         'Pend'     : 0.000288733333332857,
+#         'Ord'      : 5251.371833333332,
+#         'pref_b'    : 5250.5,  
+#         'Min_wvl'  : 5246,
+#         'Max_wvl'  : 5255,
+#         'R'        : 0.75,
+#         'n'        : 2.56,
+#         'd'        : 281e-6,
+#         'theta'    : 0,
+#         "pref_c" : 0.65 }}
 
 def volts_2_lambda(volts, config):
     return config['Pend'] * volts + config['Ord']
@@ -81,7 +81,7 @@ def gaussian(x,x0,sigma):
     """
     return np.exp(-0.5*((x-x0)/sigma)**2)
 
-def wvl0(om):
+def wvl0(om): 
     """
     Function to return the central wavelength of the observed line depending on the observation mode
     """

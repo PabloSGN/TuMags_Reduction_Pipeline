@@ -160,7 +160,8 @@ def compute_master_flat_field(flat_fields_paths, dc, lambda_repeat=4, verbose=Fa
         logging.warning("Voltages are not monotonic")
 
     # Convert volts information to wavelength using the config dictionary
-    wvl=pr.volts_2_lambda(np.array(volts_list), pr.Config[cf.om_config[om]["line"]])*1e-10 #Wavelength in meters
+#    wvl=pr.volts_2_lambda(np.array(volts_list), pr.Config[cf.om_config[om]["line"]])*1e-10 #Wavelength in meters
+    wvl=pr.volts_2_lambda(np.array(volts_list), cf.et_params[cf.om_config[om]["line"]])*1e-10 #Wavelength in meters
     wvlv = wvl - pr.wvl0(om)  # Wavelengths in meters relative to central wavelength
     
     # Define range of pixels to be used for blueshift calculation and mean profile

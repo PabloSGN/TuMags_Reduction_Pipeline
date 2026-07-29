@@ -19,6 +19,46 @@ tuning_ct = {"517" : 3.1E-4, # A/V
              "525" : 2.9E-4  # A/V
             }
 
+et_params = {
+'517' : {'Gamma'    : 0.47,
+         'wls_norm' : 0,
+         'Pend'     : 0.0003262, #tunning constant A/V
+         'Ord'      : 5173.4722,
+         'pref_b'   : 5172.648,
+         'Min_wvl'  : 5170,
+         'Max_wvl'  : 5176,
+         'R'        : 0.898,
+         'n'        : 2.60,
+         'd'        : 281e-6,
+         'theta'    : 0,
+         "pref_c"   : 0.50},
+'525.02': {
+        'Gamma'    : 0.98,
+        'wls_norm' : -5,
+        'Pend'     : 0.0002982,
+        'Ord'      : 5249.5269,
+        'pref_b'   : 5250.59,
+        'Min_wvl'  : 5246,
+        'Max_wvl'  : 5255,
+        'R'        : 0.910,
+        'n'        : 2.60,
+        'd'        : 281e-6,
+        'theta'    : 0,
+        "pref_c"   : 0.65},
+'525.06' : {
+        'Gamma'    : 1,
+        'wls_norm' : 7,
+        'Pend'     : 0.0003294,
+        'Ord'      : 5251.51737,
+        'pref_b'   : 5250.90,  
+        'Min_wvl'  : 5246,
+        'Max_wvl'  : 5255,
+        'R'        : 0.845,
+        'n'        : 2.60,
+        'd'        : 281e-6,
+        'theta'    : 0,
+        "pref_c"   : 0.60 }}
+
 # RAW Header information 
 filter_wheel = {
     "1" : { # First filter wheel
