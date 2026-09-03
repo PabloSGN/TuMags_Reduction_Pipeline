@@ -90,7 +90,7 @@ def wvl0(om):
     elif om=='2.06' or om=='3.06' or om=='5.06':
         wvl0=525.0653e-9   
     elif om=='1' or om=='0s' or om=='0p' or om=='4':
-        wvl0=517.27e-9
+        wvl0=517.26843e-9 
     return wvl0
 
 def prefilter_model(om,wvlv):
