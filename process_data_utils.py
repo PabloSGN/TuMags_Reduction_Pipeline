@@ -44,11 +44,11 @@ DEFAULT_CONFIG = {
         "redo_flat": False,
         "redo_dark": False,
         "level0_5": False,
-        "level0_6": False,
         "level0_7": True,
+        "level0_8": False,
         "level1_0": True,
-        "level1_1": False,   # if phase_diversity = 'before' do nothing
-        "use_pd": False      # needs level0_6: true before (or run before)
+        "level1_1": False,   # DO phase_diversity from 1.1
+        "level1_2": False,   # Do level 1 from 0.8 
     },
 
     # ----------------------------------------------------------
@@ -58,10 +58,12 @@ DEFAULT_CONFIG = {
         "plot_darks": False,
         "plot_flats": False,
         "plot_level0_5": True,
-        "plot_level0_6": True,
         "plot_level0_7": False,
+        "plot_level0_8": False,
         "plot_level1_0": True,
         "plot_level1_1": True,
+        "plot_level1_2": True,
+        # "plot_level1_1": True,
         "roi_plots": [200, -200, 200, -200],
     },
 
@@ -178,8 +180,17 @@ DEFAULT_CONFIG = {
     # LEVEL 1.1 OPTIONS
     # ----------------------------------------------------------
     "zernike_id": "06_SPOT_Mg1_0",  # "06_SPOT_Fe2.02_0"
-    "pd_mode": "auto",  # "manual"
+    "pd_mode": "auto",  # "manual" "elevation"
+    "n_zernikes": 1,  # "manual zerniques starting from z4 defocus"
     "zernikes": [0,0,0,0],  # "manual zerniques starting from z4 defocus"
+    "pd": 0,
+    "low_f": 0.2,
+    "reg1": 0.05,
+    "reg2": 1,
+    "cobs": 32.4,
+    "epsilon": 0.02,
+    "sigma": 5000,
+    "stray": 'moffat',
 
     # ----- DEBUGGING OPTIONS
     "debug": {
@@ -188,15 +199,8 @@ DEFAULT_CONFIG = {
         "zoom_size": 600,
         "filter_test": False,
         "allow_99": False,
-    },
-    "pd": 0,
-    "low_f": 0.2,
-    "reg1": 0.05,
-    "reg2": 1,
-    "cobs": 32.4,
-    "epsilon": 0.02,
-    "sigma": 5000,
-    "stray": 'moffat'
+        "force_version_05": False,
+    }
 }
 
 def _pretty_value(v: Any) -> str:

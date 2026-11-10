@@ -416,6 +416,13 @@ def alignment(data, header, filter, wave, size_corner=500, size_center=300, weig
         I_cam1 = demod[0, 0]
         I_cam2 = demod[1, 0]
 
+    # Asegurar que I_cam1 e I_cam2 sean siempre 2D (X, Y)
+    if I_cam1.ndim == 3 and I_cam1.shape[0] == 1:
+        I_cam1 = I_cam1[0]  # o np.squeeze(I_cam1, axis=0)
+
+    if I_cam2.ndim == 3 and I_cam2.shape[0] == 1:
+        I_cam2 = I_cam2[0]  # o np.squeeze(I_cam2, axis=0)
+
     # scale, gamma = balance(I_cam1, I_cam2)
     # I_cam2 = I_cam2 * scale
     # logging.info(f"Balance (in advance_alignment): wave: {wave}, scale={scale:.6f}, gamma={gamma:.6f}")

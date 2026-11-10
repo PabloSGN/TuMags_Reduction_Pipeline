@@ -70,6 +70,7 @@ from process_data_utils import (
 )
 
 from process_data_timelines import obs_dict  # timeline_names y obs_dict
+from import_zernike_model import get_z_elevation,get_z,get_elevation
 
 # ============================ THREADS & LOGGING ============================== #
 def configure_threads(n: Optional[int] = None) -> None:
@@ -336,9 +337,20 @@ def reduce_image_0_5(ocs, OCs, cfg, dc_real, ff_data, ff_info, obs_ID, ff_paths,
         if cfg['plots']['plot_level0_5']:
             plt_level(
                 data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-                f"{filename}_LV_0.5_v{cfg['proc_version']}", '0.5', 'flat_corrected',
+                f"{filename}", '0.5', 'fc',
             )
-    
+
+def _log_in_caja_open(longitud, mensaje):
+    borde_horizontal = "─" * (longitud + 2)
+    logging.info(f"┌{borde_horizontal}┐")
+def _log_in_caja(longitud, mensaje):
+    borde_horizontal = "─" * (longitud + 2)
+    logging.info(f"│ {mensaje.ljust(longitud)} │")
+def _log_in_caja_close(longitud,mensaje):
+    borde_horizontal = "─" * (longitud + 2)
+    logging.info(f"└{borde_horizontal}┘")
+
+
 # =======================  reduce_image_0_7   ======================= #
 def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to_label="LV_0.7"):
     """Nivel LV_0.7: balance entre cámaras, alineación (avanzada / Fourier / destretch), demodulación y salida FITS.
@@ -362,15 +374,17 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         data = hdul[0].data
         header = hdul[0].header
 
+    # ojo, si es modo spectroscopico, solo alineo las cámaras.
+
     cn, wn, pn, xs, ys = data.shape
     roi = cfg['level_07']['align_roi']
     if roi[1] == -1 or roi[-1] == -1:
         roi[1] = ys
         roi[3] = xs
-
+    
     scale, gamma = balance(data[0, 0], data[1, 0], roi=roi, clip_percentiles=(40, 60))
     data[1] = data[1] * scale
-    logging.info(f"Balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
+    logging.info(f" Camera balance (4x): scale={scale:.6f}, gamma={gamma:.6f}")
 
     timestamp = _timestamp_from_filename(input_data_filename)
     logging.info(f'  timestamp: {timestamp} ')
@@ -466,10 +480,14 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         hc_true = True
     else:
         hc_true = False
+        if pn == 1:
+            hc_true = True
+            cfg['level_07']['align_mode'] = None # desactiva el alineamiento. solo corrige la rot entre camaras y shift.
 
     # =================== ADVANCED ALIGNMENT =================== #
     if cfg['level_07']['advanced_alignment']:
-        logging.info("  Entering advanced_alignment .....")
+        # logging.info("  Entering advanced_alignment .....")
+        _log_in_caja_open(60, f"  entering advanced_alignment .....")
 
         # Ruta del CSV
         if cfg['level_07']['advanced_save']:
@@ -481,7 +499,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         wave_list = advanced_wave if isinstance(advanced_wave, (list, tuple)) else [advanced_wave]
 
         for wave in wave_list:
-            logging.info(f"  Aligning advanced mode for λ={wave} line={line_value}")
+            logging.info(f"  Aligning advanced mode for λ={wave} line={line_value} ----")
 
             # _, result, timestamp = run_alignment_for_wavelength(
             #     data, line_value, wave, header
@@ -494,7 +512,7 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
                 nodemod = hc_true
             )
 
-            logging.info(f"  Done advanced_alignment for λ={wave}")
+            logging.info(f"  Results for λ={wave}")
             print_alignment_result(result)
 
             if cfg['level_07']['advanced_save']:
@@ -522,6 +540,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
                 logging.info("  Reloaded & normalized alignment CSV after advanced mode.")
             else:
                 logging.warning("  alignment_results.csv no existe aún tras advanced mode.")
+
+        _log_in_caja_close(60, f"  Done advanced_alignment for λ={wave} ")
 
     # =================== INTERPOLACIÓN (sin advanced) =================== #
     # df = _normalize_alignment_df(df)
@@ -634,6 +654,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
         except Exception:
             align_modulations = False
 
+        _log_in_caja_open(60, f"  refining aligment between four mod frames per wave.....")
+
         data, shifts, _ = align_obsmode(
             data, acc=cfg['level_07']['align_accuracy'], verbose=verb,
             filter=line['line'], returnshifts=True, roi=roi,
@@ -668,6 +690,8 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
 
             print_shifts_by_cam(shifts)
 
+        _log_in_caja_close(60, f"  end aligment between four mod frames per wave ")
+
     if cfg['level_07']['align_mode'] == 'destretch':
         data, _ = destretch(
             data,
@@ -680,38 +704,26 @@ def reduce_image_0_7(input_data_filename, cfg, df, line, from_label="LV_0.5", to
             align_modulations = cfg['level_07'].get('align_modulations', False)
         )
 
-    logging.info(f'  demodulation: ')
-    # Modo dual I (opcional)
-    if cfg['level_10']['crosst_dual']:
-        _, data_both = demodulate(data, line['line'], dmod_matrices=cfg['level_07']['demod_matrix'], BothCams=True)
-        out_file = input_data_filename.replace(from_label, to_label + '_stokesI' + cfg['level_07']['add_level_07_label'])
-        logging.info(f' Saving filename: {out_file}')
-        with fits.open(input_data_filename) as hdu_list:
-            hdu_list[0].data = data_both[:, :, 0, :, :]
-            hdu_list[0].header = header
-            hdu_list.writeto(out_file, overwrite=True)
-
-    # Demodulación principal
-    if  not cfg['process_line'] == 'HC':
-        data = demodulate(data, line['line'], dmod_matrices=cfg['level_07']['demod_matrix'], mode=cfg['level_07']['demod_mode'])
-
-        if cfg['plots']['plot_level0_7']:
-            plt_level(
-                data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-                filename, '0.7', label='_' + cfg['level_07']['align_mode'] + 'demodulated' + cfg['level_07']['add_level_07_label']
-            )
-    else:
-        data = np.mean(data,axis=0)
-
     out_file = input_data_filename.replace(from_label, to_label + cfg['level_07']['add_level_07_label'])
-    logging.info(f' Saving filename: {out_file}')
+
+    if cfg['debug']['force_version_05']:
+        out_file = out_file.replace(f"v{cfg['debug']['force_version_05']}",f"v{cfg['proc_version']}")
+        logging.info(f' Saving filename: {out_file} (NOTE: Took {cfg["debug"]["force_version_05"]} from input filename and replaced with current proc_version {cfg["proc_version"]})')
+    else:
+        logging.info(f' Saving filename: {out_file}')
+
+
     with fits.open(input_data_filename) as hdu_list:
         hdu_list[0].data = data.astype(np.float32)
         hdu_list[0].header = header
         hdu_list.writeto(out_file, overwrite=True)
 
-
-def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV_1.0"):
+    if cfg['plots']['plot_level0_7']:
+        plt_level(
+            data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
+            f"{filename}", '0.5', cfg['level_07']['align_mode'],
+        )
+def reduce_image_1_0(input_data_filename, cfg, line, from_label="LV_0.7", to_label="LV_1.0"):
     """Nivel LV_1.0: normalización, corrección de crosstalk (global, ROI o interferencia) y escritura FITS."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
@@ -727,6 +739,29 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
     with fits.open(input_data_filename) as hdul:
         data = hdul[0].data
         header = hdul[0].header
+
+    logging.info(f'  demodulation: ')
+    # Modo dual I (opcional)
+    # if cfg['level_10']['crosst_dual']:
+    #     _, data_both = demodulate(data, line['line'], dmod_matrices=cfg['level_07']['demod_matrix'], BothCams=True)
+    #     out_file = input_data_filename.replace(from_label, to_label + '_stokesI' + cfg['level_07']['add_level_07_label'])
+    #     logging.info(f' Saving filename: {out_file}')
+    #     with fits.open(input_data_filename) as hdu_list:
+    #         hdu_list[0].data = data_both[:, :, 0, :, :]
+    #         hdu_list[0].header = header
+    #         hdu_list.writeto(out_file, overwrite=True)
+
+    # Demodulación principal
+    if  not cfg['process_line'] == 'HC':
+        data = demodulate(data, line['line'], dmod_matrices=cfg['level_07']['demod_matrix'], mode=cfg['level_07']['demod_mode'])
+
+        if cfg['plots']['plot_level0_7']:
+            plt_level(
+                data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
+                filename, '0.7', label='dm'
+            )
+    else:
+        data = np.mean(data,axis=0)
 
     nmods = int(header['NMODS'])
     if nmods == 2:
@@ -809,16 +844,102 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
                 if mode == 'standard':
                     header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
                     
+                # elif mode == 'jaeggli':
+                #     matrix = info.get('MM1a', {})
+                #     # Si es array de (4,4) lo escribimos
+                #     if isinstance(matrix, np.ndarray) and matrix.ndim == 2:
+                #         update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
+                #         for i in range(4):
+                #             for j in range(4):
+                #                 key = f'MMAT_{i}{j}'
+                #                 header[key] = (float(matrix[i, j]), f'Mueller matrix element [{i},{j}]')
+                # if params['use_local']:
+                #     pass
+                #     # header = write_crosstalk_header_local(header, info, channels=('Q', 'U', 'V'), index_width=3)
+
+                # elif mode == 'jaeggli':
+                #     if params['use_local']:
+                #         info1 = info.get('info_step1', {})
+                #         matrix = info1.get('MM1a', {})
+                #     else:
+                #         matrix = info.get('MM1a', {})
+                #     print('********')
+                #     print('********')
+                #     print('********')
+                #     print(info)
+                #     print('********')
+                #     print('********')
+                #     print('********')
+                #     # Si es array de (4,4) lo escribimos
+                #     if isinstance(matrix, np.ndarray) and matrix.shape == (4, 4):
+                #         update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
+                #         for i in range(4):
+                #             for j in range(4):
+                #                 key = f'MMAT_{i}{j}'
+                #                 header[key] = (float(matrix[i, j]), f'Mueller matrix element [{i},{j}]')
+                                
+                #     if params['use_local']:
+                #         info2 = info.get('info_step2', {})
+                #         # Recorremos los canales presentes en info_step2
+                #         for ch in ('Q', 'U', 'V'):
+                #             if ch in info2:
+                #                 coeffs = info2[ch]
+                #                 for par in ('a', 'b', 'c', 'd', 'e'):
+                #                     if par in coeffs:
+                #                         key = f'CT_{ch}_{par.upper()}'
+                #                         val = float(coeffs[par])
+                #                         comment = f'Crosstalk {ch} local coeff {par}'
+                #                         header[key] = (val, comment)
+
+
                 elif mode == 'jaeggli':
-                    matrix = info.get('MM1a', {})
+                    # Obtenemos step1_info independientemente de si es local o no
+                    if params['use_local']:
+                        info1 = info.get('step1_info', {})
+                        matrix = info1.get('MM1a', {})
+                    else:
+                        matrix = info.get('MM1a', {})
+
                     # Si es array de (4,4) lo escribimos
-                    if isinstance(matrix, np.ndarray) and matrix.ndim == 2:
+                    if isinstance(matrix, np.ndarray) and matrix.shape == (4, 4):
                         update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
                         for i in range(4):
                             for j in range(4):
                                 key = f'MMAT_{i}{j}'
                                 header[key] = (float(matrix[i, j]), f'Mueller matrix element [{i},{j}]')
-
+                                
+                    if params['use_local']:
+                        # Extraemos step2_info
+                        info2 = info.get('step2_info', {})
+                        coeffs_list = info2.get('coeffs_per_wvl', [])
+                        
+                        # Recorremos cada longitud de onda
+                        for item in coeffs_list:
+                            w_idx = item.get('wavelength_index', 0)
+                            fits_dict = item.get('fit', {})
+                            
+                            # Recorremos los canales Q, U, V
+                            for ch in ('Q', 'U', 'V'):
+                                if ch in fits_dict:
+                                    coeffs = fits_dict[ch]
+                                    for par in ('a', 'b', 'c', 'd', 'e'):
+                                        if par in coeffs:
+                                            # Formato FITS (máx 8 caracteres): C0_Q_A, C1_U_B, etc.
+                                            key = f'C{w_idx}_{ch}_{par.upper()}'
+                                            val = float(coeffs[par])
+                                            comment = f'Crosstalk wvl {w_idx} {ch} coeff {par}'
+                                            header[key] = (val, comment)
+                # info2[name] = {
+                #     'a': a, 'b': b, 'c': c, 'd': d, 'e': e,
+                #     'predict': pred,
+                #     'xcomp': xcomp,
+                #     'model': f'grad{local_order}',
+                #     'deriv_sigma': float(deriv_sigma),
+                #     'lambda': float(local_ridge_lambda)
+                # }
+                    #     pass
+                        # header = write_crosstalk_header_local(header, info, channels=('Q', 'U', 'V'), index_width=3)
+    
         # =========================================================================
         # 2B. MODO TILED (Cuadrantes con Feathering suave)
         # =========================================================================
@@ -918,10 +1039,10 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
     # =========================================================================
     # 4. ESCRITURA Y PLOTS
     # =========================================================================
-    if cfg['plots']['plot_level1_0']:
+    if cfg['plots']['plot_level1_0'] or cfg['plots']['plot_level1_1'] or cfg['plots']['plot_level1_2']:
         plt_level(
             data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-            filename, '1.0', 'demod' + cfg['level_10']['add_level_10_label']
+            filename, '1.0', 'dmct' + cfg['level_10']['add_level_10_label']
         )
 
     out_file = input_data_filename.replace(from_label, to_label + cfg['level_10']['add_level_10_label'])
@@ -931,10 +1052,10 @@ def reduce_image_1_0(input_data_filename, cfg, from_label="LV_0.7", to_label="LV
         hdu_list[0].data = data.astype(np.float32)
         hdu_list[0].header = header
         hdu_list.writeto(out_file, overwrite=True)
-        
 
-def reduce_image_1_0_old(input_data_filename, cfg, from_label="LV_0.7", to_label="LV_1.0"):
-    """Nivel LV_1.0: normalización, corrección de crosstalk (global, ROI o interferencia) y escritura FITS."""
+# =======================  reduce_image_0_8   ======================= #
+def reduce_image_0_8(input_data_filename, cfg, zk=None, fit_z = None, from_label="LV_0.7", to_label="LV_0.8"):
+    """Nivel LV_0.8: restauración PD por cámara antes de alineación/demodulación (Zernike por cámara)."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
         level=logging.INFO,
@@ -949,209 +1070,72 @@ def reduce_image_1_0_old(input_data_filename, cfg, from_label="LV_0.7", to_label
     with fits.open(input_data_filename) as hdul:
         data = hdul[0].data
         header = hdul[0].header
+    
+    elevation = get_elevation(header)
+    # elevation_data = get_elevation()
 
-    if cfg['level_10']['crosst_dual']:
-        filename_dual = Path(input_data_filename.replace('0.7', '0.7_stokesI')).with_suffix('')
-        with fits.open(str(filename_dual) + '.fits') as hdul:
-            dualI = hdul[0].data
-    else:
-        dualI = None
+    # obs_time = pd.to_datetime(header["DATE-OBS"])
 
-    roi = cfg['level_10']['crosst_roi']
+    # # Buscar la medida más cercana en el tiempo
+    # idx = (elevation_data["Time"] - obs_time).abs().idxmin()
 
-    if cfg['level_10']['normalization'] == 0:
-        norm_factor = np.median(data[-1, 0, roi[0]:roi[1], roi[2]:roi[3]])
-        logging.info(f'  >> Normalization factor: {norm_factor} ')
-    else:
-        norm_factor = cfg['level_10']['normalization']
-    data = data / norm_factor
+    # elevation = elevation_data.loc[idx, "Sun elevation [deg]"]
 
+    print(f"Elevation for {header['DATE-OBS']}: {elevation}")
 
-    mode = cfg['level_10']['crosst_mode']
-    strategy = cfg['level_10'].get('crosst_strategy', 'simultaneous')
-    params, coeffs, per_wv = extract_crosstalk_coeffs(cfg['crosstalk'])
+    if zk is None:
+        Nzer=fit_z.shape[0] #Number of Zernike coefficients
+        zk = np.zeros((Nzer+3))
+        for k in range(3,Nzer+3):
+            zk[k]=fit_z[k-3,0]*elevation+fit_z[k-3,1]
 
-    if params['use_local']:
-        if mode == 'jaeggli' and strategy == 'simultaneous':
-            raise ValueError("crosst_strategy='simultaneous' is NOT compatible with crosst_mode='jaeggli' with use_local: True")
+    n_zernikes = cfg['n_zernikes']
 
-    if cfg['level_10']['crosst_quadrants'] == 0:
-        
-        if params['apply_only']:
-            data, info = apply_crosstalk_coeffs_standard(
-                data, coeffs, per_wavelength=per_wv,
-                use_local=params['use_local'], local_order=params['local_order'],
-                deriv_sigma=params['deriv_sigma'], channels=params['channels']
-            )
-            logging.info(
-                f"[crosstalk] apply_only={params['apply_only']}, use_local={params['use_local']}, "
-                f"local_order={params['local_order']}, deriv_sigma={params['deriv_sigma']}, "
-                f"channels={params['channels']}, per_wavelength={per_wv}"
-            )
-            info['mode'] = 'global' 
-            if cfg['level_10']['crosst_mode'] == 'standard':
-                 header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
+    cam, wn, pn, xs, ys = data.shape
+    print(f"Data shape: cam={cam}, wn={wn}, pn={pn}, xs={xs}, ys={ys}")
+    zk_cam0 = np.copy(zk[0:n_zernikes+3])
+    zk_cam1 = np.copy(zk[0:n_zernikes+3])
+    zknew = [zk_cam0, zk_cam1]
+    print("number of zernikes: ", n_zernikes)
+    print(f"Zernike coefficients for camera 0: {zk_cam0}")
+    print(f"Zernike coefficients for camera 1: {zk_cam1}")
 
-        else:
-               logging.info(f'  >> fitting cross-talk factors:')
-
-               data, info = fit_mueller_matrix(
-                    data,
-                    method=cfg['level_10']['crosst_mode'],
-                    strategy=strategy,
-                    pthresh=cfg['level_10']['crosst_threshold'],
-                    ctmethod='linfit',
-                    last_wvl=cfg['level_10']['crosst_last_wave'],
-                    region=cfg['level_10']['crosst_region'],
-                    use_local=params['use_local'],
-                    local_order=cfg['crosstalk']['local_order'],
-                    deriv_sigma=0.0,
-                    local_ridge_lambda=0.0,
-                    aggregate_wavelengths=False,
-                    channels=('Q', 'U', 'V'),
-                    verbose=cfg['level_10']['crosst_verbose'],
-                    dualI=dualI,
-               )
-
-    #            data, info = fit_mueller_matrix(
-    #                 data,
-    #                 method=cfg['level_10']['crosst_mode'],
-    #                 pthresh=cfg['level_10']['crosst_threshold'],
-    #                 ctmethod='linfit',
-    #                 last_wvl=cfg['level_10']['crosst_last_wave'],
-    #                 region=cfg['level_10']['crosst_region'],
-    #                 use_local=cfg['level_10']['use_local'],
-    #                 local_order=1,
-    #                 deriv_sigma=0.0,
-    #                 local_ridge_lambda=0.0,
-    #                 aggregate_wavelengths=False,
-    #                 channels=('Q', 'U', 'V'),
-    #                 verbose=cfg['level_10']['crosst_verbose'],
-    #                 dualI=dualI,
-    #            )
-            #    if cfg['level_10']['crosst_mode'] == 'standard':
-            #         header = write_crosstalk_header(header, info, channels=('Q', 'U', 'V'), index_width=3)
-            #    logging.info("cross-talk parameters:")
-
-    #            coeffs = ["a", "b", "c","d", "e"]
-    #            for entry in info["coeffs_per_wvl"]:
-    #                 print("λ =", entry["wavelength_index"])
-    #                 for stokes in ["Q", "U", "V"]:
-    #                     f = entry["fit"][stokes]
-    #                     vals = "  ".join(f"{f[k]:.5f}" for k in coeffs)
-    #                     print(stokes, vals)
-                
-        if cfg['level_10']['crosst_mode'] == 'jaeggli':
-            matrix = info.get('MM1a', {})
-            update_header(header, 'CROSTALK', 1, after='ALIGMETH', comment='Was crosstalk correction applied?')
-            for i in range(4):
-                for j in range(4):
-                    key = f'MMAT_{i}{j}'
-                    val = float(matrix[i, j])
-                    header[key] = (val, f'Mueller matrix element [{i},{j}]')
-
-
-
-
-    else:
-        # data, info = fit_mueller_matrix_tiled(
-        #     data,
-        #     method=cfg['level_10']['crosst_mode'],
-        #     pthresh=cfg['level_10']['crosst_threshold'],
-        #     ctmethod='linfit',
-        #     last_wvl=cfg['level_10']['crosst_last_wave'],
-        #     use_local=cfg['level_10']['use_local'],
-        #     local_order=1,
-        #     deriv_sigma=0.0,
-        #     local_ridge_lambda=0.0,
-        #     aggregate_wavelengths=False,
-        #     channels=('Q', 'U', 'V'),
-        #     verbose=cfg['level_10']['crosst_verbose'],
-        #     quadrants=cfg['level_10']['crosst_quadrants'],
-        # )
-
-                # rois = [(cx, cy, lado), ...] en píxeles (>=3)
-        rois = [(100, 100, 400), (1500, 100, 400), (1500, 1500, 400), (100, 1500, 400)]
-
-        data, planes, maps, infos, samples  = fit_mueller_matrix_rois_with_plane(
-            data,
-            rois=rois,
-            method=cfg['level_10']['crosst_mode'],
-            pthresh=cfg['level_10']['crosst_threshold'],
-            last_wvl=cfg['level_10']['crosst_last_wave'],
-            use_local=params['use_local'],
-            local_order=1,
-            ctmethod='linfit',
-            channels=('Q','U','V'),
-            verbose=cfg['level_10']['crosst_verbose'],
-        )
-
-        ver_planos_ajuste(planes, samples)
-
-
-        # 'planes' contiene (a,b,c) por término (p.ej. 'I->Q'), y 'maps' el mapa 2D evaluado del plano.
-
-    if cfg['level_10']['crosst_interference']:
-        # chech if cfg['level_10']['crosst_interference'] is a number of a string.
-        if not isinstance(cfg['level_10']['crosst_interference'], int):
-            logging.info(f'  >> using interference cross-talk factors from:')
-
-            coeffs = load_polynomial_coeffs_csv(cfg['level_10']['crosst_interference'])
-            
-            wn, pn, _, _ = data.shape
-
-            with tqdm(total=wn * pn) as pbar:
-
-               for wl in range(wn):
-                    # for pl in range(1,pn):
-                    #      data[wl, pl] = apply_polynomial_Iref2Q(data[wl, pl], data[-1, 0], coeffs, wavelength=wl)
-                    #      pbar.update(1)
-                    data[wl, 1] = apply_polynomial_Iref2Q(data[wl, 1], data[-1, 0], coeffs, wavelength=wl)
+    with tqdm(total=wn * pn * cam) as pbar:
+        for cm in range(cam):
+            for wl in range(wn):
+                for pl in range(pn):
+                    if pl == 0:
+                        data[cm, wl, pl], noise_filter = phased.restore_ima(
+                            data[cm, wl, pl], zknew[cm],
+                            pd = cfg['pd'], low_f = cfg['low_f'], 
+                            reg1 = cfg['reg1'], reg2 = cfg['reg2'],
+                            cobs = cfg['cobs'], epsilon = cfg['epsilon'],
+                            sigma = cfg['sigma'], stray = cfg['stray'],
+                    )                        
+                    else:
+                        data[cm, wl, pl], _ = phased.restore_ima(
+                            data[cm, wl, pl], zknew[cm],
+                            pd = cfg['pd'], low_f = cfg['low_f'],
+                            reg1 = cfg['reg1'], reg2 = cfg['reg2'],
+                            cobs = cfg['cobs'], epsilon = cfg['epsilon'],
+                            sigma = cfg['sigma'], stray = cfg['stray'],
+                            noise=noise_filter,
+                    )                        
                     pbar.update(1)
 
-        else:
-            ref_wvl = -1
-            data, tiles, out = fit_interference_Iref_to_Q_tiled(
-                data,
-                ref_wvl=ref_wvl,
-                divisions=int(cfg['level_10']['crosst_interference']),
-                region=[0, -1, 0, -1],
-                ctmethod='linfit',
-                n_sigma=3,
-                pthresh_intensity=0.0,
-                use_local=False,
-                local_order=1,
-                deriv_sigma=0.0,
-                local_ridge_lambda=0.0,
-                apply=True,
-                show_grid=False,
-                verbose=False
-            )
-
-            header = write_interference_Iref_to_Q_header(
-                header,
-                a=out['a'], b=out['b'], c=out['c'], d=out['d'], e=out['e'],
-                ref_wvl=out['ref_wvl'], divisions=out['divisions'], tiles=tiles,
-                use_local=out['use_local'], local_order=out['local_order'],
-                deriv_sigma=out['deriv_sigma'], ridge_lambda=out['ridge'],
-                index_width=3, after_keyword='ALIGMETH'
-            )
-
-    if cfg['plots']['plot_level1_0']:
+    if cfg['plots']['plot_level0_8']:
         plt_level(
             data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-            filename, '1.0', 'demod' + cfg['level_10']['add_level_10_label']
+            f"{filename}", '0.5', 'pd'
         )
 
-    out_file = input_data_filename.replace(from_label, to_label + cfg['level_10']['add_level_10_label'])
-    logging.info(f' Saving filename: {out_file}')
     with fits.open(input_data_filename) as hdu_list:
-        hdu_list[0].data = data.astype(np.float32)
+        hdu_list[0].data = data
         hdu_list[0].header = header
-        hdu_list.writeto(out_file, overwrite=True)
+        hdu_list.writeto(input_data_filename.replace(from_label, to_label), overwrite=True)
 
-# =======================  reduce_image_1_1   ======================= #
-def reduce_image_1_1(input_data_filename, cfg, zk=None):
+# =======================  reduce_image_1_2   ======================= #
+def reduce_image_1_1(input_data_filename, cfg, zk=None, fit_z = None):
     """Nivel LV_1.1: restauración PD por longitud de onda y polarización (``restore_ima``) sobre cubo LV_1.0."""
     process_name = multiprocessing.current_process().name
     logging.basicConfig(
@@ -1170,6 +1154,31 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
 
     wn, pn, xs, ys = data.shape
 
+    elevation = get_elevation(header)
+    # elevation_data = get_elevation()
+
+    # obs_time = pd.to_datetime(header["DATE-OBS"])
+
+    # # Buscar la medida más cercana en el tiempo
+    # idx = (elevation_data["Time"] - obs_time).abs().idxmin()
+
+    # elevation = elevation_data.loc[idx, "Sun elevation [deg]"]
+
+    print(f"Elevation for {header['DATE-OBS']}: {elevation}")
+
+    if zk is None:
+        Nzer=fit_z.shape[0] #Number of Zernike coefficients
+        zk = np.zeros((Nzer+3))
+        for k in range(3,Nzer+3):
+            zk[k]=fit_z[k-3,0]*elevation+fit_z[k-3,1]
+
+    n_zernikes = cfg['n_zernikes']
+
+    wn, pn, xs, ys = data.shape
+
+    zk = zk[0:n_zernikes+3]
+    print("number of zernikes: ", n_zernikes)
+    print(f"Zernike coefficients: {zk}")
 
     def _mascara_circular(nx, ny, radio=None, centro=None):
         if centro is None:
@@ -1221,65 +1230,6 @@ def reduce_image_1_1(input_data_filename, cfg, zk=None):
         hdu_list[0].data = data
         hdu_list[0].header = header
         hdu_list.writeto(input_data_filename.replace("LV_1.0", "LV_1.1"), overwrite=True)
-
-# =======================  reduce_image_0_6   ======================= #
-def reduce_image_0_6(input_data_filename, cfg, zk=None, from_label="LV_0.5", to_label="LV_0.6"):
-    """Nivel LV_0.6: restauración PD por cámara antes de alineación/demodulación (Zernike por cámara)."""
-    process_name = multiprocessing.current_process().name
-    logging.basicConfig(
-        level=logging.INFO,
-        format=f'%(asctime)s [{process_name}] %(levelname)s: %(message)s',
-        force=True
-    )
-
-    logging.info(f'  >> processing file: {input_data_filename} ')
-    filename = Path(input_data_filename.replace(from_label, to_label)).stem
-    obs_ID = cfg['obs_ID']
-
-    with fits.open(input_data_filename) as hdul:
-        data = hdul[0].data
-        header = hdul[0].header
-
-    cam, wn, pn, xs, ys = data.shape
-
-    zk_cam0 = np.copy(zk)
-    zk_cam1 = np.copy(zk)
-    zknew = [zk_cam0, zk_cam1]
-    epsilon = [0.02, 0.02]
-
-    with tqdm(total=wn * pn * cam) as pbar:
-        for cm in range(cam):
-            for wl in range(wn):
-                for pl in range(pn):
-                    if pl == 0:
-                        data[cm, wl, pl], noise_filter = phased.restore_ima(
-                            data[cm, wl, pl], zknew[cm],
-                            pd = cfg['pd'], low_f = cfg['low_f'], 
-                            reg1 = cfg['reg1'], reg2 = cfg['reg2'],
-                            cobs = cfg['cobs'], epsilon = cfg['epsilon'],
-                            sigma = cfg['sigma'], stray = cfg['stray'],
-                    )                        
-                    else:
-                        data[cm, wl, pl], _ = phased.restore_ima(
-                            data[cm, wl, pl], zknew[cm],
-                            pd = cfg['pd'], low_f = cfg['low_f'],
-                            reg1 = cfg['reg1'], reg2 = cfg['reg2'],
-                            cobs = cfg['cobs'], epsilon = cfg['epsilon'],
-                            sigma = cfg['sigma'], stray = cfg['stray'],
-                            noise=noise_filter,
-                    )                        
-                    pbar.update(1)
-
-    if cfg['plots']['plot_level0_6']:
-        plt_level(
-            data, cfg['plots']['roi_plots'], cfg['output_folder'] + obs_ID,
-            f"{filename}_{from_label}_v{cfg['proc_version']}", '0.5', 'pd'
-        )
-
-    with fits.open(input_data_filename) as hdu_list:
-        hdu_list[0].data = data
-        hdu_list[0].header = header
-        hdu_list.writeto(input_data_filename.replace(from_label, to_label), overwrite=True)
 
 # ===================================================================
 # =======================     MAIN PROGRAM    =======================
@@ -1504,82 +1454,19 @@ def main(argv=None) -> int:
 
     logging.info('-----------------------------------')
 
-    # LEVEL 0.6 (opcional PD antes)
-    try:
-        deconvolve_first = cfg.force_redo['level0_6']
-        from_label = "LV_0.5"
-        to_label = "LV_0.6"
-    except Exception:
-        deconvolve_first = False
+    if cfg.force_redo['level0_7']:
+        logging.info(f'  >> processing level 0.7 (alignment)')
 
-    if deconvolve_first:
-        logging.info(f'  >> Procesing level 0.6')
-        cfg.force_redo['level1_1'] = False
-
-        dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
-        ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
-
-        directory = Path(cfg.output_folder + obs_ID + '/')
-        files_list = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
-        files_list = [f for f in files_list if dataid in f and ext_ in f]
-        files_list = [str(directory / f) for f in files_list]
-
-        indices = parse_range(cfg.process_files, max_value=len(files_list)-1)
-        if len(files_list) >= 1 and len(indices) <= len(files_list):
-            files = [files_list[i] for i in indices]
-            logging.info(f'  >> available files {len(files)}')
-        if len(files_list) == 0:
-            logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
-            return 1
-        if len(indices) > len(files_list):
-            logging.error(f'  >> More indices than files {indices} len of file list {len(files_list)}')
-            return 1
-
-        if not isinstance(files, list):
-            files = [files]
-
-        if cfg.pd_mode == 'auto':
-            logging.info('Importing zernikes: %s', cfg.zernike_id)
-            BASE_DIR = Path(__file__).resolve().parent
-            file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
-            zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
-        elif cfg.pd_mode == 'manual':
-            zk = np.asarray(cfg.zernikes)
-
-        reduce_partial = partial(
-            reduce_image_0_6, cfg=cfg_dict, zk=zk,
-            from_label=from_label, to_label=to_label
-        )
-
-        if len(files) > 1 and cfg.parallel:
-            with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
-                executor.map(reduce_partial, files)
-        elif len(files) > 1 and not cfg.parallel:
-            for f in files:
-                reduce_partial(f)
-        else:
-            reduce_partial(files[0])
-
-    logging.info('-----------------------------------')
-
-    # LEVEL 0.7 (alignment + demodulation)
-    try:
-        if cfg.force_redo['use_pd']:
-            cfg.force_redo['level1_1'] = False
-            from_label = "LV_0.6"
-            to_label = "LV_0.8"
-        else:
-            from_label = "LV_0.5"
-            to_label = "LV_0.7"
-    except Exception:
         from_label = "LV_0.5"
         to_label = "LV_0.7"
 
-    if cfg.force_redo['level0_7']:
-        logging.info(f'  >> processing level 0.7 (alignment and demodulation)')
-
         dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
         ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
+        if cfg.debug['force_version_05']:
+            ext_ = f"_{from_label}_v{cfg.debug['force_version_05']}.fits"
+            logging.info(f'  >> looking for files with dataid: {dataid} and ext: {ext_} (NOTE: {cfg.debug["force_version_05"]} is hardcoded for input filename, will be replaced with current proc_version in output filename)')
+        else:
+            logging.info(f'  >> looking for files with dataid: {dataid} and ext: {ext_}')
 
         directory = Path(cfg.output_folder + obs_ID + '/')
         files_list = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
@@ -1629,19 +1516,126 @@ def main(argv=None) -> int:
 
     logging.info('-----------------------------------')
 
+    if cfg.force_redo['level0_8']:
+
+        from_label = "LV_0.7"
+        to_label = "LV_0.8"
+
+        logging.info(f'  >> processing level 0.8')
+
+        dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
+        ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
+
+        directory = Path(cfg.output_folder + obs_ID + '/')
+        files = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
+        files = [f for f in files if dataid in f and ext_ in f]
+        files = [str(directory / f) for f in files]
+
+        if len(files) > 1:
+            files = [files[i] for i in parse_range(cfg.process_files, max_value=len(files)-1)]
+        logging.info(f'  >> available files {len(files)}')
+        if len(files) == 0:
+            logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+            return 1
+
+        if not isinstance(files, list):
+            files = [files]
+
+
+
+        fit_z = None
+        zk = None
+        if cfg.pd_mode == 'auto':
+            logging.info('Importing zernikes: %s', cfg.zernike_id)
+            BASE_DIR = Path(__file__).resolve().parent
+            file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
+            zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+        elif cfg.pd_mode == 'manual':
+            zk = np.asarray(cfg.zernikes)
+        elif cfg.pd_mode == 'elevation':
+            print(str(cf.om_config[cfg.process_line]["line"]))
+            fit_z = get_z(filter=str(cf.om_config[cfg.process_line]["line"]))
+
+        print(zk)
+        reduce_partial = partial(
+            reduce_image_0_8, cfg=cfg_dict, zk=zk, fit_z=fit_z,
+        )
+
+        if len(files) > 1 and cfg.parallel:
+            with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+                executor.map(reduce_partial, files)
+        elif len(files) > 1 and not cfg.parallel:
+            for f in files:
+                reduce_partial(f)
+        else:
+            reduce_partial(files[0])
+
+    logging.info('-----------------------------------')
+
+    # # LEVEL 0.8 (opcional PD antes)
+    # este tiene que venir de 0.7 a 0.8 y luego tengo que modificar el from_label en 1.0 para que coja esa (si PD es true - antes)
+    # try:
+    #     deconvolve_first = cfg.force_redo['level0_6']
+    #     from_label = "LV_0.5"
+    #     to_label = "LV_0.6"
+    # except Exception:
+    #     deconvolve_first = False
+
+    # if deconvolve_first:
+    #     logging.info(f'  >> Procesing level 0.6')
+    #     cfg.force_redo['level1_1'] = False
+
+    #     dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
+    #     ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
+
+    #     directory = Path(cfg.output_folder + obs_ID + '/')
+    #     files_list = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
+    #     files_list = [f for f in files_list if dataid in f and ext_ in f]
+    #     files_list = [str(directory / f) for f in files_list]
+
+    #     indices = parse_range(cfg.process_files, max_value=len(files_list)-1)
+    #     if len(files_list) >= 1 and len(indices) <= len(files_list):
+    #         files = [files_list[i] for i in indices]
+    #         logging.info(f'  >> available files {len(files)}')
+    #     if len(files_list) == 0:
+    #         logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+    #         return 1
+    #     if len(indices) > len(files_list):
+    #         logging.error(f'  >> More indices than files {indices} len of file list {len(files_list)}')
+    #         return 1
+
+    #     if not isinstance(files, list):
+    #         files = [files]
+
+    #     if cfg.pd_mode == 'auto':
+    #         logging.info('Importing zernikes: %s', cfg.zernike_id)
+    #         BASE_DIR = Path(__file__).resolve().parent
+    #         file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
+    #         zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+    #     elif cfg.pd_mode == 'manual':
+    #         zk = np.asarray(cfg.zernikes)
+
+    #     reduce_partial = partial(
+    #         reduce_image_0_6, cfg=cfg_dict, zk=zk,
+    #         from_label=from_label, to_label=to_label
+    #     )
+
+    #     if len(files) > 1 and cfg.parallel:
+    #         with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+    #             executor.map(reduce_partial, files)
+    #     elif len(files) > 1 and not cfg.parallel:
+    #         for f in files:
+    #             reduce_partial(f)
+    #     else:
+    #         reduce_partial(files[0])
+
+    logging.info('-----------------------------------')
+
     # LEVEL 1.0
     if cfg.force_redo['level1_0']:
-        try:
-            if cfg.force_redo['use_pd']:
-                cfg.force_redo['level1_1'] = False
-                from_label = "LV_0.8"
-                to_label = "LV_1.2"
-            else:
-                from_label = "LV_0.7"
-                to_label = "LV_1.0"
-        except Exception:
-            from_label = "LV_0.7"
-            to_label = "LV_1.0"
+            
+        from_label = "LV_0.7"
+        to_label = "LV_1.0"
 
         logging.info(f'  >> processing level 1.0')
 
@@ -1664,7 +1658,7 @@ def main(argv=None) -> int:
             files = [files]
 
         reduce_partial = partial(
-            reduce_image_1_0, cfg=cfg_dict, from_label=from_label, to_label=to_label
+            reduce_image_1_0, cfg=cfg_dict, line=cf.om_config[cfg.process_line],from_label=from_label, to_label=to_label
         )
 
         if len(files) > 1 and cfg.parallel:
@@ -1678,12 +1672,16 @@ def main(argv=None) -> int:
 
     logging.info('-----------------------------------')
 
-    # LEVEL 1.1
     if cfg.force_redo['level1_1']:
+
+        from_label = "LV_1.0"
+        to_label = "LV_1.1"
+
         logging.info(f'  >> processing level 1.1')
 
         dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
-        ext_ = f"_LV_1.0{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
+        ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
+
         directory = Path(cfg.output_folder + obs_ID + '/')
         files = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
         files = [f for f in files if dataid in f and ext_ in f]
@@ -1699,6 +1697,8 @@ def main(argv=None) -> int:
         if not isinstance(files, list):
             files = [files]
 
+        fit_z = None
+        zk = None
         if cfg.pd_mode == 'auto':
             logging.info('Importing zernikes: %s', cfg.zernike_id)
             BASE_DIR = Path(__file__).resolve().parent
@@ -1706,9 +1706,13 @@ def main(argv=None) -> int:
             zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
         elif cfg.pd_mode == 'manual':
             zk = np.asarray(cfg.zernikes)
+        elif cfg.pd_mode == 'elevation':
+            print(str(cf.om_config[cfg.process_line]["line"]))
+            fit_z = get_z(filter=str(cf.om_config[cfg.process_line]["line"]))
+
         print(zk)
         reduce_partial = partial(
-            reduce_image_1_1, cfg=cfg_dict, zk=zk
+            reduce_image_1_1, cfg=cfg_dict, zk=zk, fit_z=fit_z,
         )
 
         if len(files) > 1 and cfg.parallel:
@@ -1719,6 +1723,91 @@ def main(argv=None) -> int:
                 reduce_partial(f)
         else:
             reduce_partial(files[0])
+
+    logging.info('-----------------------------------')
+
+    # LEVEL 1.0
+    if cfg.force_redo['level1_2']:
+            
+        from_label = "LV_0.8"
+        to_label = "LV_1.2"
+
+        logging.info(f'  >> processing level 1.2')
+
+        dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
+        ext_ = f"_{from_label}_v{cfg.proc_version}.fits"
+
+        directory = Path(cfg.output_folder + obs_ID + '/')
+        files = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
+        files = [f for f in files if dataid in f and ext_ in f]
+        files = [str(directory / f) for f in files]
+
+        if len(files) > 1:
+            files = [files[i] for i in parse_range(cfg.process_files, max_value=len(files)-1)]
+        logging.info(f'  >> available files {len(files)}')
+        if len(files) == 0:
+            logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+            return 1
+
+        if not isinstance(files, list):
+            files = [files]
+
+        reduce_partial = partial(
+            reduce_image_1_0, cfg=cfg_dict, line=cf.om_config[cfg.process_line],from_label=from_label, to_label=to_label
+        )
+
+        if len(files) > 1 and cfg.parallel:
+            with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+                executor.map(reduce_partial, files)
+        elif len(files) > 1 and not cfg.parallel:
+            for f in files:
+                reduce_partial(f)
+        else:
+            reduce_partial(files[0])
+
+    logging.info('-----------------------------------')
+
+    # # LEVEL 1.1
+    # if cfg.force_redo['level1_2']:
+    #     logging.info(f'  >> processing level 1.1')
+
+    #     dataid = obs_ID + "_TM_" + cf.om_config[cfg.process_line]["name"] + '_' + str(cf.om_config[cfg.process_line]["Nlambda"]) + "_"
+    #     ext_ = f"_LV_1.0{cfg.level_07['add_level_07_label']}_v{cfg.proc_version}.fits"
+    #     directory = Path(cfg.output_folder + obs_ID + '/')
+    #     files = sorted([f for f in os.listdir(directory) if f.endswith('.fits') and not f.startswith('._')])
+    #     files = [f for f in files if dataid in f and ext_ in f]
+    #     files = [str(directory / f) for f in files]
+
+    #     if len(files) > 1:
+    #         files = [files[i] for i in parse_range(cfg.process_files, max_value=len(files)-1)]
+    #     logging.info(f'  >> available files {len(files)}')
+    #     if len(files) == 0:
+    #         logging.error(f'  >> Error. No files found for obs_ID: {obs_ID}')
+    #         return 1
+
+    #     if not isinstance(files, list):
+    #         files = [files]
+
+    #     if cfg.pd_mode == 'auto':
+    #         logging.info('Importing zernikes: %s', cfg.zernike_id)
+    #         BASE_DIR = Path(__file__).resolve().parent
+    #         file_path_csv = BASE_DIR / "TuMag_PD_results_All_filters_clean.csv"
+    #         zk = phased.import_zernikes(cfg.zernike_id, csv_path=file_path_csv)
+    #     elif cfg.pd_mode == 'manual':
+    #         zk = np.asarray(cfg.zernikes)
+    #     print(zk)
+    #     reduce_partial = partial(
+    #         reduce_image_1_1, cfg=cfg_dict, zk=zk
+    #     )
+
+    #     if len(files) > 1 and cfg.parallel:
+    #         with ProcessPoolExecutor(max_workers=cfg.max_workers) as executor:
+    #             executor.map(reduce_partial, files)
+    #     elif len(files) > 1 and not cfg.parallel:
+    #         for f in files:
+    #             reduce_partial(f)
+    #     else:
+    #         reduce_partial(files[0])
 
     return 0
 
